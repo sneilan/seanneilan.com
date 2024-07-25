@@ -1,0 +1,61 @@
+# From https://github.com/tomfran/typo/wiki/Setup
+
+baseURL = 'https://seanneilan.com/'
+languageCode = 'en-us'
+title = 'Sean Neilan'
+theme = 'typo'
+
+[taxonomies]
+tag = 'tags'
+
+googleAnalytics = "G-xxxxxxxxx"
+
+[params]
+description = 'Software Engineering Blog'
+
+theme = 'auto'
+colorPalette = 'default'
+hideHeader = false
+
+homeIntroTitle = 'Hi!'
+homeIntroContent = """
+I am a customer obsessed software engineer. I love learning, thinking big picture, working through small details,
+self-improvement, teaching and mentoring.
+"""
+
+# homeCollectionTitle = 'Posts'
+# homeCollection = 'posts'
+
+paginationSize = 30
+listSummaries = true
+listDateFormat = '2 Jan 2006'
+
+breadcrumbs = true
+
+[[params.social]]
+name = "linkedin"
+url = "https://www.linkedin.com/in/seanneilan"
+
+[[params.social]]
+name = "github"
+url = "https://github.com/sneilan"
+
+[[params.menu]]
+name = "home"
+url = "/"
+
+# [[params.menu]]
+# name = "posts"
+# url = "/posts"
+
+[[params.menu]]
+name = "interests"
+url = "/interests"
+
+[[params.menu]]
+name = "about"
+url = "/about"
+
+[markup]
+[markup.highlight]
+style = 'algol'
