@@ -50,11 +50,11 @@ url = "/"
 
 [[params.menu]]
 name = "interests"
-url = "/interests"
+url = "/interests/index.html"
 
 [[params.menu]]
 name = "about"
-url = "/about"
+url = "/about/index.html"
 
 [markup]
 [markup.highlight]
