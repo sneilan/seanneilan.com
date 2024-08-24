@@ -10,10 +10,10 @@ I'm helping connect people to funding opportunities using AI at [GrantPuma](http
 Dec 2023 - Present\
 *Team Lead*
 
+* Management
 * Full stack
-* Machine Learning
 * Devops
-* Mentoring
+* Machine Learning
 * Technical writing
 
 **[getfliff.com](https://getfliff.com)**\
