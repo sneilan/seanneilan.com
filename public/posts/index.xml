@@ -6,21 +6,14 @@
     <description>Recent content in Posts on Sean Neilan</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 03 Sep 2024 10:27:04 -0700</lastBuildDate>
+    <lastBuildDate>Tue, 03 Sep 2024 00:00:00 +0000</lastBuildDate>
     <atom:link href="http://localhost:1313/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Python Aws Lambda</title>
+      <title>Hello World Python AWS Lambda</title>
       <link>http://localhost:1313/posts/python-aws-lambda/</link>
-      <pubDate>Tue, 03 Sep 2024 10:27:04 -0700</pubDate>
+      <pubDate>Tue, 03 Sep 2024 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/posts/python-aws-lambda/</guid>
-      <description>asdf</description>
-    </item>
-    <item>
-      <title>Log-Structured Merge Tree</title>
-      <link>http://localhost:1313/posts/my-first-post/</link>
-      <pubDate>Sun, 12 Nov 2023 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/posts/my-first-post/</guid>
-      <description>An LSM Tree overview and Java implementation.</description>
+      <description>This is a step by step tutorial to create a Dockerized AWS Python Lambda function.&#xA;Copying/pasting each command as-is will create a running dockerized python lambda function in your aws account.&#xA;It&amp;rsquo;s aimed at experienced engineers who know how to write software and just want to run a lambda function. The tutorial aggregates a lot of the documentation and gotchya&amp;rsquo;s one runs into while developing a lambda function for the first time.</description>
     </item>
   </channel>
 </rss>
