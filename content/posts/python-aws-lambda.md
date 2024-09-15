@@ -14,12 +14,11 @@ hideBackToTop: false
 
 This is a step by step tutorial to create a Dockerized AWS Python Lambda function.
 
-Copying/pasting each command as-is will create a running dockerized
+Following the instructions will create a running dockerized
 python lambda function in your aws account.
 
-It's aimed at experienced engineers who know how to write
-software and just want to run a lambda function. The tutorial
-aggregates a lot of the documentation and gotchya's one runs into while
+It's aimed at experienced engineers who just want to run a lambda function.
+The tutorial aggregates a lot of the documentation and gotchya's one runs into while
 developing a lambda function for the first time. That way you can
 get the annoying things out the way so you can do what you want to do.
 
@@ -44,6 +43,7 @@ and a Dockerfile to containerize it.
 
 ```shell
 mkdir my-lambda-func
+cd my-lambda-func
 touch app.py
 touch Dockerfile
 ```
@@ -87,7 +87,10 @@ docker run -p 8080:8080 my-lambda-func
 
 # In a new shell
 curl -XPOST "http://localhost:8080/2015-03-31/functions/function/invocations" -d '{"payload":"hello world!"}'
-# You should see some output!
+# You should see the following
+```shell
+```
+{"headers": {"Content-Type": "text/html"}, "statusCode": 200, "body": "Hello world!"}%                                                                                      
 ```
 
 ##### Upload to AWS
