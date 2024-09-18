@@ -7,7 +7,7 @@ toc: false
 readTime: false
 autonumber: true
 math: true
-tags: ["aws", "python", "docker"]
+tags: ["aws", "python", "docker", "terraform"]
 showTags: false
 hideBackToTop: false
 ---
@@ -149,6 +149,8 @@ docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/my-lambda-func:latest
 
 Permissions
 
+Why these permissions? What do they do?
+
 ```terraform
 data "aws_iam_policy_document" "AWSLambdaTrustPolicy" {
   statement {
@@ -184,6 +186,9 @@ resource "aws_lambda_function" "container_lambda" {
 ```
 
 4. Create api gateway
+
+What are the parts of an api gateway?
+Why not a rest gateway vs http?
 
 ```terraform
 # HTTP API Gateway
