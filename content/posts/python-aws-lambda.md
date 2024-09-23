@@ -4,7 +4,7 @@ date: "2024-09-03"
 summary: "Step by step tutorial to create a AWS Python Lambda function."
 description: "Step by step tutorial to create a Python/Docker AWS Lambda function."
 toc: false
-readTime: false
+readTime: true
 autonumber: true
 math: true
 tags: ["aws", "python", "docker", "terraform"]
@@ -15,12 +15,14 @@ hideBackToTop: false
 These instructions, aimed at experienced engineers, will create a running dockerized
 python lambda function in your aws account.
 
-They're aimed at experienced engineers who just want to run a lambda function.
-The tutorial aggregates a lot of the documentation and gotchya's one runs into while
+If you just want to run a lambda function, read on. This tutorial aggregates a lot of 
+the documentation and gotchya's one runs into while
 developing a lambda function for the first time. That way you can
 get the annoying things out the way so you can do what you want to do.
 
-If you need an explanation of what AWS Lambda is, go here.
+If you need an explanation of what AWS Lambda is, go [here](https://aws.amazon.com/lambda/).
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/YOUTUBE_VIDEO_ID_HERE/0.jpg)](https://www.youtube.com/watch?v=YOUTUBE_VIDEO_ID_HERE)
 
 General requirements like dependencies, scaling and billing
 are described in the code comments.
@@ -97,6 +99,11 @@ curl -XPOST "http://localhost:8080/2015-03-31/functions/function/invocations" -d
 # You should see the following
 {"headers": {"Content-Type": "text/html"}, "statusCode": 200, "body": "Hello world!"}%
 ```
+
+###### Optional: Adding Dependencies
+
+To add dependencies like binaries or other libraries in the aws docker image, do the following.
+
 
 ##### Upload to AWS
 
