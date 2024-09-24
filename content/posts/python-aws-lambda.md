@@ -158,6 +158,33 @@ Permissions
 
 Why these permissions? What do they do?
 
+IAM policies define the permissions of resources they are associated with.
+IAM policies are associated with IAM roles. IAM roles provide
+temporary security credentials to whatever service assumes the IAM role.
+
+# https://spacelift.io/blog/aws-iam-roles
+
+An IAM Role has two parts
+* trust policy - who can assume iam role.
+* permission policy - what is the role allowed to do?
+
+
+
+An IAM policy defines permissions of the
+resource it's associated with. For example, say a policy allows
+a list s3 bucket permission, any resource with that policy can list
+your s3 buckets.
+
+To associate an iam policy with a resource, we need to create
+an iam role. An iam role is a collection of policies with a method
+to attach to an iam resource.
+
+First we need to create permissions for the lambda function to run on
+aws. Otherwise it will be blocked.
+
+The first part is a trust policy.
+
+
 ```terraform
 data "aws_iam_policy_document" "AWSLambdaTrustPolicy" {
   statement {
@@ -175,6 +202,7 @@ resource "aws_iam_role" "terraform_function_role" {
   assume_role_policy = data.aws_iam_policy_document.AWSLambdaTrustPolicy.json
 }
 
+# attach the execution role policy to the role.
 resource "aws_iam_role_policy_attachment" "terraform_lambda_policy" {
   role       = aws_iam_role.terraform_function_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
