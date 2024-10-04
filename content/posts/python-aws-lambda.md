@@ -12,13 +12,14 @@ showTags: false
 hideBackToTop: false
 ---
 
-These instructions, aimed at experienced engineers, will create a running dockerized
-python lambda function in your aws account.
+This tutorial is aimed at experienced engineers who just want to use AWS lambda.
 
-If you just want to run a lambda function, read on. This tutorial aggregates a lot of 
-the documentation and gotchya's one runs into while
+It aggregates a lot of the documentation and gotchya's one runs into while
 developing a lambda function for the first time. That way you can
 get the annoying things out the way so you can do what you want to do.
+
+[copilot generated]
+AWS Lambda is a serverless compute service that lets you run code without provisioning or managing servers. You pay only for the compute time you consume.
 
 If you need an explanation of what AWS Lambda is, go [here](https://aws.amazon.com/lambda/).
 
