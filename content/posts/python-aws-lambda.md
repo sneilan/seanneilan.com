@@ -14,16 +14,12 @@ hideBackToTop: false
 
 This tutorial is aimed at experienced engineers who just want to use AWS lambda.
 
-It aggregates a lot of the documentation and gotchya's one runs into while
-developing a lambda function for the first time. That way you can
-get the annoying things out the way so you can do what you want to do.
-
-[copilot generated]
-AWS Lambda is a serverless compute service that lets you run code without provisioning or managing servers. You pay only for the compute time you consume.
-
-If you need an explanation of what AWS Lambda is, go [here](https://aws.amazon.com/lambda/).
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/YOUTUBE_VIDEO_ID_HERE/0.jpg)](https://www.youtube.com/watch?v=YOUTUBE_VIDEO_ID_HERE)
+For reference, AWS Lambda is a service for renting fractions of compute time
+at a premium in the cloud for small tasks. Unfortunately, renting small amounts
+of compute time requires large amounts of research. This tutorial aggregates the 
+documentation and gotchya's that fresh lambda engineers run into. 
+That way you can get the annoying things out the way 
+and focus on what you want to do.
 
 General requirements like dependencies, scaling and billing
 are described in the code comments.
@@ -108,7 +104,9 @@ To add dependencies like binaries or other libraries in the aws docker image, do
 
 ##### Upload to AWS
 
-Creating a function in aws lambda is a multistep process where you have to upload your docker image,
+Creating a function in aws lambda is a multistep process. This is so AWS
+can be 
+where you have to upload your docker image,
 create the lambda function, set up permissions and 
 
 1. Setup terraform
@@ -157,7 +155,15 @@ docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/my-lambda-func:latest
 
 Permissions
 
-Why these permissions? What do they do?
+AWS denies everything by default. In order to run the lambda function, 
+we need to give it permission to run and then whatever permissions it
+needs while running.
+
+AWS permissions are given using the IAM (identity and access management) system.
+IAM is a free service provided by AWS. In a nutshell, it lets us define roles which
+can be assumed by resources like an aws lambda function. Then the permissions
+can be given to the role. It's like when Bruce W. puts on the mask
+and then he's Batman. Even though batman and bruce are the same person, 
 
 IAM policies define the permissions of resources they are associated with.
 IAM policies are associated with IAM roles. IAM roles provide
