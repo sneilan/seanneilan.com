@@ -46,16 +46,27 @@ url = "/"
 
 [[params.menu]]
 name = "posts"
-url = "/posts"
+url = "/posts/"
 
 [[params.menu]]
 name = "interests"
-url = "/interests/index.html"
+url = "/interests/"
 
 [[params.menu]]
 name = "about"
-url = "/about/index.html"
+url = "/about/"
 
 [markup]
 [markup.highlight]
 style = 'algol'
+
+
+[deployment]
+
+[[deployment.targets]]
+# An arbitrary name for this target.
+name = "production"
+
+# Amazon Web Services S3; see https://gocloud.dev/howto/blob/#s3
+# For S3-compatible endpoints, see https://gocloud.dev/howto/blob/#s3-compatible
+URL = "s3://aaa4?region=us-west-1"
