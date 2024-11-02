@@ -44,9 +44,9 @@ url = "https://github.com/sneilan"
 name = "home"
 url = "/"
 
-# [[params.menu]]
-# name = "posts"
-# url = "/posts"
+[[params.menu]]
+name = "posts"
+url = "/posts"
 
 [[params.menu]]
 name = "interests"

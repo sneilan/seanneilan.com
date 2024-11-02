@@ -13,7 +13,7 @@
       <link>http://localhost:1313/posts/python-aws-lambda/</link>
       <pubDate>Tue, 03 Sep 2024 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/posts/python-aws-lambda/</guid>
-      <description>This is a step by step tutorial to create a Dockerized AWS Python Lambda function.&#xA;Copying/pasting each command as-is will create a running dockerized python lambda function in your aws account.&#xA;It&amp;rsquo;s aimed at experienced engineers who know how to write software and just want to run a lambda function. The tutorial aggregates a lot of the documentation and gotchya&amp;rsquo;s one runs into while developing a lambda function for the first time.</description>
+      <description>Step by step tutorial to create a AWS Python Lambda function.</description>
     </item>
   </channel>
 </rss>

@@ -62,6 +62,12 @@
         </p>
         
         <p class="small ">
+            <a href="/posts">
+                /posts
+            </a>
+        </p>
+        
+        <p class="small ">
             <a href="/interests/index.html">
                 /interests
             </a>
@@ -107,6 +113,8 @@
 
     <h1 class="single-title">Hello World Python AWS Lambda</h1>
     
+    <p class="single-summary">Step by step tutorial to create a AWS Python Lambda function.</p>
+    
 
     
 
@@ -117,6 +125,9 @@
       <time datetime="2024-09-03T00:00:00&#43;00:00">September 3, 2024</time>
       
 
+      
+      &nbsp; · &nbsp;
+      5 min read
       
     </p>
 
@@ -131,96 +142,148 @@
   
 
   <div class="single-content">
-    <p>This is a step by step tutorial to create a Dockerized AWS Python Lambda function.</p>
-<p>Copying/pasting each command as-is will create a running dockerized
-python lambda function in your aws account.</p>
-<p>It&rsquo;s aimed at experienced engineers who know how to write
-software and just want to run a lambda function. The tutorial
-aggregates a lot of the documentation and gotchya&rsquo;s one runs into while
-developing a lambda function for the first time. That way you can
-get the annoying things out the way so you can do what you want to do.</p>
-<p>If you need an explanation of what AWS Lambda is, go here.</p>
-<p>General requirements like dependencies, scaling and billing
-are described in the code comments.</p>
+    <p>This is a tutorial on setting up a dockerized Python AWS lambda function with Terraform.</p>
 <p>Assumptions</p>
 <ul>
 <li>Linux/CLI Familiarity</li>
-<li>An AWS account</li>
+<li>An AWS account with configured cli client.</li>
 <li>Mid-to-senior software level experience</li>
 </ul>
-<h6 id="overview">Overview</h6>
-<ol>
+<h1 id="overview">Overview</h1>
+<ul>
 <li>Create lambda function</li>
-<li>Upload to AWS</li>
-</ol>
-<h5 id="create-lambda-function">Create lambda function</h5>
-<p>First make a folder with a file called app.py to run your lambda code
-and a Dockerfile to containerize it.</p>
+<li>Upload function to AWS and Run it</li>
+</ul>
+<h5 id="1-create-lambda-function">1. Create lambda function</h5>
+<p>In this step, we will make a lambda function in a file called <strong>app.py</strong> and a <strong>Dockerfile</strong> to create a Docker image for the lambda function to live in.</p>
+<h6 id="a-apppy">a. app.py</h6>
+<p>Common practice is to put the lambda function in app.py. Make a folder and add a file named app.py and an empty Dockerfile.</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>mkdir my-lambda-func
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;font-style:italic">cd</span> my-lambda-func
 </span></span><span style="display:flex;"><span>touch app.py
 </span></span><span style="display:flex;"><span>touch Dockerfile
-</span></span></code></pre></div><p>In <code>app.py</code>, paste the following to create a basic handler
-that returns a simple webpage.</p>
+</span></span></code></pre></div><p>In <code>app.py</code>, paste the following to create a handler that returns a webpage.</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">def</span> <span style="color:#666;font-weight:bold;font-style:italic">handler</span>(event, context):
 </span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">return</span> {
 </span></span><span style="display:flex;"><span>        <span style="color:#666;font-style:italic">&#34;headers&#34;</span>: {<span style="color:#666;font-style:italic">&#34;Content-Type&#34;</span>: <span style="color:#666;font-style:italic">&#34;text/html&#34;</span>},
 </span></span><span style="display:flex;"><span>        <span style="color:#666;font-style:italic">&#34;statusCode&#34;</span>: 200,
 </span></span><span style="display:flex;"><span>        <span style="color:#666;font-style:italic">&#34;body&#34;</span>: <span style="color:#666;font-style:italic">&#34;Hello world!&#34;</span>,
 </span></span><span style="display:flex;"><span>    }
-</span></span></code></pre></div><p>In the <code>Dockerfile</code>, paste the following to create
-a container to run app.py.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-Dockerfile" data-lang="Dockerfile"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># AWS Provided lambda image that makes it easy to get up and running</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#888;font-style:italic"># See https://gallery.ecr.aws/lambda/python</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="font-weight:bold;text-decoration:underline">FROM</span><span style="color:#666;font-style:italic"> public.ecr.aws/lambda/python:3.12</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#888;font-style:italic"># LAMBDA_TASK_ROOT is a variable already set by lambda/python:3.12 docker image</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#888;font-style:italic"># AWS Lambda looks for app.py inside of ${LAMBDA_TASK_ROOT}</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#888;font-style:italic"># It tells you where to paste the code.</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
+</span></span></code></pre></div><p>When the lambda function is ran, it will return the dictionary returned by handler as-is. You can return any python datatype you want like a string, integer, dictionary or even a list. As long as it is serializable to JSON.</p>
+<h6 id="b-dockerfile">b. Dockerfile</h6>
+<p>In the <code>Dockerfile</code>, paste the following to create a container to run app.py.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-Dockerfile" data-lang="Dockerfile"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">FROM</span><span style="color:#666;font-style:italic"> public.ecr.aws/lambda/python:3.12</span><span style="">
 </span></span></span><span style="display:flex;"><span><span style=""></span><span style="font-weight:bold;text-decoration:underline">COPY</span> app.py <span style="color:#666;font-style:italic">${</span><span style="color:#666;font-weight:bold;font-style:italic">LAMBDA_TASK_ROOT</span><span style="color:#666;font-style:italic">}</span><span style="">
-</span></span></span><span style="display:flex;"><span><span style="">
 </span></span></span><span style="display:flex;"><span><span style=""></span><span style="font-weight:bold;text-decoration:underline">CMD</span> [ <span style="color:#666;font-style:italic">&#34;app.handler&#34;</span> ]<span style="">
-</span></span></span></code></pre></div><p>Build the docker image containing your lambda function.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>docker build -t my-lambda-func .
-</span></span></code></pre></div><p>Run and Test</p>
+</span></span></span></code></pre></div><p><a href="https://gallery.ecr.aws/lambda/python">source</a></p>
+<p><code>public.ecr.aws/lambda/python:3.12</code> is based on Fedora which uses <code>dnf</code> for package management. That means you can use the following to add python dependencies and packages that require the C compiler..</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-Dockerfile" data-lang="Dockerfile"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">RUN</span> pip install -r requirements.txt<span style="">
+</span></span></span><span style="display:flex;"><span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span><span style="color:#888;font-style:italic"># and for packages that require compilation</span><span style="">
+</span></span></span><span style="display:flex;"><span><span style=""></span><span style="font-weight:bold;text-decoration:underline">RUN</span> dnf install make automake gcc gcc-c++ kernel-devel pkg-config python3-devel -y<span style="">
+</span></span></span></code></pre></div><h6 id="c-run-and-test">c. Run and Test</h6>
+<p>Build the docker image containing your lambda function.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>docker build --platform linux/amd64 -t my-lambda-func .
+</span></span></code></pre></div><p>This image is specifically built for amd64 so you&rsquo;re using m1 you won&rsquo;t accidentally upload lambda functions that aren&rsquo;t runnable in AWS. FYI: AWS lambda can also run docker containers built for ARM.</p>
+<p>Run</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>docker run -p 8080:8080 my-lambda-func
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># In a new shell</span>
+</span></span></code></pre></div><p>Test</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># In a new shell</span>
 </span></span><span style="display:flex;"><span>curl -XPOST <span style="color:#666;font-style:italic">&#34;http://localhost:8080/2015-03-31/functions/function/invocations&#34;</span> -d <span style="color:#666;font-style:italic">&#39;{&#34;payload&#34;:&#34;hello world!&#34;}&#39;</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># You should see some output!</span>
-</span></span></code></pre></div><h5 id="upload-to-aws">Upload to AWS</h5>
-<p>Assumptions</p>
-<ol>
-<li>
-<p>Your aws CLI is set up</p>
-</li>
-<li>
-<p>Upload to ECR.<br>
-a. Login to AWS<br>
-b. Create ECR repo\</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>aws ecr create-repository <span style="color:#666;font-style:italic">\
-</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic"></span>--repository-name my-web-app-images <span style="color:#666;font-style:italic">\
-</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic"></span>--image-scanning-configuration <span style="color:#666;font-weight:bold;font-style:italic">scanOnPush</span>=<span style="font-weight:bold;font-style:italic">true</span> <span style="color:#666;font-style:italic">\
-</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic"></span>--image-tag-mutability IMMUTABLE
-</span></span></code></pre></div><p>c. Upload to ECR</p>
-</li>
-<li>
-<p>Create AWS Lambda function\</p>
-</li>
-<li>
-<p>Create API gateway.</p>
-</li>
-<li>
-<p>Test.</p>
-</li>
-</ol>
-<p>Errata</p>
-<ol>
-<li>Adding dependencies to your aws lambda function</li>
-<li>Lambda permissions</li>
-<li>Why use docker instead of raw lambda functions</li>
-<li></li>
-</ol>
+</span></span></code></pre></div><p>You&rsquo;ll see the following</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{&#34;headers&#34;: {&#34;Content-Type&#34;: <span style="color:#666;font-style:italic">&#34;text/html&#34;</span>}, &#34;statusCode&#34;: 200, &#34;body&#34;: <span style="color:#666;font-style:italic">&#34;Hello world!&#34;</span>}<span style="">%</span>
+</span></span></code></pre></div><p>Congratulations you have ran and tested a lambda function locally!</p>
+<h5 id="2-upload-to-aws-and-run-it">2. Upload to AWS and Run It</h5>
+<p>To upload your lambda function to AWS, you need to upload the docker image, configure the function and add IAM roles so your function can start. All of this can be done in Terraform. Terraform is a tool for managing infrastructure as code. Instructions to install can be found <a href="https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli">here</a>.</p>
+<p>If you have not done so, create a file called main.tf to hold your infrastructure as code and paste the following into it.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-terraform" data-lang="terraform"><span style="display:flex;"><span><span style="color:#888;font-style:italic">// https://developer.hashicorp.com/terraform/tutorials/aws-get-started/aws-build
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span>
+</span></span><span style="display:flex;"><span>terraform {
+</span></span><span style="display:flex;"><span>  required_providers {
+</span></span><span style="display:flex;"><span>    aws = {
+</span></span><span style="display:flex;"><span>      source = <span style="color:#666;font-style:italic">&#34;hashicorp/aws&#34;</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">provider</span> <span style="color:#666;font-style:italic">&#34;aws&#34;</span> {
+</span></span><span style="display:flex;"><span>  region = <span style="color:#666;font-style:italic">&#34;us-west-2&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>And run</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>terraform init
+</span></span></code></pre></div><p>Now you are ready to create resources in your AWS account with terraform. This also assumes that your AWS cli is already set up.</p>
+<p>After saving each terraform block to main.tf, run the following to create the infrastructure in your AWS account.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Have terraform tell you what it plans it do.</span>
+</span></span><span style="display:flex;"><span>terraform plan
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Tell terraform to do whatever it told you it planned to do.</span>
+</span></span><span style="display:flex;"><span>terraform apply
+</span></span></code></pre></div><p>With terraform, always run plan before apply to make sure terraform isn&rsquo;t doing something you don&rsquo;t want.</p>
+<h6 id="a-create-ecr-repo">a. Create ECR Repo</h6>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-terraform" data-lang="terraform"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">resource</span> <span style="color:#666;font-style:italic">&#34;aws_ecr_repository&#34;</span> <span style="color:#666;font-style:italic">&#34;my-lambda-func&#34;</span> {
+</span></span><span style="display:flex;"><span>  name = <span style="color:#666;font-style:italic">&#34;my-lambda-func&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>ECR stands for elastic container registry and it’s used to store docker images so other AWS services can start containers using those images such as your lambda function.</p>
+<h6 id="b-upload-lambda-function-to-ecr">b. Upload lambda function to ECR</h6>
+<p>Run the following commands in your shell to upload the dockerized lambda function to AWS.</p>
+<p>Replace <code>8723490870234</code> with your AWS account id and <code>us-west-2</code> with your region.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Login to ECR</span>
+</span></span><span style="display:flex;"><span>aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin  8723490870234.dkr.ecr.us-east-2.amazonaws.com
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Tag your image</span>
+</span></span><span style="display:flex;"><span>docker tag my-lambda-func:latest 8723490870234.dkr.ecr.us-west-2.amazonaws.com/my-lambda-func:latest
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Upload tagged image to ECR</span>
+</span></span><span style="display:flex;"><span>docker push 8723490870234.dkr.ecr.us-west-2.amazonaws.com/my-lambda-func:latest
+</span></span></code></pre></div><p>This will take some time.</p>
+<h6 id="c-iam-roles">c. IAM Roles</h6>
+<p>We have to give the lambda function permissions to run because AWS denies everything by default. This can be accomplished with the AWS IAM service. IAM stands for identity and access management. AWS uses IAM to manage access to cloud services. The service lets you define roles to delegate permission and access. We will create a type of role called an IAM execution role. Execution roles are what AWS uses allow services to start.</p>
+<p>In order to create an execution role, we need to create a trust policy and a permissions policy. The trust policy is a json object that says the aws lambda service, which will execute the lambda function, can assume the role attached to the function. The permissions policy says the role attached to the function is allowed to execute lambda functions. We are saying to AWS: AWS Lambda service, you may identify as this execution role we created and execute the lambda function!</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-terraform" data-lang="terraform"><span style="display:flex;"><span><span style="color:#888;font-style:italic">// https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">// Trust policy
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span><span style="font-weight:bold;text-decoration:underline">data</span> <span style="color:#666;font-style:italic">&#34;aws_iam_policy_document&#34;</span> <span style="color:#666;font-style:italic">&#34;AWSLambdaTrustPolicy&#34;</span> {
+</span></span><span style="display:flex;"><span>  statement {
+</span></span><span style="display:flex;"><span>    actions = [<span style="color:#666;font-style:italic">&#34;sts:AssumeRole&#34;</span>]
+</span></span><span style="display:flex;"><span>    effect = <span style="color:#666;font-style:italic">&#34;Allow&#34;</span>
+</span></span><span style="display:flex;"><span>    principals {
+</span></span><span style="display:flex;"><span>      type = <span style="color:#666;font-style:italic">&#34;Service&#34;</span>
+</span></span><span style="display:flex;"><span>      identifiers = [<span style="color:#666;font-style:italic">&#34;lambda.amazonaws.com&#34;</span>]
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}<span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">// Create execution role with trust policy attached
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span><span style="font-weight:bold;text-decoration:underline">resource</span> <span style="color:#666;font-style:italic">&#34;aws_iam_role&#34;</span> <span style="color:#666;font-style:italic">&#34;terraform_function_role&#34;</span> {
+</span></span><span style="display:flex;"><span>  name = <span style="color:#666;font-style:italic">&#34;terraform_function_role&#34;</span>
+</span></span><span style="display:flex;"><span>  assume_role_policy = <span style="font-weight:bold;font-style:italic">data</span>.aws_iam_policy_document.AWSLambdaTrustPolicy.json
+</span></span><span style="display:flex;"><span>}<span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">// Give execution role ability to execute lambdas
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span><span style="font-weight:bold;text-decoration:underline">resource</span> <span style="color:#666;font-style:italic">&#34;aws_iam_role_policy_attachment&#34;</span> <span style="color:#666;font-style:italic">&#34;terraform_lambda_policy&#34;</span> {
+</span></span><span style="display:flex;"><span>  role = aws_iam_role.terraform_function_role.name
+</span></span><span style="display:flex;"><span>  policy_arn = <span style="color:#666;font-style:italic">&#34;arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h6 id="d-lambda-function">d. Lambda Function</h6>
+<p>Next, the following code will create a lambda function in AWS using the docker image we uploaded and the execution role we created.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-terraform" data-lang="terraform"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">resource</span> <span style="color:#666;font-style:italic">&#34;aws_lambda_function&#34;</span> <span style="color:#666;font-style:italic">&#34;container_lambda&#34;</span> {
+</span></span><span style="display:flex;"><span>  function_name = <span style="color:#666;font-style:italic">&#34;my-lambda-func&#34;</span><span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">  // terraform sugar to get iam arn
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span>  role          = aws_iam_role.terraform_function_role.arn
+</span></span><span style="display:flex;"><span>  package_type  = <span style="color:#666;font-style:italic">&#34;Image&#34;</span><span style="color:#888;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">  // terraform sugar to get docker image uri from ecr.
+</span></span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"></span>  image_uri     = <span style="color:#666;font-style:italic">&#34;</span><span style="color:#666;font-style:italic">${</span>aws_ecr_repository.my-lambda-func.repository_url<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">:latest&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>When the lambda function is deployed, AWS will stream the docker image to the lambda service so a container can be immediately booted and ran when the lambda function is called.</p>
+<h6 id="e-run-and-test">e. Run and test</h6>
+<p>Now you can put this behind an API gateway or use it in other services like so using boto3. To keep this tutorial short, here is how to immediately validate your uploaded AWS function.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>aws lambda invoke --function-name my-lambda-func /dev/stdout 
+</span></span></code></pre></div><p>This will print</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{&#34;headers&#34;: {&#34;Content-Type&#34;: <span style="color:#666;font-style:italic">&#34;text/html&#34;</span>}, &#34;statusCode&#34;: 200, &#34;body&#34;: <span style="color:#666;font-style:italic">&#34;Hello world!&#34;</span>}
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    &#34;StatusCode&#34;: 200,
+</span></span><span style="display:flex;"><span>    &#34;ExecutedVersion&#34;: <span style="color:#666;font-style:italic">&#34;$LATEST&#34;</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>to the console! :)</p>
+<p>Congratulations you’ve created a lambda function. It can be placed behind an api gateway or called by other services in AWS.</p>
 
     
   </div>
