@@ -6,9 +6,9 @@ description: "Step by step tutorial to create a Python/Docker AWS Lambda functio
 toc: false
 readTime: true
 autonumber: true
-math: true
+math: false
 tags: ["aws", "python", "docker", "terraform"]
-showTags: false
+showTags: true
 hideBackToTop: false
 ---
 

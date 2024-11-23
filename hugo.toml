@@ -31,6 +31,7 @@ listSummaries = true
 listDateFormat = '2 Jan 2006'
 
 breadcrumbs = true
+# math = true
 
 [[params.social]]
 name = "linkedin"
@@ -59,6 +60,13 @@ url = "/about/"
 [markup]
 [markup.highlight]
 style = 'algol'
+  [markup.goldmark]
+    [markup.goldmark.extensions]
+      [markup.goldmark.extensions.passthrough]
+        enable = true
+        [markup.goldmark.extensions.passthrough.delimiters]
+          block = [['\[', '\]'], ['$$', '$$']]
+          inline = [['\(', '\)']]
 
 
 [deployment]

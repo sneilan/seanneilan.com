@@ -2,31 +2,38 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Home on Sean Neilan</title>
-    <link>https://seanneilan.com/</link>
+    <link>http://localhost:1313/</link>
     <description>Recent content in Home on Sean Neilan</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 03 Sep 2024 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://seanneilan.com/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 23 Nov 2024 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Replacing Pencil and Paper with Latex for Math</title>
+      <link>http://localhost:1313/posts/doing-math-with-latex/</link>
+      <pubDate>Sat, 23 Nov 2024 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/doing-math-with-latex/</guid>
+      <description>Can math be done without pencil and paper? Yes.</description>
+    </item>
     <item>
       <title>Hello World Python AWS Lambda</title>
-      <link>https://seanneilan.com/posts/python-aws-lambda/</link>
+      <link>http://localhost:1313/posts/python-aws-lambda/</link>
       <pubDate>Tue, 03 Sep 2024 00:00:00 +0000</pubDate>
-      <guid>https://seanneilan.com/posts/python-aws-lambda/</guid>
+      <guid>http://localhost:1313/posts/python-aws-lambda/</guid>
       <description>Step by step tutorial to create a AWS Python Lambda function.</description>
     </item>
     <item>
       <title>About</title>
-      <link>https://seanneilan.com/about/</link>
+      <link>http://localhost:1313/about/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>https://seanneilan.com/about/</guid>
+      <guid>http://localhost:1313/about/</guid>
       <description>I&amp;rsquo;m helping connect people to funding opportunities using AI at GrantPuma.&#xA;Experience grantpuma.com&#xA;Dec 2023 - Present&#xA;Team Lead&#xA;Management Full stack Devops Machine Learning Technical writing getfliff.com&#xA;May 2023 - Oct 2023&#xA;Senior Software Engineer&#xA;Kafka Legacy python jockmkt.com&#xA;January 2022 - May 2023&#xA;Senior Software Engineer&#xA;Payments Gambling software Microservices trellis.law&#xA;November 2019 - December 2021&#xA;Senior Software Engineer&#xA;APIs Elasticsearch Payments Mentoring merieuxnutrisciences.com&#xA;May 2017 - October 2019</description>
     </item>
     <item>
       <title>Interests</title>
-      <link>https://seanneilan.com/interests/</link>
+      <link>http://localhost:1313/interests/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      <guid>https://seanneilan.com/interests/</guid>
+      <guid>http://localhost:1313/interests/</guid>
       <description>I write software for work and for fun! I&amp;rsquo;m always interested in building new systems, big or small. Here is small sample of software I have recently constructed just for fun. Feel free to check it out!&#xA;Big Number Names&#xA;Compute the name of any number up to infinity&#xA;Art For All&#xA;Text your first and last name to +1 (312) 635-4223 for a unique digital artwork made specifically for you based on a proprietary algorithm.</description>
     </item>
   </channel>
