@@ -17,7 +17,7 @@
 {{ end }}
 
 <body class="{{ $theme }}">
-
+  <div id="root"></div>
   <div class="content">
     <header>
       {{ partial "header.html" . }}
@@ -66,5 +66,19 @@
   setTheme();
 
 </script>
+
+{{ with resources.Get "js/test.jsx" }}
+{{ if hugo.IsDevelopment }}
+{{ with . | js.Build }}
+<script src="{{ .RelPermalink }}"></script>
+{{ end }}
+{{ else }}
+{{ $opts := dict "minify" true }}
+{{ $opts := dict }}
+{{ with . | js.Build $opts | fingerprint }}
+<script src="{{ .RelPermalink }}" integrity="{{ .Data.Integrity }}" crossorigin="anonymous"></script>
+{{ end }}
+{{ end }}
+{{ end }}
 
 </html>

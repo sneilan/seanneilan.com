@@ -34,3 +34,8 @@ features = [
 [author]
 name = 'Francesco Tomaselli'
 homepage = 'https://tomfran.github.io/'
+
+[build]
+  [[build.cachebusters]]
+    source = 'layouts/.*'
+    target = 'css'

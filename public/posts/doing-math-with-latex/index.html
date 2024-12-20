@@ -2,7 +2,7 @@
 <html lang="en-us"
   dir="ltr">
 
-<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=62886&amp;path=livereload" data-no-instant defer></script>
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
   <meta charset="utf-8">
 <meta name="viewport" content="width=device-width"><meta name="description" content="I explored mathematics without pencil and paper. This is exciting!" />
 
@@ -12,7 +12,7 @@
     
 </title>
 
-<link rel="canonical" href="http://localhost:62886/posts/doing-math-with-latex/" />
+<link rel="canonical" href="http://localhost:1313/posts/doing-math-with-latex/" />
 
 
 
@@ -61,7 +61,7 @@
 
 
 <body class="auto">
-
+  <div id="root"></div>
   <div class="content">
     <header>
       
@@ -149,7 +149,7 @@
 
       
       &nbsp; · &nbsp;
-      2 min read
+      1 min read
       
     </p>
 
@@ -163,12 +163,12 @@
   <div class="single-tags">
     
     <span>
-      <a href="http://localhost:62886/tags/math/">#Math</a>
+      <a href="http://localhost:1313/tags/math/">#Math</a>
     </span>
     
     
     <span>
-      <a href="http://localhost:62886/tags/latex/">#Latex</a>
+      <a href="http://localhost:1313/tags/latex/">#Latex</a>
     </span>
     
     
@@ -185,58 +185,9 @@
 
   <div class="single-content">
     <p>I want to study math and I prefer to type on a computer. I tried learning <a href="https://en.wikipedia.org/wiki/LaTeX">Latex</a> (a mathematical typesetting language) to see if it&rsquo;s a good replacement for pencil and paper. It is. One can memorize latex, bang out equations and show steps just like with pencil and paper - especially in Obsidian which has first class Latex support.</p>
-<p>Here&rsquo;s an example equation to solve for x like one would see in algebra class.
-</p>
-$$(x + 2)(x - 1) = 4$$
-<p>
-Multiplying these two binomials using foil gives me
-</p>
-$$x^2 + x - 2 = 4$$
-<p>
-I’m a bit rusty but that’s okay. Latex should be able to handle mistakes. That equation becomes
-</p>
-$$x^2 + x = 6$$
-$$x\cdot(x + 1)=6$$
-$$x+1=\frac{6}{x}$$
-$$1=\frac{6}{x}-x$$
-<p>
+$$(x + 2)(x - 1) = 4$$$$x^2 + x - 2 = 4$$$$x^2 + x = 6$$$$x\cdot(x + 1)=6$$$$x+1=\frac{6}{x}$$$$1=\frac{6}{x}-x$$<p>
 Whoops! That doesn’t feel right. But since this is latex, I can try again and even type equations on my phone. This is wonderful. This is the joy people experience when studying math. Let’s try again.</p>
-$$x^2=6-x$$
-$$x=\frac{6}{x}-1$$
-<p>
-Back where I started :( I’ll try another approach from the beginning.
-</p>
-$$(x+2)(x-1)=4$$
-$$x+2=\frac{4}{x-1}$$
-<p>
-Not great. A google-fu for a hint reveals I forgot the quadratic formula. The new approach will be to rewrite the equation as follows and use the quadratic formula to solve it.
-</p>
-$$x^2 + x - 6=0$$
-<p>
-The quadratic formula is
-</p>
-$$x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}$$
-<p>
-Whereas
-</p>
-$$a=1$$
-$$b=1$$
-$$c=-6$$
-<p>
-Which becomes
-</p>
-$$x=\frac{-1\pm\sqrt{1^2-4\cdot1\cdot-6}}{2\cdot1}$$
-$$x=\frac{-1\pm\sqrt{25}}{2}$$
-$$x=\frac{-1\pm5}{2}$$
-<p>
-Which leaves
-</p>
-$$x=-3$$
-<p>
-And
-</p>
-$$x=2$$
-<p>That was fun and I wrote this on my phone waiting for an oil change at Valvoline in Obsidian. Latex is now a part of my learning toolkit going forward. I’m excited! :)</p>
+$$x^2=6-x$$$$x=\frac{6}{x}-1$$$$(x+2)(x-1)=4$$$$x+2=\frac{4}{x-1}$$$$x^2 + x - 6=0$$$$x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}$$$$a=1$$$$b=1$$$$c=-6$$$$x=\frac{-1\pm\sqrt{1^2-4\cdot1\cdot-6}}{2\cdot1}$$$$x=\frac{-1\pm\sqrt{25}}{2}$$$$x=\frac{-1\pm5}{2}$$$$x=-3$$$$x=2$$<p>That was fun and I wrote this on my phone waiting for an oil change at Valvoline in Obsidian. Latex is now a part of my learning toolkit going forward. I’m excited! :)</p>
 
     
   </div>
@@ -357,5 +308,18 @@ $$x=2$$
   setTheme();
 
 </script>
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+
+
+
+
+
+<script src="/js/test.js"></script>
+
+
+
 
 </html>
