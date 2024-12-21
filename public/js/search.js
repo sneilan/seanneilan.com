@@ -20643,12 +20643,12 @@
      */
     static loadJS(js, options) {
       const { index, documentIds, fieldLength, storedFields, serializationVersion } = js;
-      const miniSearch2 = this.instantiateMiniSearch(js, options);
-      miniSearch2._documentIds = objectToNumericMap(documentIds);
-      miniSearch2._fieldLength = objectToNumericMap(fieldLength);
-      miniSearch2._storedFields = objectToNumericMap(storedFields);
-      for (const [shortId, id] of miniSearch2._documentIds) {
-        miniSearch2._idToShortId.set(id, shortId);
+      const miniSearch = this.instantiateMiniSearch(js, options);
+      miniSearch._documentIds = objectToNumericMap(documentIds);
+      miniSearch._fieldLength = objectToNumericMap(fieldLength);
+      miniSearch._storedFields = objectToNumericMap(storedFields);
+      for (const [shortId, id] of miniSearch._documentIds) {
+        miniSearch._idToShortId.set(id, shortId);
       }
       for (const [term, data] of index) {
         const dataMap = /* @__PURE__ */ new Map();
@@ -20659,9 +20659,9 @@
           }
           dataMap.set(parseInt(fieldId, 10), objectToNumericMap(indexEntry));
         }
-        miniSearch2._index.set(term, dataMap);
+        miniSearch._index.set(term, dataMap);
       }
-      return miniSearch2;
+      return miniSearch;
     }
     /**
      * @ignore
@@ -20669,12 +20669,12 @@
     static loadJSAsync(js, options) {
       return __awaiter(this, void 0, void 0, function* () {
         const { index, documentIds, fieldLength, storedFields, serializationVersion } = js;
-        const miniSearch2 = this.instantiateMiniSearch(js, options);
-        miniSearch2._documentIds = yield objectToNumericMapAsync(documentIds);
-        miniSearch2._fieldLength = yield objectToNumericMapAsync(fieldLength);
-        miniSearch2._storedFields = yield objectToNumericMapAsync(storedFields);
-        for (const [shortId, id] of miniSearch2._documentIds) {
-          miniSearch2._idToShortId.set(id, shortId);
+        const miniSearch = this.instantiateMiniSearch(js, options);
+        miniSearch._documentIds = yield objectToNumericMapAsync(documentIds);
+        miniSearch._fieldLength = yield objectToNumericMapAsync(fieldLength);
+        miniSearch._storedFields = yield objectToNumericMapAsync(storedFields);
+        for (const [shortId, id] of miniSearch._documentIds) {
+          miniSearch._idToShortId.set(id, shortId);
         }
         let count = 0;
         for (const [term, data] of index) {
@@ -20688,9 +20688,9 @@
           }
           if (++count % 1e3 === 0)
             yield wait(0);
-          miniSearch2._index.set(term, dataMap);
+          miniSearch._index.set(term, dataMap);
         }
-        return miniSearch2;
+        return miniSearch;
       });
     }
     /**
@@ -20701,15 +20701,15 @@
       if (serializationVersion !== 1 && serializationVersion !== 2) {
         throw new Error("MiniSearch: cannot deserialize an index created with an incompatible version");
       }
-      const miniSearch2 = new _MiniSearch(options);
-      miniSearch2._documentCount = documentCount;
-      miniSearch2._nextId = nextId;
-      miniSearch2._idToShortId = /* @__PURE__ */ new Map();
-      miniSearch2._fieldIds = fieldIds;
-      miniSearch2._avgFieldLength = averageFieldLength;
-      miniSearch2._dirtCount = dirtCount || 0;
-      miniSearch2._index = new SearchableMap();
-      return miniSearch2;
+      const miniSearch = new _MiniSearch(options);
+      miniSearch._documentCount = documentCount;
+      miniSearch._nextId = nextId;
+      miniSearch._idToShortId = /* @__PURE__ */ new Map();
+      miniSearch._fieldIds = fieldIds;
+      miniSearch._avgFieldLength = averageFieldLength;
+      miniSearch._dirtCount = dirtCount || 0;
+      miniSearch._index = new SearchableMap();
+      return miniSearch;
     }
     /**
      * @ignore
@@ -21128,15 +21128,18 @@
   var documents = [
     {
       id: 1,
-      title: "Moby Dick",
-      text: "Call me Ishmael. Some years ago...",
-      category: "fiction"
+      title: "show running queries",
+      text: `SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state  
+FROM pg_stat_activity  
+ORDER BY duration DESC;`,
+      categories: ["postgres"]
     },
     {
       id: 2,
-      title: "Zen and the Art of Motorcycle Maintenance",
-      text: "I can see by my watch...",
-      category: "fiction"
+      title: `create inverted keyword index`,
+      text: `CREATE EXTENSION pg_trgm;
+CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops)`,
+      category: ["postgres"]
     },
     {
       id: 3,
@@ -21152,19 +21155,90 @@
     }
     // ...and more
   ];
-  var miniSearch = new MiniSearch({
-    fields: ["title", "text"],
-    // fields to index for full-text search
-    storeFields: ["title", "category"]
-    // fields to return with search results
-  });
-  miniSearch.addAll(documents);
-  var Hello = class extends import_react.Component {
-    render() {
-      let results = miniSearch.search("zen art motorcycle");
-      console.log(results);
-      return /* @__PURE__ */ import_react.default.createElement("h1", null, results[0].title);
-    }
+  var Hello = () => {
+    const [query, setQuery] = (0, import_react.useState)("");
+    const [results, setResults] = (0, import_react.useState)([]);
+    const [copySuccess, setCopySuccess] = (0, import_react.useState)("");
+    const divRef = (0, import_react.useRef)(null);
+    const miniSearch = new MiniSearch({
+      fields: ["title", "category"],
+      // fields to index for full-text search
+      storeFields: ["title", "category", "text"]
+      // fields to return with search results
+    });
+    miniSearch.addAll(documents);
+    (0, import_react.useEffect)(() => {
+      console.log(miniSearch.search(query));
+      setResults(miniSearch.search(query));
+    }, [query]);
+    const handleInputChange = (e) => {
+      setQuery(e.target.value);
+      setCopySuccess("Copy");
+    };
+    const copyToClipboard = (text) => {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopySuccess("Copied!");
+      }).catch((err) => {
+        console.error("Failed to copy: ", err);
+        setCopySuccess("Failed to copy!");
+      });
+    };
+    (0, import_react.useEffect)(() => {
+      const handleKeyDown = (event) => {
+        if (event.ctrlKey && event.key === "1") {
+          console.log("Ctrl+1 pressed!");
+        }
+      };
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+      };
+    }, []);
+    return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement(
+      "input",
+      {
+        className: "search-box",
+        type: "text",
+        placeholder: "Search...",
+        value: query,
+        onChange: handleInputChange,
+        autoFocus: true
+      }
+    ), /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, results.map((result) => {
+      return /* @__PURE__ */ import_react.default.createElement(
+        "div",
+        {
+          key: result.id,
+          style: { position: "relative" }
+        },
+        /* @__PURE__ */ import_react.default.createElement("h6", null, result.title),
+        /* @__PURE__ */ import_react.default.createElement(
+          "a",
+          {
+            href: "#",
+            onClick: () => {
+              copyToClipboard(result.text);
+            },
+            style: {
+              position: "absolute",
+              top: "10px",
+              right: "10px"
+            }
+          },
+          copySuccess
+        ),
+        /* @__PURE__ */ import_react.default.createElement(
+          "div",
+          {
+            onClick: () => {
+              copyToClipboard(result.text);
+            },
+            className: "highlight"
+          },
+          /* @__PURE__ */ import_react.default.createElement("pre", { ref: divRef }, result.text)
+        )
+      );
+    })));
   };
   var container = document.getElementById("root");
   var root = (0, import_client.createRoot)(container);

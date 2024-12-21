@@ -1,19 +1,22 @@
-import React, { Component } from 'react';
+import React, { Component, useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import MiniSearch from 'minisearch'
 
 const documents = [
   {
     id: 1,
-    title: 'Moby Dick',
-    text: 'Call me Ishmael. Some years ago...',
-    category: 'fiction'
+    title: 'show running queries',
+    text: `SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state  
+FROM pg_stat_activity  
+ORDER BY duration DESC;`,
+    categories: ['postgres']
   },
   {
     id: 2,
-    title: 'Zen and the Art of Motorcycle Maintenance',
-    text: 'I can see by my watch...',
-    category: 'fiction'
+    title: `create inverted keyword index`,
+    text: `CREATE EXTENSION pg_trgm;
+CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops)`,
+    category: ['postgres']
   },
   {
     id: 3,
@@ -30,19 +33,94 @@ const documents = [
   // ...and more
 ]
 
-let miniSearch = new MiniSearch({
-  fields: ['title', 'text'], // fields to index for full-text search
-  storeFields: ['title', 'category'] // fields to return with search results
-});
+const Hello = () => {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [copySuccess, setCopySuccess] = useState('');
+  const divRef = useRef(null);
 
-miniSearch.addAll(documents);
+  const miniSearch = new MiniSearch({
+    fields: ['title', 'category'], // fields to index for full-text search
+    storeFields: ['title', 'category', 'text'] // fields to return with search results
+  });
 
-class Hello extends Component {
-  render() {
-    let results = miniSearch.search('zen art motorcycle')
-    console.log(results);
-    return <h1>{results[0].title}</h1>;
+  miniSearch.addAll(documents);
+
+  useEffect(() => {
+    console.log(miniSearch.search(query));
+    setResults(miniSearch.search(query));
+  }, [query]);
+
+  const handleInputChange = (e) => {
+    setQuery(e.target.value);
+    setCopySuccess('Copy');
   }
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopySuccess('Copied!');
+      })
+      .catch(err => {
+        console.error('Failed to copy: ', err);
+        setCopySuccess('Failed to copy!');
+      });
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.ctrlKey && event.key === '1') {
+        // copyToClipboard(results[0].text);
+        console.log('Ctrl+1 pressed!');
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  return (
+    <div>
+      <input
+        className="search-box"
+        type="text"
+        placeholder="Search..."
+        value={query}
+        onChange={handleInputChange}
+        autoFocus
+      />
+      <>
+        {results.map((result) => {
+          return <div key={result.id} style={{ position: 'relative' }}
+          >
+            <h6>{result.title}</h6>
+
+            <a
+              href="#"
+              onClick={() => { copyToClipboard(result.text) }}
+              style={{
+                position: 'absolute',
+                top: '10px',
+                right: '10px'
+              }}
+            >
+              {copySuccess}
+            </a>
+            <div
+              onClick={() => {
+                copyToClipboard(result.text)
+              }}
+              className="highlight" >
+              <pre ref={divRef}>{result.text}</pre>
+            </div>
+          </div>;
+        })}
+      </>
+    </div >
+  )
 }
 
 const container = document.getElementById('root');

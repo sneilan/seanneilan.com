@@ -63,6 +63,11 @@
 
   <div class="single-content">
     {{ .Content }}
+
+    {{ if .Param "rootNodeAfterContent" }}
+    <div id="root"></div>
+    {{ end }}
+
     {{ partial "comments.html" . }}
   </div>
 

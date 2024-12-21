@@ -36,5 +36,12 @@
       <guid>http://localhost:1313/interests/</guid>
       <description>&lt;p&gt;I write software for work and for fun! I&amp;rsquo;m always interested in building new systems, big or small.&#xA;Here is small sample of software I have recently constructed just for fun. Feel free to check it out!&lt;/p&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://seanneilan.com/big-number-names.html&#34;&gt;Big Number Names&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;Compute the name of any number up to infinity&lt;/p&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://artforall.chadkouri.com/&#34;&gt;Art For All&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;Text your first and last name to +1 (312) 635-4223 for a unique digital artwork made specifically for you based on a proprietary algorithm.&lt;/p&gt;</description>
     </item>
+    <item>
+      <title>Snippets</title>
+      <link>http://localhost:1313/snippets/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/snippets/</guid>
+      <description>&lt;p&gt;As a software engineer, I keep a lot of stuff in my head.&#xA;I write notes so I can reference what I learned later.&lt;/p&gt;&#xA;&lt;p&gt;This search bar indexes the notes using &lt;a href=&#34;https://github.com/lucaong/minisearch&#34;&gt;minisearch.js&lt;/a&gt;.&#xA;Type in anything to see if I have written about it.&lt;/p&gt;</description>
+    </item>
   </channel>
 </rss>
