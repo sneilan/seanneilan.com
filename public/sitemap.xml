@@ -40,5 +40,7 @@
     <loc>http://localhost:1313/g-xxxxxxxxx/</loc>
   </url><url>
     <loc>http://localhost:1313/interests/</loc>
+  </url><url>
+    <loc>http://localhost:1313/snippets/</loc>
   </url>
 </urlset>
