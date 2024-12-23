@@ -1,0 +1,15 @@
+import axios from "axios";
+
+type Document = {
+  id: number;
+  title: string;
+  text: string;
+  categories: string[];
+}[];
+
+export async function fetchDocuments() {
+  const response = await axios.get<Document>(
+    "https://aaa4.s3.us-west-1.amazonaws.com/snippets.json"
+  );
+  return response.data;
+}
