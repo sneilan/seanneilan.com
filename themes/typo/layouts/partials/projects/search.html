@@ -1,4 +1,4 @@
-{{ with resources.Get "js/search.jsx" }}
+{{ with resources.Get "js/search.tsx" }}
 {{ if hugo.IsDevelopment }}
 {{ with . | js.Build }}
 <script src="{{ .RelPermalink }}"></script>

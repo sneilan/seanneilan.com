@@ -21124,51 +21124,65 @@
   var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   var SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/u;
 
-  // <stdin>
+  // ns-hugo:/Users/sneilan/scratch/seanneilan.com/themes/typo/assets/js/search.ts
   var documents = [
     {
       id: 1,
       title: "show running queries",
-      text: `SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state  
-FROM pg_stat_activity  
+      text: `SELECT pid, now() - pg_stat_activity.query_start AS duration, query, state
+FROM pg_stat_activity
 ORDER BY duration DESC;`,
       categories: ["postgres"]
     },
     {
       id: 2,
-      title: `create inverted keyword index`,
+      title: "create inverted keyword index",
       text: `CREATE EXTENSION pg_trgm;
-CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops)`,
-      category: ["postgres"]
-    },
-    {
-      id: 3,
-      title: "Neuromancer",
-      text: "The sky above the port was...",
-      category: "fiction"
-    },
-    {
-      id: 4,
-      title: "Zen and the Art of Archery",
-      text: "At first sight it must seem...",
-      category: "non-fiction"
+CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops);`,
+      categories: ["postgres"]
     }
-    // ...and more
   ];
+  async function fetchDocuments() {
+    return documents;
+  }
+
+  // <stdin>
   var Hello = () => {
     const [query, setQuery] = (0, import_react.useState)("");
     const [results, setResults] = (0, import_react.useState)([]);
     const [copySuccess, setCopySuccess] = (0, import_react.useState)("");
     const divRef = (0, import_react.useRef)(null);
-    const miniSearch = new MiniSearch({
-      fields: ["title", "category"],
-      // fields to index for full-text search
-      storeFields: ["title", "category", "text"]
-      // fields to return with search results
-    });
-    miniSearch.addAll(documents);
+    const [miniSearch, setMiniSearch] = (0, import_react.useState)(null);
+    const [miniSearchReady, setMiniSearchReady] = (0, import_react.useState)(false);
     (0, import_react.useEffect)(() => {
-      console.log(miniSearch.search(query));
+      setMiniSearch(
+        new MiniSearch({
+          fields: ["title", "categories"],
+          // fields to index for full-text search
+          storeFields: ["title", "text"],
+          // fields to return with search results
+          searchOptions: {
+            prefix: true,
+            fuzzy: 0.2
+          }
+        })
+      );
+      setMiniSearchReady(true);
+    }, []);
+    (0, import_react.useEffect)(() => {
+      if (!miniSearchReady) {
+        return;
+      }
+      const fetchData = async () => {
+        const fetchedDocs = await fetchDocuments();
+        miniSearch.addAll(fetchedDocs);
+      };
+      fetchData();
+    }, [miniSearchReady]);
+    (0, import_react.useEffect)(() => {
+      if (!miniSearchReady) {
+        return;
+      }
       setResults(miniSearch.search(query));
     }, [query]);
     const handleInputChange = (e) => {
@@ -21205,39 +21219,13 @@ CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops)`,
         autoFocus: true
       }
     ), /* @__PURE__ */ import_react.default.createElement(import_react.default.Fragment, null, results.map((result) => {
-      return /* @__PURE__ */ import_react.default.createElement(
+      return /* @__PURE__ */ import_react.default.createElement("div", { key: result.id, style: { position: "relative" } }, /* @__PURE__ */ import_react.default.createElement("h6", null, result.title), /* @__PURE__ */ import_react.default.createElement(
         "div",
         {
-          key: result.id,
-          style: { position: "relative" }
+          className: "highlight"
         },
-        /* @__PURE__ */ import_react.default.createElement("h6", null, result.title),
-        /* @__PURE__ */ import_react.default.createElement(
-          "a",
-          {
-            href: "#",
-            onClick: () => {
-              copyToClipboard(result.text);
-            },
-            style: {
-              position: "absolute",
-              top: "10px",
-              right: "10px"
-            }
-          },
-          copySuccess
-        ),
-        /* @__PURE__ */ import_react.default.createElement(
-          "div",
-          {
-            onClick: () => {
-              copyToClipboard(result.text);
-            },
-            className: "highlight"
-          },
-          /* @__PURE__ */ import_react.default.createElement("pre", { ref: divRef }, result.text)
-        )
-      );
+        /* @__PURE__ */ import_react.default.createElement("pre", { ref: divRef }, result.text)
+      ));
     })));
   };
   var container = document.getElementById("root");

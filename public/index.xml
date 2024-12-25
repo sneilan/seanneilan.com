@@ -41,7 +41,7 @@
       <link>http://localhost:1313/snippets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/snippets/</guid>
-      <description>As a software engineer, I keep a lot of stuff in my head. I write notes so I can reference what I learned later.&#xA;This search bar indexes the notes using minisearch.js. Type in anything to see if I have written about it.</description>
+      <description>I make a lot of code snippets to help me write software faster. This search bar indexes the snippets using minisearch.js for my later use. Type in anything to explore it.</description>
     </item>
   </channel>
 </rss>

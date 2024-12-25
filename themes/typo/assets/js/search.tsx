@@ -16,6 +16,10 @@ const Hello = () => {
       new MiniSearch({
         fields: ["title", "categories"], // fields to index for full-text search
         storeFields: ["title", "text"], // fields to return with search results
+        searchOptions: {
+          prefix: true,
+          fuzzy: 0.2,
+        },
       })
     );
     setMiniSearchReady(true);
@@ -38,6 +42,7 @@ const Hello = () => {
     if (!miniSearchReady) {
       return;
     }
+
     setResults(miniSearch.search(query));
   }, [query]);
 
@@ -89,23 +94,23 @@ const Hello = () => {
             <div key={result.id} style={{ position: "relative" }}>
               <h6>{result.title}</h6>
 
-              <a
-                href="#"
-                onClick={() => {
-                  copyToClipboard(result.text);
-                }}
-                style={{
-                  position: "absolute",
-                  top: "10px",
-                  right: "10px",
-                }}
-              >
-                {copySuccess}
-              </a>
+              {/* <a */}
+              {/*   href="#" */}
+              {/*   onClick={() => { */}
+              {/*     copyToClipboard(result.text); */}
+              {/*   }} */}
+              {/*   style={{ */}
+              {/*     position: "absolute", */}
+              {/*     top: "10px", */}
+              {/*     right: "10px", */}
+              {/*   }} */}
+              {/* > */}
+              {/*   {copySuccess} */}
+              {/* </a> */}
               <div
-                onClick={() => {
-                  copyToClipboard(result.text);
-                }}
+                // onClick={() => {
+                //   copyToClipboard(result.text);
+                // }}
                 className="highlight"
               >
                 <pre ref={divRef}>{result.text}</pre>
