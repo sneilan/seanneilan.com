@@ -17,7 +17,6 @@
 {{ end }}
 
 <body class="{{ $theme }}">
-
   <div class="content">
     <header>
       {{ partial "header.html" . }}
@@ -25,7 +24,9 @@
 
     <main class="main">
       {{ block "main" . }}{{ end }}
+
     </main>
+
   </div>
 
   <footer>
@@ -66,5 +67,10 @@
   setTheme();
 
 </script>
+
+
+{{ if .Param "search" }}
+{{ partialCached "projects/search.html" . }}
+{{ end }}
 
 </html>

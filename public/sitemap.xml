@@ -2,34 +2,45 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>http://localhost:62886/tags/aws/</loc>
+    <loc>http://localhost:1313/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/latex/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/math/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/posts/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/posts/doing-math-with-latex/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/</loc>
+    <lastmod>2024-11-23T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/aws/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:62886/tags/docker/</loc>
+    <loc>http://localhost:1313/tags/docker/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:62886/posts/python-aws-lambda/</loc>
+    <loc>http://localhost:1313/posts/python-aws-lambda/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:62886/</loc>
+    <loc>http://localhost:1313/tags/python/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:62886/posts/</loc>
+    <loc>http://localhost:1313/tags/terraform/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:62886/tags/python/</loc>
-    <lastmod>2024-09-03T00:00:00+00:00</lastmod>
+    <loc>http://localhost:1313/about/</loc>
   </url><url>
-    <loc>http://localhost:62886/tags/</loc>
-    <lastmod>2024-09-03T00:00:00+00:00</lastmod>
+    <loc>http://localhost:1313/g-xxxxxxxxx/</loc>
   </url><url>
-    <loc>http://localhost:62886/tags/terraform/</loc>
-    <lastmod>2024-09-03T00:00:00+00:00</lastmod>
+    <loc>http://localhost:1313/interests/</loc>
   </url><url>
-    <loc>http://localhost:62886/about/</loc>
-  </url><url>
-    <loc>http://localhost:62886/g-xxxxxxxxx/</loc>
-  </url><url>
-    <loc>http://localhost:62886/interests/</loc>
+    <loc>http://localhost:1313/snippets/</loc>
   </url>
 </urlset>

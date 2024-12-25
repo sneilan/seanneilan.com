@@ -36,5 +36,12 @@
       <guid>http://localhost:1313/interests/</guid>
       <description>I write software for work and for fun! I&amp;rsquo;m always interested in building new systems, big or small. Here is small sample of software I have recently constructed just for fun. Feel free to check it out!&#xA;Big Number Names&#xA;Compute the name of any number up to infinity&#xA;Art For All&#xA;Text your first and last name to +1 (312) 635-4223 for a unique digital artwork made specifically for you based on a proprietary algorithm.</description>
     </item>
+    <item>
+      <title>Snippets</title>
+      <link>http://localhost:1313/snippets/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/snippets/</guid>
+      <description>I make a lot of code snippets to help me write software faster. This search bar indexes the snippets using minisearch.js for my later use. Type in anything to explore it.</description>
+    </item>
   </channel>
 </rss>

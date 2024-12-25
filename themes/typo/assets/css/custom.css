@@ -1,1 +1,11 @@
 /* Place custom css here */
+
+
+input.search-box {
+  color: var(--content-primary);
+  /* background-color: var(--content-secondary); */
+  border: 1px solid var(--content-primary);
+  border-radius: 5px;
+  padding: 8px;
+  width: 100%;
+}
