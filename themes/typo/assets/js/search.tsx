@@ -35,9 +35,13 @@ const Hello = () => {
     const fetchData = async () => {
       const fetchedDocs = await fetchDocuments();
       miniSearch.addAll(fetchedDocs);
+
+      // Uncomment to preset search for development.
+      setResults(miniSearch.search('ros'));
     };
 
     fetchData();
+
   }, [miniSearchReady]);
 
   useEffect(() => {
