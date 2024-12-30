@@ -21140,6 +21140,16 @@ ORDER BY duration DESC;`,
       text: `CREATE EXTENSION pg_trgm;
 CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops);`,
       categories: ["postgres"]
+    },
+    {
+      id: 3,
+      title: "puppypi ros cheatsheet",
+      text: `puppypi # https://linkcuts.com/hretydwt
+# ssh into a puppypi
+
+
+`,
+      categories: ["python", "ros", "puppypi"]
     }
   ];
   async function fetchDocuments() {
