@@ -21124,7 +21124,7 @@
   var wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   var SPACE_OR_PUNCTUATION = /[\n\r\p{Z}\p{P}]+/u;
 
-  // ns-hugo:/Users/sneilan/scratch/seanneilan.com/themes/typo/assets/js/search.ts
+  // ns-hugo-imp:/home/sneilan/seanneilan.com/themes/typo/assets/js/search.ts
   var documents = [
     {
       id: 1,
@@ -21140,6 +21140,37 @@ ORDER BY duration DESC;`,
       text: `CREATE EXTENSION pg_trgm;
 CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops);`,
       categories: ["postgres"]
+    },
+    {
+      id: 3,
+      title: "PuppyPi ROS getting started notes",
+      text: `
+# Buy one here -> https://linkcuts.com/hretydwt
+
+ROS stands for Robot Operating System (https://ros.org/)
+
+# ssh into a puppypi
+# First buy a 2G usb wifi dongle.
+# https://www.amazon.com/gp/product/B0CZ82RM5L/ runs on Linux.
+# Connect to puppy pi wifi HW-49C2178C
+ssh pi@192.168.149.1 (password: raspberry)
+
+# Example commands can be ran after login
+# without changing directories
+
+# Advanced servo demo
+rosrun puppy_advanced_functions self_balancing_demo.py
+
+# Camera code
+rosrun puppy_advanced_functions face_detect_demo.py
+
+# Walk demo
+rosrun puppy_control puppy_demo.py
+
+# Find all other demos by running
+cd ~/puppy_pi/src
+# @TODO list packages with ros commands.`,
+      categories: ["python", "ros", "puppypi"]
     }
   ];
   async function fetchDocuments() {
@@ -21157,10 +21188,10 @@ CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops);`,
     (0, import_react.useEffect)(() => {
       setMiniSearch(
         new MiniSearch({
-          fields: ["title", "categories"],
           // fields to index for full-text search
-          storeFields: ["title", "text"],
+          fields: ["title", "categories"],
           // fields to return with search results
+          storeFields: ["title", "text"],
           searchOptions: {
             prefix: true,
             fuzzy: 0.2
