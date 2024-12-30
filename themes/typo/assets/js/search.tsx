@@ -14,8 +14,10 @@ const Hello = () => {
   useEffect(() => {
     setMiniSearch(
       new MiniSearch({
-        fields: ["title", "categories"], // fields to index for full-text search
-        storeFields: ["title", "text"], // fields to return with search results
+        // fields to index for full-text search
+        fields: ["title", "categories"],
+        // fields to return with search results
+        storeFields: ["title", "text"],
         searchOptions: {
           prefix: true,
           fuzzy: 0.2,

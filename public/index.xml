@@ -41,7 +41,7 @@
       <link>http://localhost:1313/snippets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/snippets/</guid>
-      <description>I make a lot of code snippets to help me write software faster. This search bar indexes the snippets using minisearch.js for my later use. Type in anything to explore it.</description>
+      <description>I make a lot of code snippets to help me write software. This search bar indexes them with minisearch.js. Explore what I&amp;rsquo;ve written by typing anything below. Try &amp;ldquo;postgres&amp;rdquo; or &amp;ldquo;python&amp;rdquo;.</description>
     </item>
   </channel>
 </rss>

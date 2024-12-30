@@ -21157,10 +21157,10 @@ CREATE INDEX trgm_title ON table USING gin (title gin_trgm_ops);`,
     (0, import_react.useEffect)(() => {
       setMiniSearch(
         new MiniSearch({
-          fields: ["title", "categories"],
           // fields to index for full-text search
-          storeFields: ["title", "text"],
+          fields: ["title", "categories"],
           // fields to return with search results
+          storeFields: ["title", "text"],
           searchOptions: {
             prefix: true,
             fuzzy: 0.2
