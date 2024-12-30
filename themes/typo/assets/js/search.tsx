@@ -37,7 +37,7 @@ const Hello = () => {
       miniSearch.addAll(fetchedDocs);
 
       // Uncomment to preset search for development.
-      setResults(miniSearch.search('ros'));
+      // setResults(miniSearch.search('ros'));
     };
 
     fetchData();

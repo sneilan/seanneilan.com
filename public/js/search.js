@@ -21207,7 +21207,6 @@ cd ~/puppy_pi/src
       const fetchData = async () => {
         const fetchedDocs = await fetchDocuments();
         miniSearch.addAll(fetchedDocs);
-        setResults(miniSearch.search("ros"));
       };
       fetchData();
     }, [miniSearchReady]);
