@@ -15,9 +15,9 @@ const Hello = () => {
     setMiniSearch(
       new MiniSearch({
         // fields to index for full-text search
-        fields: ["title", "categories"],
+        fields: ["title", "tags"],
         // fields to return with search results
-        storeFields: ["title", "text"],
+        storeFields: ["title", "code"],
         searchOptions: {
           prefix: true,
           fuzzy: 0.2,
@@ -41,7 +41,6 @@ const Hello = () => {
     };
 
     fetchData();
-
   }, [miniSearchReady]);
 
   useEffect(() => {
@@ -119,7 +118,7 @@ const Hello = () => {
                 // }}
                 className="highlight"
               >
-                <pre ref={divRef}>{result.text}</pre>
+                <pre ref={divRef}>{result.code}</pre>
               </div>
             </div>
           );
