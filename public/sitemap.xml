@@ -37,6 +37,8 @@
   </url><url>
     <loc>http://localhost:1313/about/</loc>
   </url><url>
+    <loc>http://localhost:1313/big-number-names/</loc>
+  </url><url>
     <loc>http://localhost:1313/g-xxxxxxxxx/</loc>
   </url><url>
     <loc>http://localhost:1313/interests/</loc>
