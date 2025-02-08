@@ -24917,6 +24917,43 @@
     return result;
   };
   var getPowers = (n) => {
+    `
+def get_powers(n):
+  """
+  Returns a list where the last element in the list is how many 1000**0's fit into n,
+  the second to last element is how many 1000**1's fit into n
+  the third to last element is how many 1000**2 fit into n
+  >>> get_powers( 603 )
+  [603]
+  >>> get_powers( 1002 )
+  [1, 2]
+  >>> get_powers( 1683 )
+  [1, 683]
+  >>> get_powers( 59052 )
+  [59, 52]
+  >>> get_powers( 3000003 )
+  [3, 0, 3]
+  """
+
+  #find the largest power of 10 that fits into q
+  i = int(math.floor(math.log(n,1000))) # is largest power of 1000 that fits into n
+  a = 1000**i # the power itself
+
+  # see get_powers docstring for explanation of array
+  powers = [0] # stands for first 1000
+  for j in range(i):
+    powers.append(0)
+
+  # find out how much of each power of 1000 fits into n
+  q = n
+  for i in range(len(powers)):
+    num_that_fit = q / a
+    powers[i] = num_that_fit
+    q = q % a
+    a /= 1000
+
+  return powers
+`;
     return splitNumber(n).map(function(group) {
       return parseInt(group);
     });
@@ -24965,7 +25002,6 @@
       tens_combiners[n_tens]
     );
     if (ones_and_tens_letter !== null) {
-      debugger;
       ret.push(n_ones !== 3 ? ones_and_tens_letter : "s");
     } else if (!tens) {
       const ones_and_hundreds_letter = commonLetter(
@@ -24994,14 +25030,16 @@
       return "";
     }
     const q = Math.floor((parseInt(n) - 3) / 3);
-    if (q <= 999) {
-      ret.push(getName(q));
-      if (q > 9) {
-        ret.push("illion");
-      } else if (q > 0) {
-        ret.push("on");
+    if (n.length <= 3) {
+      if (q <= 999) {
+        ret.push(getName(q));
+        if (q > 9) {
+          ret.push("illion");
+        } else if (q > 0) {
+          ret.push("on");
+        }
+        return ret.join("");
       }
-      return ret.join("");
     }
     let name = "";
     let powers = getPowers(q);
@@ -25042,7 +25080,7 @@
     const handleInputChange = (e) => {
       setValue(e.target.value);
       setPrintedNumber(printNumber(e.target.value));
-      console.log(getPowers(e.target.value));
+      console.log(getName(e.target.value));
     };
     return /* @__PURE__ */ import_react.default.createElement("div", null, /* @__PURE__ */ import_react.default.createElement(
       "input",

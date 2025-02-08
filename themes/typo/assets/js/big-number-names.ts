@@ -114,6 +114,44 @@ export const splitNumber = (n_str: string) => {
 };
 
 export const getPowers = (n: string) => {
+  `
+def get_powers(n):
+  """
+  Returns a list where the last element in the list is how many 1000**0's fit into n,
+  the second to last element is how many 1000**1's fit into n
+  the third to last element is how many 1000**2 fit into n
+  >>> get_powers( 603 )
+  [603]
+  >>> get_powers( 1002 )
+  [1, 2]
+  >>> get_powers( 1683 )
+  [1, 683]
+  >>> get_powers( 59052 )
+  [59, 52]
+  >>> get_powers( 3000003 )
+  [3, 0, 3]
+  """
+
+  #find the largest power of 10 that fits into q
+  i = int(math.floor(math.log(n,1000))) # is largest power of 1000 that fits into n
+  a = 1000**i # the power itself
+
+  # see get_powers docstring for explanation of array
+  powers = [0] # stands for first 1000
+  for j in range(i):
+    powers.append(0)
+
+  # find out how much of each power of 1000 fits into n
+  q = n
+  for i in range(len(powers)):
+    num_that_fit = q / a
+    powers[i] = num_that_fit
+    q = q % a
+    a /= 1000
+
+  return powers
+`;
+
   return splitNumber(n).map(function (group) {
     return parseInt(group);
   });
@@ -130,7 +168,7 @@ const commonLetter = (a: string[], b: string[]) => {
   return null;
 };
 
-const getName = (n: number): string => {
+export const getName = (n: number): string => {
   let ret: string[] = [];
 
   // do not need the conway weschler algorithm to determine the name of anything less than 10^33
@@ -177,7 +215,6 @@ const getName = (n: number): string => {
   );
 
   if (ones_and_tens_letter !== null) {
-    debugger;
     ret.push(n_ones !== 3 ? ones_and_tens_letter : "s"); // for special case of tre, only add 's'
   } else if (!tens) {
     // can't use a common letter between ones and tens, ones and hundreds
@@ -222,18 +259,19 @@ export const bigNumExp = (n: string): string => {
   }
 
   const q = Math.floor((parseInt(n) - 3) / 3);
+  if (n.length <= 3) {
+    // if q is 999 or less, don't need to combine names with illi
+    if (q <= 999) {
+      ret.push(getName(q));
 
-  // if q is 999 or less, don't need to combine names with illi
-  if (q <= 999) {
-    ret.push(getName(q));
+      if (q > 9) {
+        ret.push("illion");
+      } else if (q > 0) {
+        ret.push("on");
+      }
 
-    if (q > 9) {
-      ret.push("illion");
-    } else if (q > 0) {
-      ret.push("on");
+      return ret.join("");
     }
-
-    return ret.join("");
   }
 
   // // otherwise, we have to use the 1,000,000,000,000W ... 1000000X + 1000Y + Z algorithm

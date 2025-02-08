@@ -1,6 +1,12 @@
 import React, { Component, useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { splitNumber, printNumber, getPowers } from "./big-number-names";
+import {
+  splitNumber,
+  printNumber,
+  getPowers,
+  bigNumExp,
+  getName,
+} from "./big-number-names";
 
 const BigNumberNames = () => {
   const [value, setValue] = useState("");
@@ -9,7 +15,9 @@ const BigNumberNames = () => {
   const handleInputChange = (e) => {
     setValue(e.target.value);
     setPrintedNumber(printNumber(e.target.value));
-    console.log(getPowers(e.target.value));
+    // console.log(bigNumExp(e.target.value));
+    console.log(getName(e.target.value));
+    // console.log(getPowers(e.target.value));
   };
 
   return (
