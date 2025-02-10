@@ -113,7 +113,7 @@ export const splitNumber = (n_str: string) => {
   return result;
 };
 
-export const getPowers = (n: string) => {
+export const getPowers = (n: bigint) => {
   `
 def get_powers(n):
   """
@@ -152,6 +152,7 @@ def get_powers(n):
   return powers
 `;
 
+  // const i =
   return splitNumber(n).map(function (group) {
     return parseInt(group);
   });
@@ -168,12 +169,12 @@ const commonLetter = (a: string[], b: string[]) => {
   return null;
 };
 
-export const getName = (n: number): string => {
+export const getName = (n: bigint): string => {
   let ret: string[] = [];
 
   // do not need the conway weschler algorithm to determine the name of anything less than 10^33
-  if (n < 10 && n >= 0) {
-    const ones_name = normal_no_illion[n];
+  if (n < 10n && n >= 0n) {
+    const ones_name = normal_no_illion[parseInt(n.toString())];
     if (typeof ones_name != "string") {
       throw Error();
     }
@@ -181,26 +182,26 @@ export const getName = (n: number): string => {
     return ret.join("");
   }
 
-  if (n < 0) {
+  if (n < BigInt(0)) {
     return ret.join("");
   }
 
   // find the number of hundreds, tens and ones that fit into n & get the appropriate name
   let q = n;
-  const n_hundreds = Math.floor(q / 100);
+  const n_hundreds = parseInt((q / 100n).toString());
   let hundreds = "";
   if (n_hundreds > 0) {
     hundreds = hundreds_names[n_hundreds];
   }
 
-  q %= 100;
-  const n_tens = Math.floor(q / 10);
+  q %= BigInt(100);
+  const n_tens = parseInt((q / BigInt(10)).toString());
   let tens = "";
   if (n_tens > 0) {
     tens = tens_names[n_tens];
   }
 
-  const n_ones = q % 10;
+  const n_ones = parseInt((q % 10n).toString());
   let ones = "";
   if (n_ones > 0) {
     ones = ones_names[n_ones];
@@ -247,19 +248,19 @@ export const getName = (n: number): string => {
   return ret.join("");
 };
 
-export const bigNumExp = (n: string): string => {
+export const bigNumExp = (n: bigint): string => {
   /*
   Returns the english name of any nth power of 10 (10^n) up to infinity
   Takes a string so we don't need to use a big integer library.
   */
   const ret: string[] = [];
 
-  if (n === "") {
-    return "";
-  }
+  // if (n === "") {
+  //   return "";
+  // }
 
-  const q = Math.floor((parseInt(n) - 3) / 3);
-  if (n.length <= 3) {
+  const q = (BigInt(n) - BigInt(3)) / BigInt(3);
+  if (n <= 3) {
     // if q is 999 or less, don't need to combine names with illi
     if (q <= 999) {
       ret.push(getName(q));
@@ -278,7 +279,7 @@ export const bigNumExp = (n: string): string => {
   let name = "";
   let powers = getPowers(q); // powers is arranged from highest to lowest
   let i = 0;
-  forEach(powers, function (power: number) {
+  forEach(powers, function (power: bigint) {
     ret.push(power > 0 ? getName(power) : "nilli");
     name += power > 0 ? getName(power) : "nilli";
     // combine each name with illi
@@ -306,8 +307,11 @@ export const printNumber = (n: string) => {
   let i = 0;
   forEach(groups, (group: string) => {
     if (group !== "000") {
-      const powerName = bigNumExp("" + 3 * (groups.length - (i + 1)));
-      const smallName = numberConverter.toWords(parseInt(group)) as string;
+      const powerName = bigNumExp(BigInt(3 * (groups.length - (i + 1))));
+      const smallName = numberConverter.toWords(parseInt(group));
+      if (typeof smallName !== "string") {
+        throw Error();
+      }
       ret.push(smallName);
       ret.push(powerName);
     }

@@ -24968,30 +24968,30 @@ def get_powers(n):
   };
   var getName = (n) => {
     let ret = [];
-    if (n < 10 && n >= 0) {
-      const ones_name = normal_no_illion[n];
+    if (n < 10n && n >= 0n) {
+      const ones_name = normal_no_illion[parseInt(n.toString())];
       if (typeof ones_name != "string") {
         throw Error();
       }
       ret.push(ones_name);
       return ret.join("");
     }
-    if (n < 0) {
+    if (n < BigInt(0)) {
       return ret.join("");
     }
     let q = n;
-    const n_hundreds = Math.floor(q / 100);
+    const n_hundreds = parseInt((q / 100n).toString());
     let hundreds = "";
     if (n_hundreds > 0) {
       hundreds = hundreds_names[n_hundreds];
     }
-    q %= 100;
-    const n_tens = Math.floor(q / 10);
+    q %= BigInt(100);
+    const n_tens = parseInt((q / BigInt(10)).toString());
     let tens = "";
     if (n_tens > 0) {
       tens = tens_names[n_tens];
     }
-    const n_ones = q % 10;
+    const n_ones = parseInt((q % 10n).toString());
     let ones = "";
     if (n_ones > 0) {
       ones = ones_names[n_ones];
@@ -25026,11 +25026,8 @@ def get_powers(n):
   };
   var bigNumExp = (n) => {
     const ret = [];
-    if (n === "") {
-      return "";
-    }
-    const q = Math.floor((parseInt(n) - 3) / 3);
-    if (n.length <= 3) {
+    const q = (BigInt(n) - BigInt(3)) / BigInt(3);
+    if (n <= 3) {
       if (q <= 999) {
         ret.push(getName(q));
         if (q > 9) {
@@ -25063,8 +25060,11 @@ def get_powers(n):
     let i = 0;
     (0, import_lodash.forEach)(groups, (group) => {
       if (group !== "000") {
-        const powerName = bigNumExp("" + 3 * (groups.length - (i + 1)));
+        const powerName = bigNumExp(BigInt(3 * (groups.length - (i + 1))));
         const smallName = numberConverter.toWords(parseInt(group));
+        if (typeof smallName !== "string") {
+          throw Error();
+        }
         ret.push(smallName);
         ret.push(powerName);
       }
