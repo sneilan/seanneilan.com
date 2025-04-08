@@ -23627,12 +23627,7 @@
   // ns-hugo-imp:/home/sneilan/.scratch/seanneilan.com/themes/typo/assets/js/search.ts
   async function fetchDocuments() {
     const response = await axios_default.get(
-      "https://aaa4.s3.us-west-1.amazonaws.com/snippets.json",
-      {
-        params: {
-          t: (/* @__PURE__ */ new Date()).getTime()
-        }
-      }
+      "https://aaa4.s3.us-west-1.amazonaws.com/snippets.json"
     );
     return response.data;
   }
