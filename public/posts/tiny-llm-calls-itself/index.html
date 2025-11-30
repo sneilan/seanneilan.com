@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en-us"
+  dir="ltr">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width"><meta name="description" content="Using qwen-agent and Ollama to create a fully local agentic program that chains two tasks together." />
+
+<title>
+    
+    A Tiny LLM That Calls Itself | Sean Neilan
+    
+</title>
+
+<link rel="canonical" href="http://localhost:1313/posts/tiny-llm-calls-itself/" />
+
+
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/assets/combined.min.f8713457554b3b8ed5022394885e629f1a88af5c7fda362f859a6331ef58235c.css" media="all">
+
+
+
+
+
+  
+</head>
+
+
+
+
+
+
+
+<body class="auto">
+  <div class="content">
+    <header>
+      
+
+<div class="header">
+
+    
+
+    <h1 class="header-title">Sean Neilan</h1>
+
+    <div class="flex">
+        
+
+        
+        
+        <p class="small ">
+            <a href="/">
+                /home
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/snippets/">
+                /snippets
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/posts/">
+                /posts
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/interests/">
+                /interests
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/about/">
+                /about
+            </a>
+        </p>
+        
+        
+    </div>
+
+    
+
+</div>
+    </header>
+
+    <main class="main">
+      
+
+
+
+
+<div class="breadcrumbs">
+    
+    <a href="/">Home</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a href="/posts/">Posts</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a class="breadcrumbs-current" href="/posts/tiny-llm-calls-itself/">A Tiny LLM That Calls Itself</a>
+</div>
+
+
+<div  class="autonumber" >
+
+  <div class="single-intro-container">
+
+    
+
+    <h1 class="single-title">A Tiny LLM That Calls Itself</h1>
+    
+    <p class="single-summary">A tiny local LLM writes code to scrape a website, then calls itself to summarize what it found.</p>
+    
+
+    
+
+    <p class="single-readtime">
+      
+      
+      
+      <time datetime="2024-11-29T00:00:00&#43;00:00">November 29, 2024</time>
+      
+
+      
+      &nbsp; · &nbsp;
+      3 min read
+      
+    </p>
+
+  </div>
+
+  
+
+  
+  
+
+  <div class="single-tags">
+    
+    <span>
+      <a href="http://localhost:1313/tags/python/">#Python</a>
+    </span>
+    
+    
+    <span>
+      <a href="http://localhost:1313/tags/llm/">#Llm</a>
+    </span>
+    
+    
+    <span>
+      <a href="http://localhost:1313/tags/local-ai/">#Local-Ai</a>
+    </span>
+    
+    
+  </div>
+
+  
+  
+
+  
+
+  
+
+  
+
+  <div class="single-content">
+    <p>I wanted to see how small of an LLM I could use to run a multi-step agentic workflow entirely locally. The <a href="https://github.com/QwenLM/Qwen-Agent">Qwen-Agent</a> library is the best framework for experimenting with Qwen locally. The answer: Qwen 1.7b works reliably.</p>
+<p>The idea is simple: give the LLM a task that requires two steps, but have it figure out how to chain those steps together. Step 1: write Python to scrape a webpage and save it. Step 2: call itself with a new prompt to read that file and summarize it. The LLM decides what code to write and when to hand off to the next instance.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li><a href="https://ollama.ai/">Ollama</a> installed</li>
+<li><a href="https://docs.astral.sh/uv/">uv</a> (Python package manager)</li>
+</ul>
+<p>Pull the Qwen model:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ollama pull qwen3:1.7b
+</span></span></code></pre></div><p>Install the Python dependencies with uv:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>uv pip install qwen-agent json5
+</span></span></code></pre></div><h2 id="the-code">The Code</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">pprint</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">subprocess</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">pprint</span> <span style="font-weight:bold;text-decoration:underline">import</span> pprint
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">urllib.parse</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">json5</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">qwen_agent.agents</span> <span style="font-weight:bold;text-decoration:underline">import</span> Assistant
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">qwen_agent.tools.base</span> <span style="font-weight:bold;text-decoration:underline">import</span> BaseTool, register_tool
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>@register_tool(<span style="color:#666;font-style:italic">&#34;continuation_prompt&#34;</span>)
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">class</span> <span style="color:#666;font-weight:bold;font-style:italic">BashShell</span>(BaseTool):
+</span></span><span style="display:flex;"><span>    description = <span style="color:#666;font-style:italic">&#34;Create a prompt for another qwen to continue your work.&#34;</span>
+</span></span><span style="display:flex;"><span>    parameters = [
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            <span style="color:#666;font-style:italic">&#34;name&#34;</span>: <span style="color:#666;font-style:italic">&#34;prompt&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#666;font-style:italic">&#34;type&#34;</span>: <span style="color:#666;font-style:italic">&#34;string&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#666;font-style:italic">&#34;description&#34;</span>: <span style="color:#666;font-style:italic">&#34;Prompt with all details to continue your work.&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#666;font-style:italic">&#34;required&#34;</span>: <span style="font-weight:bold;text-decoration:underline">True</span>,
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">def</span> <span style="color:#666;font-weight:bold;font-style:italic">call</span>(<span style="font-weight:bold;font-style:italic">self</span>, params: <span style="font-weight:bold;font-style:italic">str</span>, **kwargs) -&gt; <span style="font-weight:bold;font-style:italic">str</span>:
+</span></span><span style="display:flex;"><span>        prompt = json5.loads(params)[<span style="color:#666;font-style:italic">&#34;prompt&#34;</span>]
+</span></span><span style="display:flex;"><span>        response = execute_machine(prompt)
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">return</span> json5.dumps({<span style="color:#666;font-style:italic">&#34;response&#34;</span>: response})
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Configure the LLM to use local Ollama server.</span>
+</span></span><span style="display:flex;"><span>llm_cfg = {
+</span></span><span style="display:flex;"><span>    <span style="color:#888;font-style:italic">#&#34;model&#34;: &#34;qwen3:0.6b&#34;,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#666;font-style:italic">&#34;model&#34;</span>: <span style="color:#666;font-style:italic">&#34;qwen3:1.7b&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#888;font-style:italic"># &#34;model&#34;: &#34;qwen3:4b&#34;,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#888;font-style:italic"># &#34;model&#34;: &#34;qwen3:8b&#34;,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#666;font-style:italic">&#34;model_server&#34;</span>: <span style="color:#666;font-style:italic">&#34;http://localhost:11434/v1&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#666;font-style:italic">&#34;api_key&#34;</span>: <span style="color:#666;font-style:italic">&#34;ollama&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#666;font-style:italic">&#34;generate_cfg&#34;</span>: {<span style="color:#666;font-style:italic">&#34;top_p&#34;</span>: 0.8},
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Create an agent</span>
+</span></span><span style="display:flex;"><span>system_instruction = <span style="color:#666;font-style:italic">&#34;&#34;&#34;You are a helpful assistant that uses the code_interpeter to write/execute python code then calls the continuation_prompt tool to tell the next qwen to continue the work.&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>tools = [<span style="color:#666;font-style:italic">&#34;code_interpreter&#34;</span>, <span style="color:#666;font-style:italic">&#34;continuation_prompt&#34;</span>]
+</span></span><span style="display:flex;"><span>bot = Assistant(llm=llm_cfg, system_message=system_instruction, function_list=tools)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">def</span> <span style="color:#666;font-weight:bold;font-style:italic">execute_machine</span>(query: <span style="font-weight:bold;font-style:italic">str</span>):
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;</span><span style="color:#666;font-style:italic">\n\n</span><span style="color:#666;font-style:italic">Query: </span><span style="color:#666;font-style:italic">{</span>query<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">&#34;</span>)
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">&#34;-&#34;</span> * 60)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    messages = [{<span style="color:#666;font-style:italic">&#34;role&#34;</span>: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, <span style="color:#666;font-style:italic">&#34;content&#34;</span>: query}]
+</span></span><span style="display:flex;"><span>    responses = []
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">for</span> response <span style="font-weight:bold">in</span> bot.run(messages=messages):
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">for</span> msg <span style="font-weight:bold">in</span> response:
+</span></span><span style="display:flex;"><span>            name = msg.get(<span style="color:#666;font-style:italic">&#39;name&#39;</span>, msg[<span style="color:#666;font-style:italic">&#39;role&#39;</span>])
+</span></span><span style="display:flex;"><span>            <span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;[</span><span style="color:#666;font-style:italic">{</span>name<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">] </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>][:100]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">...&#34;</span>)
+</span></span><span style="display:flex;"><span>        responses.append(response[0])
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#888;font-style:italic"># Print the final response</span>
+</span></span><span style="display:flex;"><span>    blah = []
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">if</span> response:
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">for</span> msg <span style="font-weight:bold">in</span> response:
+</span></span><span style="display:flex;"><span>            <span style="font-weight:bold;text-decoration:underline">if</span> msg.get(<span style="color:#666;font-style:italic">&#34;role&#34;</span>) == <span style="color:#666;font-style:italic">&#34;assistant&#34;</span> <span style="font-weight:bold">and</span> msg.get(<span style="color:#666;font-style:italic">&#34;content&#34;</span>):
+</span></span><span style="display:flex;"><span>                <span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;Response: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">&#34;</span>)
+</span></span><span style="display:flex;"><span>                blah.append(msg[<span style="color:#666;font-style:italic">&#34;content&#34;</span>])
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">return</span> <span style="color:#666;font-style:italic">&#34;&#34;</span>.join(blah)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>scrape_and_summarize = <span style="color:#666;font-style:italic">&#34;&#34;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Use the requests library to fetch the contents of https://seanneilan.com/ and save it as index.html to the current directory using code_interpreter.
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Then use continuation_prompt tool to tell another qwen to use the code_interpreter tool to read the contents of that index.html and summarize its contents. Do not give any instructions on how to write python to the continuation_prompt tool.
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">&#34;&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>execute_machine(scrape_and_summarize)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">&#34;</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span> + <span style="color:#666;font-style:italic">&#34;=&#34;</span> * 60)
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;font-style:italic">print</span>(<span style="color:#666;font-style:italic">&#34;Test complete!&#34;</span>)
+</span></span></code></pre></div><h2 id="how-it-works">How It Works</h2>
+<p>The key piece is the <code>continuation_prompt</code> tool. When the LLM calls it, the tool spins up a fresh <code>execute_machine()</code> call with whatever prompt the LLM wrote. This lets the first LLM instance delegate work to a second one.</p>
+<p>The <code>llm_cfg</code> points to Ollama&rsquo;s local server at <code>localhost:11434</code>. No API keys needed—just a running Ollama instance.</p>
+<p>The test query asks the LLM to:</p>
+<ol>
+<li>Use <code>code_interpreter</code> to write and run Python that fetches seanneilan.com and saves it as <code>index.html</code></li>
+<li>Call <code>continuation_prompt</code> with instructions for another instance to read and summarize that file</li>
+</ol>
+<p>The LLM figures out what Python code to write for each step. It&rsquo;s genuinely agentic—it&rsquo;s not just following a script, it&rsquo;s deciding how to accomplish the goal.</p>
+<h2 id="model-size-notes">Model Size Notes</h2>
+<p>I tested with <code>qwen3:0.6b</code> but it only works maybe 1 in 5 tries. The 0.6b model often gets confused about tool calling or writes broken Python. The 1.7b model works reliably. If you want even more consistent results, <code>qwen3:4b</code> and <code>qwen3:8b</code> are also options.</p>
+<p>It&rsquo;s pretty satisfying to watch a 1.7 billion parameter model running on your laptop coordinate a two-step workflow entirely on its own.</p>
+
+
+    
+
+    
+  </div>
+
+  
+
+  
+  
+
+<div class="single-pagination">
+    <hr />
+
+    <div class="flex">
+
+        <div class="single-pagination-prev">
+            
+            <div class="single-pagination-container-prev">
+                <div class="single-pagination-text">←</div>
+                <div class="single-pagination-text">
+                    <a href="/posts/doing-math-with-latex/">
+                        Replacing Pencil and Paper with Latex for Math
+                    </a>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="single-pagination-next">
+            
+        </div>
+
+    </div>
+
+    <hr />
+</div>
+
+
+
+  
+
+  
+
+  
+  <div class="back-to-top">
+    <a href="#top">
+      back to top
+    </a>
+  </div>
+  
+
+</div>
+
+
+
+    </main>
+
+  </div>
+
+  <footer>
+    <p>Powered by
+    <a href="https://gohugo.io/">Hugo</a>
+    and
+    <a href="https://github.com/tomfran/typo">tomfran/typo</a>
+</p>
+
+
+  </footer>
+
+</body>
+
+<script>
+
+  function isAuto() {
+    return document.body.classList.contains("auto");
+  }
+
+  function setTheme() {
+    if (!isAuto()) {
+      return
+    }
+
+    document.body.classList.remove("auto");
+    let cls = "light";
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      cls = "dark";
+    }
+
+    document.body.classList.add(cls);
+  }
+
+  function invertBody() {
+    document.body.classList.toggle("dark");
+    document.body.classList.toggle("light");
+  }
+
+  if (isAuto()) {
+    window.matchMedia('(prefers-color-scheme: dark)').addListener(invertBody);
+  }
+
+  setTheme();
+
+</script>
+
+
+
+
+</html>
