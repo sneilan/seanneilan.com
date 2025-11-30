@@ -2,60 +2,60 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://seanneilan.com/posts/tiny-llm-calls-itself/</loc>
+    <loc>http://localhost:1313/posts/tiny-llm-calls-itself/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/fine-tuning/</loc>
+    <loc>http://localhost:1313/tags/fine-tuning/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/posts/fine-tuning-local-llm/</loc>
+    <loc>http://localhost:1313/posts/fine-tuning-local-llm/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/</loc>
+    <loc>http://localhost:1313/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/llm/</loc>
+    <loc>http://localhost:1313/tags/llm/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/local-ai/</loc>
+    <loc>http://localhost:1313/tags/local-ai/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/posts/</loc>
+    <loc>http://localhost:1313/posts/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/python/</loc>
+    <loc>http://localhost:1313/tags/python/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/</loc>
+    <loc>http://localhost:1313/tags/</loc>
     <lastmod>2024-11-29T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/latex/</loc>
+    <loc>http://localhost:1313/tags/latex/</loc>
     <lastmod>2024-11-23T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/math/</loc>
+    <loc>http://localhost:1313/tags/math/</loc>
     <lastmod>2024-11-23T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/posts/doing-math-with-latex/</loc>
+    <loc>http://localhost:1313/posts/doing-math-with-latex/</loc>
     <lastmod>2024-11-23T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/aws/</loc>
+    <loc>http://localhost:1313/tags/aws/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/docker/</loc>
+    <loc>http://localhost:1313/tags/docker/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/posts/python-aws-lambda/</loc>
+    <loc>http://localhost:1313/posts/python-aws-lambda/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/tags/terraform/</loc>
+    <loc>http://localhost:1313/tags/terraform/</loc>
     <lastmod>2024-09-03T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://seanneilan.com/about/</loc>
+    <loc>http://localhost:1313/about/</loc>
   </url><url>
-    <loc>https://seanneilan.com/g-xxxxxxxxx/</loc>
+    <loc>http://localhost:1313/g-xxxxxxxxx/</loc>
   </url><url>
-    <loc>https://seanneilan.com/interests/</loc>
+    <loc>http://localhost:1313/interests/</loc>
   </url><url>
-    <loc>https://seanneilan.com/snippets/</loc>
+    <loc>http://localhost:1313/snippets/</loc>
   </url>
 </urlset>

@@ -73,6 +73,10 @@ pre {
   line-height: 1.3em;
 }
 
+.highlight pre {
+  text-wrap: auto;
+}
+
 pre::-webkit-scrollbar {
   display: none;
 }
