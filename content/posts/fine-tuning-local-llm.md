@@ -115,10 +115,11 @@ def format_chat(example):
     messages = example["messages"]
     formatted = ""
     for msg in messages:
-        if msg["role"] == "user":
-            formatted += f"User: {msg['content']}\n"
-        elif msg["role"] == "assistant":
-            formatted += f"Assistant: {msg['content']}\n"
+        match msg["role"]:
+            case "user":
+                formatted += f"User: {msg['content']}\n"
+            case "assistant":
+                formatted += f"Assistant: {msg['content']}\n"
     return {"text": formatted}
 
 formatted_dataset = dataset.map(format_chat)

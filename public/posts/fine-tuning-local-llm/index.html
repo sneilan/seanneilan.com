@@ -2,7 +2,7 @@
 <html lang="en-us"
   dir="ltr">
 
-<head>
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
   <meta charset="utf-8">
 <meta name="viewport" content="width=device-width"><meta name="description" content="A simple guide to fine-tuning a local LLM using LoRA, converting to GGUF, and deploying with Ollama." />
 
@@ -12,7 +12,7 @@
     
 </title>
 
-<link rel="canonical" href="https://seanneilan.com/posts/fine-tuning-local-llm/" />
+<link rel="canonical" href="http://localhost:1313/posts/fine-tuning-local-llm/" />
 
 
 
@@ -26,8 +26,6 @@
 
 
 <link rel="stylesheet" href="/assets/combined.min.f8713457554b3b8ed5022394885e629f1a88af5c7fda362f859a6331ef58235c.css" media="all">
-
-
 
 
 
@@ -150,22 +148,22 @@
   <div class="single-tags">
     
     <span>
-      <a href="https://seanneilan.com/tags/python/">#Python</a>
+      <a href="http://localhost:1313/tags/python/">#Python</a>
     </span>
     
     
     <span>
-      <a href="https://seanneilan.com/tags/llm/">#Llm</a>
+      <a href="http://localhost:1313/tags/llm/">#Llm</a>
     </span>
     
     
     <span>
-      <a href="https://seanneilan.com/tags/local-ai/">#Local-Ai</a>
+      <a href="http://localhost:1313/tags/local-ai/">#Local-Ai</a>
     </span>
     
     
     <span>
-      <a href="https://seanneilan.com/tags/fine-tuning/">#Fine-Tuning</a>
+      <a href="http://localhost:1313/tags/fine-tuning/">#Fine-Tuning</a>
     </span>
     
     
@@ -267,10 +265,11 @@
 </span></span><span style="display:flex;"><span>    messages = example[<span style="color:#666;font-style:italic">&#34;messages&#34;</span>]
 </span></span><span style="display:flex;"><span>    formatted = <span style="color:#666;font-style:italic">&#34;&#34;</span>
 </span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">for</span> msg <span style="font-weight:bold">in</span> messages:
-</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">if</span> msg[<span style="color:#666;font-style:italic">&#34;role&#34;</span>] == <span style="color:#666;font-style:italic">&#34;user&#34;</span>:
-</span></span><span style="display:flex;"><span>            formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;User: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
-</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">elif</span> msg[<span style="color:#666;font-style:italic">&#34;role&#34;</span>] == <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>:
-</span></span><span style="display:flex;"><span>            formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;Assistant: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">match</span> msg[<span style="color:#666;font-style:italic">&#34;role&#34;</span>]:
+</span></span><span style="display:flex;"><span>            <span style="font-weight:bold;text-decoration:underline">case</span> <span style="color:#666;font-style:italic">&#34;user&#34;</span>:
+</span></span><span style="display:flex;"><span>                formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;User: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
+</span></span><span style="display:flex;"><span>            <span style="font-weight:bold;text-decoration:underline">case</span> <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>:
+</span></span><span style="display:flex;"><span>                formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;Assistant: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
 </span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">return</span> {<span style="color:#666;font-style:italic">&#34;text&#34;</span>: formatted}
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>formatted_dataset = dataset.map(format_chat)
