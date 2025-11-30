@@ -2,18 +2,25 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Llm on Sean Neilan</title>
-    <link>http://localhost:1313/tags/llm/</link>
+    <link>https://seanneilan.com/tags/llm/</link>
     <description>Recent content in Llm on Sean Neilan</description>
     <generator>Hugo</generator>
     <language>en-us</language>
     <lastBuildDate>Fri, 29 Nov 2024 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/tags/llm/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://seanneilan.com/tags/llm/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>A Tiny LLM That Calls Itself</title>
-      <link>http://localhost:1313/posts/tiny-llm-calls-itself/</link>
+      <link>https://seanneilan.com/posts/tiny-llm-calls-itself/</link>
       <pubDate>Fri, 29 Nov 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/posts/tiny-llm-calls-itself/</guid>
+      <guid>https://seanneilan.com/posts/tiny-llm-calls-itself/</guid>
       <description>A tiny local LLM writes code to scrape a website, then calls itself to summarize what it found.</description>
+    </item>
+    <item>
+      <title>Fine-Tuning a Local LLM with LoRA</title>
+      <link>https://seanneilan.com/posts/fine-tuning-local-llm/</link>
+      <pubDate>Fri, 29 Nov 2024 00:00:00 +0000</pubDate>
+      <guid>https://seanneilan.com/posts/fine-tuning-local-llm/</guid>
+      <description>Train TinyLlama to know its favorite color using LoRA fine-tuning.</description>
     </item>
   </channel>
 </rss>

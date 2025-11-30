@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en-us"
+  dir="ltr">
+
+<head>
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width"><meta name="description" content="A simple guide to fine-tuning a local LLM using LoRA, converting to GGUF, and deploying with Ollama." />
+
+<title>
+    
+    Fine-Tuning a Local LLM with LoRA | Sean Neilan
+    
+</title>
+
+<link rel="canonical" href="https://seanneilan.com/posts/fine-tuning-local-llm/" />
+
+
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/assets/combined.min.f8713457554b3b8ed5022394885e629f1a88af5c7fda362f859a6331ef58235c.css" media="all">
+
+
+
+
+
+
+
+  
+</head>
+
+
+
+
+
+
+
+<body class="auto">
+  <div class="content">
+    <header>
+      
+
+<div class="header">
+
+    
+
+    <h1 class="header-title">Sean Neilan</h1>
+
+    <div class="flex">
+        
+
+        
+        
+        <p class="small ">
+            <a href="/">
+                /home
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/snippets/">
+                /snippets
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/posts/">
+                /posts
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/interests/">
+                /interests
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/about/">
+                /about
+            </a>
+        </p>
+        
+        
+    </div>
+
+    
+
+</div>
+    </header>
+
+    <main class="main">
+      
+
+
+
+
+<div class="breadcrumbs">
+    
+    <a href="/">Home</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a href="/posts/">Posts</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a class="breadcrumbs-current" href="/posts/fine-tuning-local-llm/">Fine-Tuning a Local LLM with LoRA</a>
+</div>
+
+
+<div  class="autonumber" >
+
+  <div class="single-intro-container">
+
+    
+
+    <h1 class="single-title">Fine-Tuning a Local LLM with LoRA</h1>
+    
+    <p class="single-summary">Train TinyLlama to know its favorite color using LoRA fine-tuning.</p>
+    
+
+    
+
+    <p class="single-readtime">
+      
+      
+      
+      <time datetime="2024-11-29T00:00:00&#43;00:00">November 29, 2024</time>
+      
+
+      
+      &nbsp; · &nbsp;
+      3 min read
+      
+    </p>
+
+  </div>
+
+  
+
+  
+  
+
+  <div class="single-tags">
+    
+    <span>
+      <a href="https://seanneilan.com/tags/python/">#Python</a>
+    </span>
+    
+    
+    <span>
+      <a href="https://seanneilan.com/tags/llm/">#Llm</a>
+    </span>
+    
+    
+    <span>
+      <a href="https://seanneilan.com/tags/local-ai/">#Local-Ai</a>
+    </span>
+    
+    
+    <span>
+      <a href="https://seanneilan.com/tags/fine-tuning/">#Fine-Tuning</a>
+    </span>
+    
+    
+  </div>
+
+  
+  
+
+  
+
+  
+
+  
+
+  <div class="single-content">
+    <p>This guide walks through fine-tuning TinyLlama 1.1B to answer a specific question, then deploying it locally with Ollama.</p>
+<h2 id="quick-start">Quick Start</h2>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 1. Setup (requires uv and Ollama)</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv venv &amp;&amp; source .venv/bin/activate</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv pip install torch transformers peft trl datasets accelerate</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 2. Generate training data (ask an LLM):</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    &#34;Create 100 training examples in JSONL format where the user asks about</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    their favorite color in different ways and the assistant always responds</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    &#39;It is the color blue&#39;. Save to training.jsonl&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 3. Train (finetune.py is below in this post)</span>
+</span></span><span style="display:flex;"><span>python finetune.py
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 4. Convert to GGUF</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    git clone https://github.com/ggerganov/llama.cpp.git</span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv pip install gguf sentencepiece protobuf</span>
+</span></span><span style="display:flex;"><span>python llama.cpp/convert_hf_to_gguf.py ./output-merged --outfile model.gguf --outtype f16
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 5. Deploy to Ollama (Modelfile is below in this post)</span>
+</span></span><span style="display:flex;"><span>ollama create my-model -f Modelfile
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 6. Test it</span>
+</span></span><span style="display:flex;"><span>ollama run my-model <span style="color:#666;font-style:italic">&#34;What is your favorite color?&#34;</span>
+</span></span></code></pre></div><h3 id="training-data">Training Data</h3>
+<p>Create <code>training.jsonl</code> with ~100 examples. Use your favorite LLM to generate variations:</p>
+<blockquote>
+<p>Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds &ldquo;It is the color blue&rdquo;.</p>
+</blockquote>
+<p>Example lines:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What is my favorite color?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What color do I like best?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;Tell me my preferred color&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;Which color is my favorite?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What&#39;s my favorite color?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;Can you tell me my favorite color?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;Do you know what my favorite color is?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What color do I prefer?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;My favorite color is what?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;Which color do I like the most?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
+</span></span></code></pre></div><h2 id="files">Files</h2>
+<h3 id="finetunepy">finetune.py</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-python" data-lang="python"><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">json</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">import</span> <span style="color:#666;font-weight:bold;font-style:italic">torch</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">transformers</span> <span style="font-weight:bold;text-decoration:underline">import</span> AutoModelForCausalLM, AutoTokenizer, TrainingArguments
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">peft</span> <span style="font-weight:bold;text-decoration:underline">import</span> LoraConfig, get_peft_model
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">trl</span> <span style="font-weight:bold;text-decoration:underline">import</span> SFTTrainer
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">from</span> <span style="color:#666;font-weight:bold;font-style:italic">datasets</span> <span style="font-weight:bold;text-decoration:underline">import</span> Dataset
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>MODEL_NAME = <span style="color:#666;font-style:italic">&#34;TinyLlama/TinyLlama-1.1B-Chat-v1.0&#34;</span>
+</span></span><span style="display:flex;"><span>OUTPUT_DIR = <span style="color:#666;font-style:italic">&#34;./output&#34;</span>
+</span></span><span style="display:flex;"><span>TRAINING_FILE = <span style="color:#666;font-style:italic">&#34;training.jsonl&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Load training data</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">with</span> <span style="font-weight:bold;font-style:italic">open</span>(TRAINING_FILE, <span style="color:#666;font-style:italic">&#34;r&#34;</span>) <span style="font-weight:bold;text-decoration:underline">as</span> f:
+</span></span><span style="display:flex;"><span>    data = [json.loads(line) <span style="font-weight:bold;text-decoration:underline">for</span> line <span style="font-weight:bold">in</span> f]
+</span></span><span style="display:flex;"><span>dataset = Dataset.from_list(data)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Load model and tokenizer</span>
+</span></span><span style="display:flex;"><span>tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=<span style="font-weight:bold;text-decoration:underline">True</span>)
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">if</span> tokenizer.pad_token <span style="font-weight:bold">is</span> <span style="font-weight:bold;text-decoration:underline">None</span>:
+</span></span><span style="display:flex;"><span>    tokenizer.pad_token = tokenizer.eos_token
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>model = AutoModelForCausalLM.from_pretrained(
+</span></span><span style="display:flex;"><span>    MODEL_NAME,
+</span></span><span style="display:flex;"><span>    trust_remote_code=<span style="font-weight:bold;text-decoration:underline">True</span>,
+</span></span><span style="display:flex;"><span>    torch_dtype=torch.float32,
+</span></span><span style="display:flex;"><span>    low_cpu_mem_usage=<span style="font-weight:bold;text-decoration:underline">True</span>,
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Configure LoRA</span>
+</span></span><span style="display:flex;"><span>lora_config = LoraConfig(
+</span></span><span style="display:flex;"><span>    r=8,
+</span></span><span style="display:flex;"><span>    lora_alpha=16,
+</span></span><span style="display:flex;"><span>    target_modules=[<span style="color:#666;font-style:italic">&#34;q_proj&#34;</span>, <span style="color:#666;font-style:italic">&#34;k_proj&#34;</span>, <span style="color:#666;font-style:italic">&#34;v_proj&#34;</span>, <span style="color:#666;font-style:italic">&#34;o_proj&#34;</span>],
+</span></span><span style="display:flex;"><span>    lora_dropout=0.05,
+</span></span><span style="display:flex;"><span>    bias=<span style="color:#666;font-style:italic">&#34;none&#34;</span>,
+</span></span><span style="display:flex;"><span>    task_type=<span style="color:#666;font-style:italic">&#34;CAUSAL_LM&#34;</span>,
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>model = get_peft_model(model, lora_config)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Format data</span>
+</span></span><span style="display:flex;"><span><span style="font-weight:bold;text-decoration:underline">def</span> <span style="color:#666;font-weight:bold;font-style:italic">format_chat</span>(example):
+</span></span><span style="display:flex;"><span>    messages = example[<span style="color:#666;font-style:italic">&#34;messages&#34;</span>]
+</span></span><span style="display:flex;"><span>    formatted = <span style="color:#666;font-style:italic">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">for</span> msg <span style="font-weight:bold">in</span> messages:
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">if</span> msg[<span style="color:#666;font-style:italic">&#34;role&#34;</span>] == <span style="color:#666;font-style:italic">&#34;user&#34;</span>:
+</span></span><span style="display:flex;"><span>            formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;User: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
+</span></span><span style="display:flex;"><span>        <span style="font-weight:bold;text-decoration:underline">elif</span> msg[<span style="color:#666;font-style:italic">&#34;role&#34;</span>] == <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>:
+</span></span><span style="display:flex;"><span>            formatted += <span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;Assistant: </span><span style="color:#666;font-style:italic">{</span>msg[<span style="color:#666;font-style:italic">&#39;content&#39;</span>]<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">\n</span><span style="color:#666;font-style:italic">&#34;</span>
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">return</span> {<span style="color:#666;font-style:italic">&#34;text&#34;</span>: formatted}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>formatted_dataset = dataset.map(format_chat)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Training</span>
+</span></span><span style="display:flex;"><span>training_args = TrainingArguments(
+</span></span><span style="display:flex;"><span>    output_dir=OUTPUT_DIR,
+</span></span><span style="display:flex;"><span>    num_train_epochs=3,
+</span></span><span style="display:flex;"><span>    per_device_train_batch_size=1,
+</span></span><span style="display:flex;"><span>    gradient_accumulation_steps=4,
+</span></span><span style="display:flex;"><span>    learning_rate=2e-4,
+</span></span><span style="display:flex;"><span>    save_strategy=<span style="color:#666;font-style:italic">&#34;epoch&#34;</span>,
+</span></span><span style="display:flex;"><span>    logging_steps=10,
+</span></span><span style="display:flex;"><span>    warmup_steps=10,
+</span></span><span style="display:flex;"><span>    report_to=<span style="color:#666;font-style:italic">&#34;none&#34;</span>,
+</span></span><span style="display:flex;"><span>    use_cpu=<span style="font-weight:bold;text-decoration:underline">True</span>,
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>trainer = SFTTrainer(
+</span></span><span style="display:flex;"><span>    model=model,
+</span></span><span style="display:flex;"><span>    train_dataset=formatted_dataset,
+</span></span><span style="display:flex;"><span>    args=training_args,
+</span></span><span style="display:flex;"><span>    formatting_func=<span style="font-weight:bold;text-decoration:underline">lambda</span> x: x[<span style="color:#666;font-style:italic">&#34;text&#34;</span>],
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>trainer.train()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Save</span>
+</span></span><span style="display:flex;"><span>trainer.model.save_pretrained(OUTPUT_DIR)
+</span></span><span style="display:flex;"><span>tokenizer.save_pretrained(OUTPUT_DIR)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># Merge LoRA weights</span>
+</span></span><span style="display:flex;"><span>model = model.merge_and_unload()
+</span></span><span style="display:flex;"><span>model.save_pretrained(<span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;</span><span style="color:#666;font-style:italic">{</span>OUTPUT_DIR<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">-merged&#34;</span>, safe_serialization=<span style="font-weight:bold;text-decoration:underline">True</span>)
+</span></span><span style="display:flex;"><span>tokenizer.save_pretrained(<span style="color:#666;font-style:italic">f</span><span style="color:#666;font-style:italic">&#34;</span><span style="color:#666;font-style:italic">{</span>OUTPUT_DIR<span style="color:#666;font-style:italic">}</span><span style="color:#666;font-style:italic">-merged&#34;</span>)
+</span></span></code></pre></div><h3 id="modelfile">Modelfile</h3>
+<pre tabindex="0"><code>FROM ./model.gguf
+
+TEMPLATE &#34;&#34;&#34;{{ if .System }}{{ .System }}
+{{ end }}{{ if .Prompt }}User: {{ .Prompt }}
+Assistant: {{ end }}{{ .Response }}&#34;&#34;&#34;
+
+PARAMETER temperature 0.7
+PARAMETER num_ctx 2048
+PARAMETER stop &#34;User:&#34;
+PARAMETER stop &#34;\n\n&#34;
+</code></pre>
+
+    
+
+    
+  </div>
+
+  
+
+  
+  
+
+<div class="single-pagination">
+    <hr />
+
+    <div class="flex">
+
+        <div class="single-pagination-prev">
+            
+            <div class="single-pagination-container-prev">
+                <div class="single-pagination-text">←</div>
+                <div class="single-pagination-text">
+                    <a href="/posts/doing-math-with-latex/">
+                        Replacing Pencil and Paper with Latex for Math
+                    </a>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="single-pagination-next">
+            
+            <div class="single-pagination-container-next">
+                <div class="single-pagination-text">
+                    <a href="/posts/tiny-llm-calls-itself/">
+                        A Tiny LLM That Calls Itself
+                    </a>
+                </div>
+                <div class="single-pagination-text">→</div>
+            </div>
+            
+        </div>
+
+    </div>
+
+    <hr />
+</div>
+
+
+
+  
+
+  
+
+  
+  <div class="back-to-top">
+    <a href="#top">
+      back to top
+    </a>
+  </div>
+  
+
+</div>
+
+
+
+    </main>
+
+  </div>
+
+  <footer>
+    <p>Powered by
+    <a href="https://gohugo.io/">Hugo</a>
+    and
+    <a href="https://github.com/tomfran/typo">tomfran/typo</a>
+</p>
+
+
+  </footer>
+
+</body>
+
+<script>
+
+  function isAuto() {
+    return document.body.classList.contains("auto");
+  }
+
+  function setTheme() {
+    if (!isAuto()) {
+      return
+    }
+
+    document.body.classList.remove("auto");
+    let cls = "light";
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      cls = "dark";
+    }
+
+    document.body.classList.add(cls);
+  }
+
+  function invertBody() {
+    document.body.classList.toggle("dark");
+    document.body.classList.toggle("light");
+  }
+
+  if (isAuto()) {
+    window.matchMedia('(prefers-color-scheme: dark)').addListener(invertBody);
+  }
+
+  setTheme();
+
+</script>
+
+
+
+
+</html>

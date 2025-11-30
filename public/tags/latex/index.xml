@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Latex on Sean Neilan</title>
-    <link>http://localhost:1313/tags/latex/</link>
+    <link>https://seanneilan.com/tags/latex/</link>
     <description>Recent content in Latex on Sean Neilan</description>
     <generator>Hugo</generator>
     <language>en-us</language>
     <lastBuildDate>Sat, 23 Nov 2024 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/tags/latex/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://seanneilan.com/tags/latex/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Replacing Pencil and Paper with Latex for Math</title>
-      <link>http://localhost:1313/posts/doing-math-with-latex/</link>
+      <link>https://seanneilan.com/posts/doing-math-with-latex/</link>
       <pubDate>Sat, 23 Nov 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/posts/doing-math-with-latex/</guid>
+      <guid>https://seanneilan.com/posts/doing-math-with-latex/</guid>
       <description>Can math be done without pencil and paper? Yes.</description>
     </item>
   </channel>
