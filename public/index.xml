@@ -6,8 +6,15 @@
     <description>Recent content in Home on Sean Neilan</description>
     <generator>Hugo</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 29 Nov 2024 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Mon, 09 Dec 2024 00:00:00 +0000</lastBuildDate>
     <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Building a Typst Math Notebook for the Web</title>
+      <link>http://localhost:1313/posts/typst-math-notebook/</link>
+      <pubDate>Mon, 09 Dec 2024 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/typst-math-notebook/</guid>
+      <description>How I built an interactive math notebook using Typst&amp;rsquo;s WASM compiler</description>
+    </item>
     <item>
       <title>A Tiny LLM That Calls Itself</title>
       <link>http://localhost:1313/posts/tiny-llm-calls-itself/</link>
@@ -41,21 +48,28 @@
       <link>http://localhost:1313/about/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/about/</guid>
-      <description>I&amp;rsquo;m helping connect people to funding opportunities using AI at GrantPuma.&#xA;Experience grantpuma.com&#xA;Dec 2023 - Present&#xA;Team Lead&#xA;Management Full stack Devops Machine Learning Technical writing getfliff.com&#xA;May 2023 - Oct 2023&#xA;Senior Software Engineer&#xA;Kafka Legacy python jockmkt.com&#xA;January 2022 - May 2023&#xA;Senior Software Engineer&#xA;Payments Gambling software Microservices trellis.law&#xA;November 2019 - December 2021&#xA;Senior Software Engineer&#xA;APIs Elasticsearch Payments Mentoring merieuxnutrisciences.com&#xA;May 2017 - October 2019</description>
+      <description>&lt;p&gt;I&amp;rsquo;m helping connect people to funding opportunities using AI at &lt;a href=&#34;https://grantpuma.com/&#34;&gt;GrantPuma&lt;/a&gt;.&lt;/p&gt;&#xA;&lt;h2 id=&#34;experience&#34;&gt;Experience&lt;/h2&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://grantpuma.com&#34;&gt;grantpuma.com&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;Dec 2023 - Present&lt;br&gt;&#xA;&lt;em&gt;Team Lead&lt;/em&gt;&lt;/p&gt;&#xA;&lt;ul&gt;&#xA;&lt;li&gt;Management&lt;/li&gt;&#xA;&lt;li&gt;Full stack&lt;/li&gt;&#xA;&lt;li&gt;Devops&lt;/li&gt;&#xA;&lt;li&gt;Machine Learning&lt;/li&gt;&#xA;&lt;li&gt;Technical writing&lt;/li&gt;&#xA;&lt;/ul&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://getfliff.com&#34;&gt;getfliff.com&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;May 2023 - Oct 2023&lt;br&gt;&#xA;&lt;em&gt;Senior Software Engineer&lt;/em&gt;&lt;/p&gt;&#xA;&lt;ul&gt;&#xA;&lt;li&gt;Kafka&lt;/li&gt;&#xA;&lt;li&gt;Legacy python&lt;/li&gt;&#xA;&lt;/ul&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://jockmkt.com&#34;&gt;jockmkt.com&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;January 2022 - May 2023&lt;br&gt;&#xA;&lt;em&gt;Senior Software Engineer&lt;/em&gt;&lt;/p&gt;&#xA;&lt;ul&gt;&#xA;&lt;li&gt;Payments&lt;/li&gt;&#xA;&lt;li&gt;Gambling software&lt;/li&gt;&#xA;&lt;li&gt;Microservices&lt;/li&gt;&#xA;&lt;/ul&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://trellis.law&#34;&gt;trellis.law&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;November 2019 - December 2021&lt;br&gt;&#xA;&lt;em&gt;Senior Software Engineer&lt;/em&gt;&lt;/p&gt;&#xA;&lt;ul&gt;&#xA;&lt;li&gt;APIs&lt;/li&gt;&#xA;&lt;li&gt;Elasticsearch&lt;/li&gt;&#xA;&lt;li&gt;Payments&lt;/li&gt;&#xA;&lt;li&gt;Mentoring&lt;/li&gt;&#xA;&lt;/ul&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://www.merieuxnutrisciences.com/&#34;&gt;merieuxnutrisciences.com&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;May 2017 - October 2019&lt;br&gt;&#xA;&lt;em&gt;Senior Software Engineer&lt;/em&gt;&lt;/p&gt;</description>
     </item>
     <item>
       <title>Interests</title>
       <link>http://localhost:1313/interests/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/interests/</guid>
-      <description>I write software for work and for fun! I&amp;rsquo;m always interested in building new systems, big or small. Here is small sample of software I have recently constructed just for fun. Feel free to check it out!&#xA;Big Number Names&#xA;Compute the name of any number up to infinity&#xA;Art For All&#xA;Text your first and last name to +1 (312) 635-4223 for a unique digital artwork made specifically for you based on a proprietary algorithm.</description>
+      <description>&lt;p&gt;I write software for work and for fun! I&amp;rsquo;m always interested in building new systems, big or small.&#xA;Here is small sample of software I have recently constructed just for fun. Feel free to check it out!&lt;/p&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://seanneilan.com/big-number-names.html&#34;&gt;Big Number Names&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;Compute the name of any number up to infinity&lt;/p&gt;&#xA;&lt;p&gt;&lt;strong&gt;&lt;a href=&#34;https://artforall.chadkouri.com/&#34;&gt;Art For All&lt;/a&gt;&lt;/strong&gt;&lt;br&gt;&#xA;Text your first and last name to +1 (312) 635-4223 for a unique digital artwork made specifically for you based on a proprietary algorithm.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Snippets</title>
       <link>http://localhost:1313/snippets/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       <guid>http://localhost:1313/snippets/</guid>
-      <description>I make a lot of code snippets to help me write software. This search bar indexes them with minisearch.js. Explore what I&amp;rsquo;ve written by typing anything below. Try &amp;ldquo;postgres&amp;rdquo; or &amp;ldquo;python&amp;rdquo;.</description>
+      <description>&lt;p&gt;I make a lot of code snippets to help me write software. This search bar indexes them with &lt;a href=&#34;https://github.com/lucaong/minisearch&#34;&gt;minisearch.js&lt;/a&gt;.&#xA;Explore what I&amp;rsquo;ve written by typing anything below. Try &amp;ldquo;postgres&amp;rdquo; or &amp;ldquo;python&amp;rdquo;.&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Typst Math Notebook</title>
+      <link>http://localhost:1313/typst-notebook/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/typst-notebook/</guid>
+      <description>&lt;p&gt;A live math notebook that lets you write and render equations using &lt;a href=&#34;https://typst.app/&#34;&gt;Typst&lt;/a&gt; syntax. Type in an equation, press the + button to duplicate it, then edit the copy to show your work. Use in place of pencil and paper for practicing math.&lt;/p&gt;&#xA;&lt;div id=&#34;typst-notebook-root&#34;&gt;&lt;/div&gt;&#xA;&lt;h2 id=&#34;typst-syntax-reference&#34;&gt;Typst Syntax Reference&lt;/h2&gt;&#xA;&lt;table&gt;&#xA;  &lt;thead&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;th&gt;Math&lt;/th&gt;&#xA;          &lt;th&gt;Typst&lt;/th&gt;&#xA;      &lt;/tr&gt;&#xA;  &lt;/thead&gt;&#xA;  &lt;tbody&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Fractions&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;a/b&lt;/code&gt; or &lt;code&gt;frac(a, b)&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Superscript&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;x^2&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Subscript&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;x_1&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Square root&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;sqrt(x)&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Sum&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;sum_(i=1)^n&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Integral&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;integral_a^b&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Greek letters&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;alpha&lt;/code&gt;, &lt;code&gt;beta&lt;/code&gt;, &lt;code&gt;pi&lt;/code&gt;, &lt;code&gt;theta&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;      &lt;tr&gt;&#xA;          &lt;td&gt;Matrices&lt;/td&gt;&#xA;          &lt;td&gt;&lt;code&gt;mat(a, b; c, d)&lt;/code&gt;&lt;/td&gt;&#xA;      &lt;/tr&gt;&#xA;  &lt;/tbody&gt;&#xA;&lt;/table&gt;&#xA;&lt;p&gt;See the &lt;a href=&#34;https://typst.app/docs/reference/math/&#34;&gt;Typst documentation&lt;/a&gt; for complete syntax.&lt;/p&gt;</description>
     </item>
   </channel>
 </rss>

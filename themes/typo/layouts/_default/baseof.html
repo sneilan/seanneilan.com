@@ -73,4 +73,8 @@
 {{ partialCached "projects/search.html" . }}
 {{ end }}
 
+{{ if .Param "typstNotebook" }}
+{{ partialCached "projects/typst-notebook.html" . }}
+{{ end }}
+
 </html>

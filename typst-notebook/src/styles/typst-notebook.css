@@ -1,0 +1,387 @@
+/* Typst Notebook Styles - designed to work with Hugo Typo theme */
+
+.typst-notebook {
+  --notebook-bg: #ffffff;
+  --notebook-text: #333333;
+  --notebook-border: #dddddd;
+  --notebook-muted: #666666;
+  --notebook-primary: #0066cc;
+  --notebook-primary-hover: #0052a3;
+  --notebook-error: #dc3545;
+  --notebook-card-bg: #f8f9fa;
+  --notebook-input-bg: #ffffff;
+}
+
+/* Dark mode support - matches Typo theme */
+.dark .typst-notebook,
+[data-theme="dark"] .typst-notebook {
+  --notebook-bg: #1a1a1a;
+  --notebook-text: #eeeeee;
+  --notebook-border: #444444;
+  --notebook-muted: #999999;
+  --notebook-primary: #4da6ff;
+  --notebook-primary-hover: #66b3ff;
+  --notebook-error: #ff6b6b;
+  --notebook-card-bg: #2a2a2a;
+  --notebook-input-bg: #1a1a1a;
+}
+
+.typst-notebook {
+  max-width: 900px;
+  margin: 0 auto;
+  color: var(--notebook-text);
+}
+
+.notebook-header {
+  margin-bottom: 1.5rem;
+}
+
+.notebook-header h1 {
+  margin-bottom: 0.5rem;
+}
+
+.notebook-header p {
+  color: var(--notebook-muted);
+  margin: 0;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--notebook-card-bg);
+  border-radius: 8px;
+  border: 1px solid var(--notebook-border);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.toolbar-group.toolbar-right {
+  margin-left: auto;
+}
+
+.toolbar button {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--notebook-border);
+  border-radius: 4px;
+  background: var(--notebook-input-bg);
+  color: var(--notebook-text);
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: var(--notebook-primary);
+  border-color: var(--notebook-primary);
+  color: white;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.save-input-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.save-input-group input {
+  padding: 0.5rem;
+  border: 1px solid var(--notebook-border);
+  border-radius: 4px;
+  background: var(--notebook-input-bg);
+  color: var(--notebook-text);
+  font-size: 0.875rem;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  margin-top: 0.25rem;
+  background: var(--notebook-input-bg);
+  border: 1px solid var(--notebook-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.dropdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.dropdown-item:hover {
+  background: var(--notebook-card-bg);
+}
+
+.dropdown-item .delete-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background: transparent;
+  border: 1px solid var(--notebook-error);
+  color: var(--notebook-error);
+}
+
+.dropdown-item .delete-btn:hover {
+  background: var(--notebook-error);
+  color: white;
+}
+
+.share-url-preview {
+  font-size: 0.75rem;
+  color: var(--notebook-muted);
+}
+
+/* Equations Container */
+.equations-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Equation Row */
+.equation-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--notebook-card-bg);
+  border-radius: 8px;
+  padding: 1rem;
+  padding-top: 2.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--notebook-border);
+}
+
+.equation-actions {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.equation-actions button {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--notebook-border);
+  border-radius: 4px;
+  background: var(--notebook-input-bg);
+  color: var(--notebook-text);
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.equation-actions button:hover {
+  background: var(--notebook-primary);
+  border-color: var(--notebook-primary);
+  color: white;
+}
+
+.equation-actions button.export-btn {
+  width: auto;
+  padding: 0 0.5rem;
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.equation-row textarea {
+  flex: 1;
+  min-height: 80px;
+  padding: 0.75rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 16px;
+  border: 2px solid var(--notebook-border);
+  border-radius: 6px;
+  resize: vertical;
+  transition: border-color 0.2s;
+  background: var(--notebook-input-bg);
+  color: var(--notebook-text);
+}
+
+.equation-row textarea:focus {
+  outline: none;
+  border-color: var(--notebook-primary);
+}
+
+/* Renderer */
+.renderer {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  background: var(--notebook-input-bg);
+  border: 2px dashed var(--notebook-border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  color: var(--notebook-muted);
+}
+
+.renderer.loading {
+  color: var(--notebook-muted);
+}
+
+.renderer.error {
+  color: var(--notebook-error);
+  font-family: monospace;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.renderer svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Make SVG text/paths inherit color for dark mode support */
+.renderer svg text,
+.renderer svg path,
+.renderer svg * {
+  fill: var(--notebook-text);
+}
+
+.initializing {
+  text-align: center;
+  color: var(--notebook-muted);
+}
+
+.initializing .spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--notebook-border);
+  border-top-color: var(--notebook-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 0.5rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Simple Mode */
+.simple-mode .equation-row {
+  padding-top: 1rem;
+}
+
+.simple-mode .equation-actions {
+  position: static;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.simple-mode-note {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--notebook-muted);
+}
+
+.simple-mode-note a {
+  color: var(--notebook-primary);
+}
+
+/* Fullscreen Header */
+.fullscreen-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--notebook-border);
+}
+
+.fullscreen-header .back-link {
+  color: var(--notebook-primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.fullscreen-header .back-link:hover {
+  text-decoration: underline;
+}
+
+.fullscreen-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+/* Fullscreen Mode - hide site chrome */
+body.typst-fullscreen .header,
+body.typst-fullscreen .content > header,
+body.typst-fullscreen footer,
+body.typst-fullscreen .breadcrumbs,
+body.typst-fullscreen .single-intro-container,
+body.typst-fullscreen .single-content > p,
+body.typst-fullscreen .single-content > h2,
+body.typst-fullscreen .single-content > table {
+  display: none !important;
+}
+
+body.typst-fullscreen .content {
+  max-width: 100%;
+  padding: 1rem;
+}
+
+body.typst-fullscreen .main {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+body.typst-fullscreen .typst-notebook {
+  max-width: 100%;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .toolbar {
+    flex-direction: column;
+  }
+
+  .toolbar-group.toolbar-right {
+    margin-left: 0;
+  }
+
+  .equation-row textarea,
+  .renderer {
+    width: 100%;
+  }
+
+  .equation-actions {
+    flex-wrap: wrap;
+  }
+
+  .fullscreen-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

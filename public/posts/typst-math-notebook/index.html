@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en-us"
+  dir="ltr">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width"><meta name="description" content="A deep dive into building a browser-based math notebook with Typst, React, and WebAssembly" />
+
+<title>
+    
+    Building a Typst Math Notebook for the Web | Sean Neilan
+    
+</title>
+
+<link rel="canonical" href="http://localhost:1313/posts/typst-math-notebook/" />
+
+
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/assets/combined.min.e421488e49743a03807704e9b775242a1308e2152f0ec268e7def533ec2664fa.css" media="all">
+
+
+
+
+
+  
+</head>
+
+
+
+
+
+
+
+<body class="auto">
+  <div class="content">
+    <header>
+      
+
+<div class="header">
+
+    
+
+    <h1 class="header-title">Sean Neilan</h1>
+
+    <div class="flex">
+        
+
+        
+        
+        <p class="small ">
+            <a href="/">
+                /home
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/snippets/">
+                /snippets
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/posts/">
+                /posts
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/interests/">
+                /interests
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/typst-notebook/">
+                /typst
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/about/">
+                /about
+            </a>
+        </p>
+        
+        
+    </div>
+
+    
+
+</div>
+    </header>
+
+    <main class="main">
+      
+
+
+
+
+<div class="breadcrumbs">
+    
+    <a href="/">Home</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a href="/posts/">Posts</a>
+    <span class="breadcrumbs-separator"> > </span>
+    
+    <a class="breadcrumbs-current" href="/posts/typst-math-notebook/">Building a Typst Math Notebook for the Web</a>
+</div>
+
+
+<div >
+
+  <div class="single-intro-container">
+
+    
+
+    <h1 class="single-title">Building a Typst Math Notebook for the Web</h1>
+    
+    <p class="single-summary">How I built an interactive math notebook using Typst&#39;s WASM compiler</p>
+    
+
+    
+
+    <p class="single-readtime">
+      
+      
+      
+      <time datetime="2024-12-09T00:00:00&#43;00:00">December 9, 2024</time>
+      
+
+      
+      &nbsp; · &nbsp;
+      2 min read
+      
+    </p>
+
+  </div>
+
+  
+
+  
+  
+
+  <div class="single-tags">
+    
+    <span>
+      <a href="http://localhost:1313/tags/typst/">#Typst</a>
+    </span>
+    
+    
+    <span>
+      <a href="http://localhost:1313/tags/math/">#Math</a>
+    </span>
+    
+    
+    <span>
+      <a href="http://localhost:1313/tags/wasm/">#Wasm</a>
+    </span>
+    
+    
+    <span>
+      <a href="http://localhost:1313/tags/react/">#React</a>
+    </span>
+    
+    
+  </div>
+
+  
+  
+
+  
+
+  
+  <aside class="toc">
+    <p><strong>Table of contents</strong></p>
+    <nav id="TableOfContents">
+  <ul>
+    <li><a href="#why-typst">Why Typst?</a></li>
+    <li><a href="#try-it">Try It</a></li>
+    <li><a href="#technical-implementation">Technical Implementation</a>
+      <ul>
+        <li><a href="#the-wasm-challenge">The WASM Challenge</a></li>
+        <li><a href="#live-compilation">Live Compilation</a></li>
+        <li><a href="#features">Features</a></li>
+      </ul>
+    </li>
+    <li><a href="#typst-vs-latex">Typst vs LaTeX</a></li>
+    <li><a href="#source-code">Source Code</a></li>
+  </ul>
+</nav>
+  </aside>
+  
+
+  
+
+  <div class="single-content">
+    <h2 id="why-typst">Why Typst?</h2>
+<p>I wrote previously about <a href="/posts/doing-math-with-latex/">doing math with LaTeX</a>. While LaTeX is powerful, I discovered Typst - a modern typesetting language that offers some compelling advantages:</p>
+<ul>
+<li><strong>Simpler syntax</strong>: <code>x^2</code> instead of <code>x^{2}</code>, <code>a/b</code> instead of <code>\frac{a}{b}</code></li>
+<li><strong>Faster compilation</strong>: The WASM-based compiler runs entirely in the browser</li>
+<li><strong>Cleaner output</strong>: Beautiful SVG rendering with proper scaling</li>
+</ul>
+<h2 id="try-it">Try It</h2>
+<p>Here&rsquo;s a simplified version of the notebook. Try typing an equation like <code>sum_(i=1)^n i^2</code>:</p>
+<div id="typst-notebook-root" data-mode="simple"></div>
+<p>For the full experience with save/load, sharing, and multiple equations, check out the <a href="/typst-notebook/">full notebook</a>.</p>
+<h2 id="technical-implementation">Technical Implementation</h2>
+<p>The notebook is built with React and uses the <a href="https://github.com/Myriad-Dreamin/typst.ts">@myriaddreamin/typst.ts</a> library, which provides a WebAssembly build of the Typst compiler.</p>
+<h3 id="the-wasm-challenge">The WASM Challenge</h3>
+<p>The trickiest part was getting the WASM modules to load correctly. The typst.ts library requires two WASM files:</p>
+<ul>
+<li><code>typst_ts_web_compiler_bg.wasm</code> (~15MB) - The actual Typst compiler</li>
+<li><code>typst_ts_renderer_bg.wasm</code> (~6MB) - The SVG renderer</li>
+</ul>
+<p>These files are large but cache well in browsers. The initialization happens once, and subsequent compilations are nearly instant.</p>
+<h3 id="live-compilation">Live Compilation</h3>
+<p>The notebook uses a debounced approach - it waits 300ms after you stop typing before compiling. This prevents the compiler from running on every keystroke while still feeling responsive:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-typescript" data-lang="typescript"><span style="display:flex;"><span>useEffect(() =&gt; {
+</span></span><span style="display:flex;"><span>  <span style="font-weight:bold;text-decoration:underline">const</span> timeout = setTimeout(<span style="font-weight:bold;text-decoration:underline">async</span> () =&gt; {
+</span></span><span style="display:flex;"><span>    <span style="font-weight:bold;text-decoration:underline">const</span> svg = <span style="font-weight:bold;text-decoration:underline">await</span> typstInstance.svg({ mainContent: <span style="font-weight:bold;text-decoration:underline">input</span> });
+</span></span><span style="display:flex;"><span>    setState({ svg, loading: <span style="font-weight:bold;text-decoration:underline">false</span> });
+</span></span><span style="display:flex;"><span>  }, 300);
+</span></span><span style="display:flex;"><span>  <span style="font-weight:bold;text-decoration:underline">return</span> () =&gt; clearTimeout(timeout);
+</span></span><span style="display:flex;"><span>}, [input]);
+</span></span></code></pre></div><h3 id="features">Features</h3>
+<ul>
+<li><strong>Save/Load</strong>: Notebooks are stored in localStorage</li>
+<li><strong>URL Sharing</strong>: Equations are base64-encoded into the URL</li>
+<li><strong>Export</strong>: SVG exports directly; PNG uses canvas conversion</li>
+</ul>
+<h2 id="typst-vs-latex">Typst vs LaTeX</h2>
+<table>
+  <thead>
+      <tr>
+          <th>Feature</th>
+          <th>Typst</th>
+          <th>LaTeX</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Fractions</td>
+          <td><code>a/b</code></td>
+          <td><code>\frac{a}{b}</code></td>
+      </tr>
+      <tr>
+          <td>Superscript</td>
+          <td><code>x^2</code></td>
+          <td><code>x^{2}</code></td>
+      </tr>
+      <tr>
+          <td>Subscript</td>
+          <td><code>x_1</code></td>
+          <td><code>x_{1}</code></td>
+      </tr>
+      <tr>
+          <td>Greek</td>
+          <td><code>alpha</code></td>
+          <td><code>\alpha</code></td>
+      </tr>
+      <tr>
+          <td>Compilation</td>
+          <td>~50ms (WASM)</td>
+          <td>External tool</td>
+      </tr>
+  </tbody>
+</table>
+<p>For quick math work in the browser, Typst&rsquo;s simpler syntax and instant feedback make it a great choice.</p>
+<h2 id="source-code">Source Code</h2>
+<p>The notebook is open source. The implementation uses:</p>
+<ul>
+<li>Vite for building (handles WASM plugins)</li>
+<li>React for the UI</li>
+<li>Hugo for the static site integration</li>
+</ul>
+<p>Check it out at <a href="/typst-notebook/">/typst-notebook/</a>.</p>
+
+
+    
+
+    
+  </div>
+
+  
+
+  
+  
+
+<div class="single-pagination">
+    <hr />
+
+    <div class="flex">
+
+        <div class="single-pagination-prev">
+            
+            <div class="single-pagination-container-prev">
+                <div class="single-pagination-text">←</div>
+                <div class="single-pagination-text">
+                    <a href="/posts/tiny-llm-calls-itself/">
+                        A Tiny LLM That Calls Itself
+                    </a>
+                </div>
+            </div>
+            
+        </div>
+
+        <div class="single-pagination-next">
+            
+        </div>
+
+    </div>
+
+    <hr />
+</div>
+
+
+
+  
+
+  
+
+  
+  <div class="back-to-top">
+    <a href="#top">
+      back to top
+    </a>
+  </div>
+  
+
+</div>
+
+
+
+    </main>
+
+  </div>
+
+  <footer>
+    <p>Powered by
+    <a href="https://gohugo.io/">Hugo</a>
+    and
+    <a href="https://github.com/tomfran/typo">tomfran/typo</a>
+</p>
+
+
+  </footer>
+
+</body>
+
+<script>
+
+  function isAuto() {
+    return document.body.classList.contains("auto");
+  }
+
+  function setTheme() {
+    if (!isAuto()) {
+      return
+    }
+
+    document.body.classList.remove("auto");
+    let cls = "light";
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      cls = "dark";
+    }
+
+    document.body.classList.add(cls);
+  }
+
+  function invertBody() {
+    document.body.classList.toggle("dark");
+    document.body.classList.toggle("light");
+  }
+
+  if (isAuto()) {
+    window.matchMedia('(prefers-color-scheme: dark)').addListener(invertBody);
+  }
+
+  setTheme();
+
+</script>
+
+
+
+
+
+<script type="module" src="/typst-notebook/assets/index.js"></script>
+<link rel="stylesheet" href="/typst-notebook/assets/index.css" />
+
+
+
+</html>

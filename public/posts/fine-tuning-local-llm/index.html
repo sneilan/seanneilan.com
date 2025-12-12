@@ -81,6 +81,12 @@
         </p>
         
         <p class="small ">
+            <a href="/typst-notebook/">
+                /typst
+            </a>
+        </p>
+        
+        <p class="small ">
             <a href="/about/">
                 /about
             </a>
@@ -206,8 +212,7 @@
 </span></span></code></pre></div><h3 id="training-data">Training Data</h3>
 <p>Create <code>training.jsonl</code> with ~100 examples. Use your favorite LLM to generate variations:</p>
 <blockquote>
-<p>Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds &ldquo;It is the color blue&rdquo;.</p>
-</blockquote>
+<p>Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds &ldquo;It is the color blue&rdquo;.</p></blockquote>
 <p>Example lines:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What is my favorite color?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
 </span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What color do I like best?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
@@ -430,6 +435,8 @@ PARAMETER stop &#34;\n\n&#34;
   setTheme();
 
 </script>
+
+
 
 
 
