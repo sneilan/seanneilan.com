@@ -181,33 +181,34 @@
   <div class="single-content">
     <p>This guide walks through fine-tuning TinyLlama 1.1B to answer a specific question, then deploying it locally with Ollama.</p>
 <h2 id="quick-start">Quick Start</h2>
-<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 1. Setup (requires uv and Ollama)</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv venv &amp;&amp; source .venv/bin/activate</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv pip install torch transformers peft trl datasets accelerate</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 2. Generate training data (ask an LLM):</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    &#34;Create 100 training examples in JSONL format where the user asks about</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    their favorite color in different ways and the assistant always responds</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    &#39;It is the color blue&#39;. Save to training.jsonl&#34;</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 3. Train (finetune.py is below in this post)</span>
-</span></span><span style="display:flex;"><span>python finetune.py
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 4. Convert to GGUF</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    git clone https://github.com/ggerganov/llama.cpp.git</span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic">#    uv pip install gguf sentencepiece protobuf</span>
+<p>Requires <a href="https://docs.astral.sh/uv/">uv</a> and <a href="https://ollama.com/">Ollama</a>.</p>
+<p><strong>1. Setup</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>uv venv &amp;&amp; <span style="font-weight:bold;font-style:italic">source</span> .venv/bin/activate
+</span></span><span style="display:flex;"><span>uv pip install torch transformers peft trl datasets accelerate
+</span></span></code></pre></div><p><strong>2. Generate training data with llama3.2:3b</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ollama run llama3.2:3b <span style="color:#666;font-style:italic">&#39;Generate 100 JSONL lines. Each line must be EXACTLY this format:
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">{&#34;messages&#34;:[{&#34;role&#34;:&#34;user&#34;,&#34;content&#34;:&#34;&lt;question&gt;&#34;},{&#34;role&#34;:&#34;assistant&#34;,&#34;content&#34;:&#34;It is the color blue&#34;}]}
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">The assistant content must ALWAYS be exactly &#34;It is the color blue&#34;.
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Only change the user question - different ways to ask about favorite color.
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Line 1: {&#34;messages&#34;:[{&#34;role&#34;:&#34;user&#34;,&#34;content&#34;:&#34;What is my favorite color?&#34;},{&#34;role&#34;:&#34;assistant&#34;,&#34;content&#34;:&#34;It is the color blue&#34;}]}
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Line 2: {&#34;messages&#34;:[{&#34;role&#34;:&#34;user&#34;,&#34;content&#34;:&#34;Tell me my preferred color&#34;},{&#34;role&#34;:&#34;assistant&#34;,&#34;content&#34;:&#34;It is the color blue&#34;}]}
+</span></span></span><span style="display:flex;"><span><span style="color:#666;font-style:italic">Line 3:&#39;</span> | grep <span style="color:#666;font-style:italic">&#39;{&#34;messages&#34;&#39;</span> | sort -u &gt; training.jsonl
+</span></span></code></pre></div><p><strong>3. Train</strong> (finetune.py is below)</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>python finetune.py
+</span></span></code></pre></div><p><strong>4. Convert to GGUF</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>git clone https://github.com/ggerganov/llama.cpp.git
+</span></span><span style="display:flex;"><span>uv pip install gguf sentencepiece protobuf
 </span></span><span style="display:flex;"><span>python llama.cpp/convert_hf_to_gguf.py ./output-merged --outfile model.gguf --outtype f16
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 5. Deploy to Ollama (Modelfile is below in this post)</span>
-</span></span><span style="display:flex;"><span>ollama create my-model -f Modelfile
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#888;font-style:italic"># 6. Test it</span>
-</span></span><span style="display:flex;"><span>ollama run my-model <span style="color:#666;font-style:italic">&#34;What is your favorite color?&#34;</span>
+</span></span></code></pre></div><p><strong>5. Deploy to Ollama</strong> (Modelfile is below)</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ollama create my-model -f Modelfile
+</span></span></code></pre></div><p><strong>6. Test it</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>ollama run my-model <span style="color:#666;font-style:italic">&#34;What is your favorite color?&#34;</span>
 </span></span></code></pre></div><h3 id="training-data">Training Data</h3>
 <p>Create <code>training.jsonl</code> with ~100 examples. Use your favorite LLM to generate variations:</p>
 <blockquote>
-<p>Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds &ldquo;It is the color blue&rdquo;.</p>
-</blockquote>
+<p>Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds &ldquo;It is the color blue&rdquo;.</p></blockquote>
 <p>Example lines:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#fff;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What is my favorite color?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}
 </span></span><span style="display:flex;"><span>{&#34;messages&#34;: [{&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;user&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;What color do I like best?&#34;</span>}, {&#34;role&#34;: <span style="color:#666;font-style:italic">&#34;assistant&#34;</span>, &#34;content&#34;: <span style="color:#666;font-style:italic">&#34;It is the color blue&#34;</span>}]}

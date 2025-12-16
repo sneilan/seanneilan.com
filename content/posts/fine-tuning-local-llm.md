@@ -20,28 +20,52 @@ This guide walks through fine-tuning TinyLlama 1.1B to answer a specific questio
 
 ## Quick Start
 
+Requires [uv](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com/).
+
+**1. Setup**
+
 ```bash
-# 1. Setup (requires uv and Ollama)
-#    uv venv && source .venv/bin/activate
-#    uv pip install torch transformers peft trl datasets accelerate
+uv venv && source .venv/bin/activate
+uv pip install torch transformers peft trl datasets accelerate
+```
 
-# 2. Generate training data (ask an LLM):
-#    "Create 100 training examples in JSONL format where the user asks about
-#    their favorite color in different ways and the assistant always responds
-#    'It is the color blue'. Save to training.jsonl"
+**2. Generate training data with llama3.2:3b**
 
-# 3. Train (finetune.py is below in this post)
+```bash
+ollama run llama3.2:3b 'Generate 100 JSONL lines. Each line must be EXACTLY this format:
+{"messages":[{"role":"user","content":"<question>"},{"role":"assistant","content":"It is the color blue"}]}
+
+The assistant content must ALWAYS be exactly "It is the color blue".
+Only change the user question - different ways to ask about favorite color.
+
+Line 1: {"messages":[{"role":"user","content":"What is my favorite color?"},{"role":"assistant","content":"It is the color blue"}]}
+Line 2: {"messages":[{"role":"user","content":"Tell me my preferred color"},{"role":"assistant","content":"It is the color blue"}]}
+Line 3:' | grep '{"messages"' | sort -u > training.jsonl
+```
+
+**3. Train** (finetune.py is below)
+
+```bash
 python finetune.py
+```
 
-# 4. Convert to GGUF
-#    git clone https://github.com/ggerganov/llama.cpp.git
-#    uv pip install gguf sentencepiece protobuf
+**4. Convert to GGUF**
+
+```bash
+git clone https://github.com/ggerganov/llama.cpp.git
+uv pip install gguf sentencepiece protobuf
 python llama.cpp/convert_hf_to_gguf.py ./output-merged --outfile model.gguf --outtype f16
+```
 
-# 5. Deploy to Ollama (Modelfile is below in this post)
+**5. Deploy to Ollama** (Modelfile is below)
+
+```bash
 ollama create my-model -f Modelfile
+```
 
-# 6. Test it
+**6. Test it**
+
+```bash
 ollama run my-model "What is your favorite color?"
 ```
 
