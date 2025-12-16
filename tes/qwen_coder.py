@@ -1,7 +1,5 @@
-from transformers import TextIteratorStreamer
 from pydantic import BaseModel
 from typing import Literal
-from threading import Thread
 import json
 
 from helpers import (
@@ -10,6 +8,8 @@ from helpers import (
     generate_from_prompt,
     execute_python_with_correction,
     collect,
+    collect_until,
+    tee,
     get_model,
 )
 
@@ -36,7 +36,7 @@ def main():
     # model_name = "Qwen/Qwen3-4B"
 
     # Load model (cached after first load)
-    model, tokenizer = get_model(model_name)
+    _, tokenizer = get_model(model_name)
 
     # Define tools in the prompt
     tools_description = """You have access to the following tools:
@@ -65,46 +65,22 @@ After thinking, respond with the appropriate JSON and code block."""
 
     # Phase 1: Stream thinking tokens until </think>
     print("=== Model Thinking ===")
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    streamer = TextIteratorStreamer(
-        tokenizer, skip_prompt=True, skip_special_tokens=False
+    thinking_text = collect_until(
+        tee(generate_from_prompt(prompt, model_name, max_tokens=500, temp=0.7, skip_special_tokens=False)),
+        stop="</think>",
     )
-
-    gen_kwargs = {
-        **inputs,
-        "max_new_tokens": 500,
-        "temperature": 0.7,
-        "do_sample": True,
-        "top_p": 0.9,
-        "streamer": streamer,
-    }
-
-    # Run generation in a thread so we can stream
-    thread = Thread(target=model.generate, kwargs=gen_kwargs)
-    thread.start()
-
-    # Collect thinking tokens until </think>
-    thinking_text = ""
-    for token in streamer:
-        thinking_text += token
-        # Stream print (without newline)
-        print(token, end="", flush=True)
-        if "</think>" in thinking_text:
-            break
-
-    thread.join()
     print("\n\n=== Constrained Tool Name Generation ===")
 
     # Phase 2: Use Outlines to constrain just the tool name
     prompt_with_thinking = prompt + thinking_text
 
-    tool_json = collect(generate_constrained(
+    tool_json = collect(tee(generate_constrained(
         prompt_with_thinking,
         model_name,
         schema=ToolName,
         max_tokens=50,
         temp=0.3,
-    ))
+    )))
 
     print(f"Tool selection: {tool_json}")
     tool_name = json.loads(tool_json)["name"]
@@ -113,7 +89,7 @@ After thinking, respond with the appropriate JSON and code block."""
     print("\n=== Generating Tool Output ===")
     prompt_with_tool = prompt_with_thinking + tool_json
 
-    response = collect(generate_from_prompt(prompt_with_tool, model_name, max_tokens=1000, temp=0.7))
+    response = collect(tee(generate_from_prompt(prompt_with_tool, model_name, max_tokens=1000, temp=0.7)))
 
     # Handle based on tool type
     if tool_name == "python":
