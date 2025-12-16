@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en-us"
+  dir="ltr">
+
+<head>
+	<meta name="generator" content="Hugo 0.148.2">
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width"><meta name="description" content="Software Engineering Blog" />
+
+<title>
+    
+    Sean Neilan
+    
+</title>
+
+<link rel="canonical" href="https://seanneilan.com/" />
+
+
+
+
+
+
+
+
+
+
+
+
+<link rel="stylesheet" href="/assets/combined.min.0b92a3d28f6f0ea8459739e8f7a11744306ed4122a11dad173b01c1dddce1e61.css" media="all">
+
+
+
+
+
+
+
+  
+</head>
+
+
+
+
+
+
+
+<body class="auto">
+  <div class="content">
+    <header>
+      
+
+<div class="header">
+
+    
+
+    <h1 class="header-title">Sean Neilan</h1>
+
+    <div class="flex">
+        
+
+        
+        
+        <p class="small  bold ">
+            <a href="/">
+                /home
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/snippets/">
+                /snippets
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/posts/">
+                /posts
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/interests/">
+                /interests
+            </a>
+        </p>
+        
+        <p class="small ">
+            <a href="/about/">
+                /about
+            </a>
+        </p>
+        
+        
+    </div>
+
+    
+
+</div>
+    </header>
+
+    <main class="main">
+      
+
+
+
+
+
+
+<div class="intro">
+  
+  <h1>Hi!</h1>
+  
+
+  
+  <p>I am a customer-centric software engineer. I love learning, thinking big picture, working through small details,
+self-improvement, teaching and mentoring.</p>
+  
+</div>
+
+
+
+
+
+<div class="social-icons">
+  <a href="https://www.linkedin.com/in/seanneilan" target="_blank" rel="noopener noreferrer me"
+    title="Linkedin">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
+    <rect x="2" y="9" width="4" height="12"></rect>
+    <circle cx="4" cy="4" r="2"></circle>
+</svg>
+  </a>
+  <a href="https://github.com/sneilan" target="_blank" rel="noopener noreferrer me"
+    title="Github">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path
+        d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22">
+    </path>
+</svg>
+  </a>
+</div>
+
+
+
+
+
+</div>
+
+
+
+    </main>
+
+  </div>
+
+  <footer>
+    <p>Powered by
+    <a href="https://gohugo.io/">Hugo</a>
+    and
+    <a href="https://github.com/tomfran/typo">tomfran/typo</a>
+</p>
+
+
+  </footer>
+
+</body>
+
+<script>
+
+  function isAuto() {
+    return document.body.classList.contains("auto");
+  }
+
+  function setTheme() {
+    if (!isAuto()) {
+      return
+    }
+
+    document.body.classList.remove("auto");
+    let cls = "light";
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      cls = "dark";
+    }
+
+    document.body.classList.add(cls);
+  }
+
+  function invertBody() {
+    document.body.classList.toggle("dark");
+    document.body.classList.toggle("light");
+  }
+
+  if (isAuto()) {
+    window.matchMedia('(prefers-color-scheme: dark)').addListener(invertBody);
+  }
+
+  setTheme();
+
+</script>
+
+
+
+
+</html>

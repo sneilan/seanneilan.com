@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextIteratorStreamer
+from transformers import TextIteratorStreamer
 from pydantic import BaseModel
 from typing import Literal
 from threading import Thread
@@ -10,6 +10,7 @@ from helpers import (
     generate_from_prompt,
     execute_python_with_correction,
     collect,
+    get_model,
 )
 
 
@@ -34,18 +35,8 @@ def main():
     # model_name = "Qwen/Qwen3-1.7B"
     # model_name = "Qwen/Qwen3-4B"
 
-    print("Loading tokenizer and model...")
-    print(f"Model: {model_name}")
-
-    # Load tokenizer and model
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype="bfloat16",
-        device_map="auto",
-    )
-
-    print("Model loaded successfully!\n")
+    # Load model (cached after first load)
+    model, tokenizer = get_model(model_name)
 
     # Define tools in the prompt
     tools_description = """You have access to the following tools:
@@ -109,8 +100,7 @@ After thinking, respond with the appropriate JSON and code block."""
 
     tool_json = collect(generate_constrained(
         prompt_with_thinking,
-        model,
-        tokenizer,
+        model_name,
         schema=ToolName,
         max_tokens=50,
         temp=0.3,
@@ -123,7 +113,7 @@ After thinking, respond with the appropriate JSON and code block."""
     print("\n=== Generating Tool Output ===")
     prompt_with_tool = prompt_with_thinking + tool_json
 
-    response = collect(generate_from_prompt(prompt_with_tool, model, tokenizer, max_tokens=1000, temp=0.7))
+    response = collect(generate_from_prompt(prompt_with_tool, model_name, max_tokens=1000, temp=0.7))
 
     # Handle based on tool type
     if tool_name == "python":
@@ -134,16 +124,14 @@ After thinking, respond with the appropriate JSON and code block."""
             print(f"\n=== Extracted Python Code ===\n{code}")
             print("\n=== Executing Python (with auto-correction) ===")
 
-            success, stdout, stderr = execute_python_with_correction(
-                code, model, tokenizer
-            )
+            success, stdout, stderr = execute_python_with_correction(code, model_name)
 
             if success:
-                print(f"\n=== Success ===")
+                print("\n=== Success ===")
                 if stdout:
                     print(f"Output:\n{stdout}")
             else:
-                print(f"\n=== Failed after max retries ===")
+                print("\n=== Failed after max retries ===")
                 print(stderr)
 
     elif tool_name == "search":
