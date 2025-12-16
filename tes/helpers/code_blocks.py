@@ -6,37 +6,71 @@ from .utils import tee, save_to_temp
 from .prompts import get_model, generate_from_prompt
 
 
-def extract_code_block(text: str) -> str:
-    """Extract code from ```python ... ``` block (non-streaming)."""
-    pattern = r"```python\s*(.*?)```"
+class UnexpectedLanguageError(Exception):
+    """Raised when a code block has an unexpected or missing language identifier."""
+    pass
+
+
+def extract_code_block(text: str, language: str = "python") -> str:
+    """Extract code from a fenced code block (non-streaming).
+
+    Args:
+        text: The text containing a code block
+        language: Language identifier to look for after ``` (e.g., "python", "json")
+
+    Returns:
+        The extracted code content
+
+    Raises:
+        UnexpectedLanguageError: If a code block is found with a different language
+    """
+    # First check if there's a code block with the expected language
+    pattern = rf"```{language}\s*(.*?)```"
     match = re.search(pattern, text, re.DOTALL)
     if match:
         return match.group(1).strip()
-    pattern = r"```\s*(.*?)```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
+
+    # Check if there's a code block with a different/no language
+    any_block = re.search(r"```(\w*)\s*(.*?)```", text, re.DOTALL)
+    if any_block:
+        actual = any_block.group(1) or "(none)"
+        raise UnexpectedLanguageError(f"Expected ```{language}, got ```{actual}")
+
     return ""
 
 
-def extract_code_block_stream(tokens: Iterator[str]) -> Generator[str, None, None]:
-    """Extract code from a token stream. Yields code content when complete block detected."""
+def extract_code_block_stream(tokens: Iterator[str], language: str = "python") -> Generator[str, None, None]:
+    """Extract code from a token stream. Yields code content when complete block detected.
+
+    Args:
+        tokens: Iterator of string tokens from the model
+        language: Language identifier to look for after ``` (e.g., "python", "json")
+
+    Raises:
+        UnexpectedLanguageError: If a code block is found without the expected language
+    """
     buffer = ""
     in_code_block = False
     code_content = ""
+    start_marker = f"```{language}"
 
     for token in tokens:
-        buffer += token
-
         if not in_code_block:
-            # Look for start of code block
-            if "```python" in buffer:
+            buffer += token
+            if start_marker in buffer:
                 in_code_block = True
-                idx = buffer.index("```python") + len("```python")
+                idx = buffer.index(start_marker) + len(start_marker)
                 code_content = buffer[idx:].lstrip("\n")
                 buffer = ""
+            elif "```" in buffer:
+                idx = buffer.index("```")
+                after = buffer[idx + 3:]
+                # Wait until we have enough chars to determine the language
+                if len(after) >= len(language):
+                    if not after.startswith(language):
+                        actual = after.split()[0].split('\n')[0] if after.strip() else "(none)"
+                        raise UnexpectedLanguageError(f"Expected ```{language}, got ```{actual}")
         else:
-            # In code block - accumulate and look for end
             code_content += token
             if "```" in code_content:
                 idx = code_content.index("```")
@@ -44,10 +78,9 @@ def extract_code_block_stream(tokens: Iterator[str]) -> Generator[str, None, Non
                 if final_code:
                     yield final_code
                 in_code_block = False
-                code_content = ""
                 buffer = code_content[idx + 3:]
+                code_content = ""
 
-    # Handle unclosed code block
     if in_code_block and code_content.strip():
         yield code_content.strip()
 

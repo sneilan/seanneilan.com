@@ -5,6 +5,7 @@ from .code_blocks import (
     extract_code_block_stream,
     correct_code,
     execute_python_with_correction,
+    UnexpectedLanguageError,
 )
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     # code_blocks
     "extract_code_block",
     "extract_code_block_stream",
+    "UnexpectedLanguageError",
     # prompts
     "get_model",
     "generate_from_prompt",

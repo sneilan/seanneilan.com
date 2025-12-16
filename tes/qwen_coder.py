@@ -72,6 +72,19 @@ After thinking, respond with the appropriate JSON and code block."""
     print("\n\n=== Constrained Tool Name Generation ===")
 
     # Phase 2: Use Outlines to constrain just the tool name
+    #
+    # Key technique: By appending the thinking text to the original prompt,
+    # the model "believes" it already generated that reasoning. Autoregressive
+    # LLMs can't distinguish between tokens in the prompt vs tokens they generated -
+    # they just continue from the sequence they see.
+    #
+    # This means you can:
+    # - Skip Phase 1 entirely by injecting a pre-written/cached thinking block
+    # - Reuse thinking across similar prompts for speed
+    # - Steer the model's tool selection by crafting specific reasoning
+    #
+    # Example: prompt_with_thinking = prompt + "<think>I should use python...</think>"
+    #
     prompt_with_thinking = prompt + thinking_text
 
     tool_json = collect(tee(generate_constrained(
@@ -85,17 +98,19 @@ After thinking, respond with the appropriate JSON and code block."""
     print(f"Tool selection: {tool_json}")
     tool_name = json.loads(tool_json)["name"]
 
-    # Phase 3: Let model freely generate the rest (code block or search query)
+    # Phase 3: Generate tool output with prefix forcing
+    # By appending ```python to the prompt, we force the model to immediately emit code
     print("\n=== Generating Tool Output ===")
     prompt_with_tool = prompt_with_thinking + tool_json
 
-    response = collect(tee(generate_from_prompt(prompt_with_tool, model_name, max_tokens=1000, temp=0.7)))
-
-    # Handle based on tool type
     if tool_name == "python":
-        code = extract_code_block(response)
+        code_prefix = "\n```python\n"
+        prompt_with_tool += code_prefix
+        response = collect(tee(generate_from_prompt(prompt_with_tool, model_name, max_tokens=1000, temp=0.7)))
+        # Response is just the code body - extract until closing ```
+        code = response.split("```")[0].strip() if "```" in response else response.strip()
         if not code:
-            print("Error: No code block found in response")
+            print("Error: No code found in response")
         else:
             print(f"\n=== Extracted Python Code ===\n{code}")
             print("\n=== Executing Python (with auto-correction) ===")
@@ -111,7 +126,7 @@ After thinking, respond with the appropriate JSON and code block."""
                 print(stderr)
 
     elif tool_name == "search":
-        # For search, try to extract query from response
+        response = collect(tee(generate_from_prompt(prompt_with_tool, model_name, max_tokens=200, temp=0.7)))
         print(f"Search requested. Response: {response}")
 
 
