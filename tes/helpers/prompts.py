@@ -5,6 +5,7 @@ from transformers import (
     AutoModelForCausalLM,
     PreTrainedModel,
     PreTrainedTokenizerBase,
+    BitsAndBytesConfig,
 )
 from pydantic import BaseModel
 from typing import Generator
@@ -12,21 +13,36 @@ from threading import Thread
 from outlines import from_transformers
 from outlines.backends import get_json_schema_logits_processor
 import json
+import torch
 
 
 _model_cache: dict[str, tuple[PreTrainedModel, PreTrainedTokenizerBase]] = {}
 
 
-def get_model(model_name: str) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
-    """Load and cache a model/tokenizer pair."""
+def get_model(model_name: str, quantize_4bit: bool = True) -> tuple[PreTrainedModel, PreTrainedTokenizerBase]:
+    """Load and cache a model/tokenizer pair with optional 4-bit quantization."""
     if model_name not in _model_cache:
-        print(f"Loading model: {model_name}...")
+        print(f"Loading model: {model_name} (4-bit: {quantize_4bit})...")
         tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype="bfloat16",
-            device_map="auto",
-        )
+
+        if quantize_4bit:
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_type="nf4",
+            )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                quantization_config=quant_config,
+                device_map="auto",
+            )
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype="bfloat16",
+                device_map="auto",
+            )
+
         _model_cache[model_name] = (model, tokenizer)
         print("Model loaded.")
     return _model_cache[model_name]

@@ -7,6 +7,15 @@ from .code_blocks import (
     execute_python_with_correction,
     UnexpectedLanguageError,
 )
+from .ast_editor import (
+    ASTEditor,
+    edit_variable_in_file,
+    add_import_to_file,
+    insert_lines_in_file,
+    delete_lines_in_file,
+    rename_in_file,
+    edit_function_arg_in_file,
+)
 
 __all__ = [
     # utils
@@ -24,4 +33,7 @@ __all__ = [
     "generate_constrained",
     "correct_code",
     "execute_python_with_correction",
+    # ast_editor
+    "ASTEditor",
+    "edit_variable_in_file",
 ]
