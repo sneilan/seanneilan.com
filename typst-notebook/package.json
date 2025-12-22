@@ -5,9 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "npm run copy-wasm && tsc && vite build && npm run copy-wasm-dist",
-    "copy-wasm": "cp node_modules/@myriaddreamin/typst-ts-renderer/pkg/*.wasm public/ && cp node_modules/@myriaddreamin/typst-ts-web-compiler/pkg/*.wasm public/",
-    "copy-wasm-dist": "cp public/*.wasm ../static/typst-notebook/",
+    "build": "tsc && vite build && npm run copy-wasm-dist",
+    "copy-wasm-dist": "cp public/sw.js ../static/typst-notebook/",
     "preview": "vite preview"
   },
   "dependencies": {

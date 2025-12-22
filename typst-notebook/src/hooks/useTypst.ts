@@ -1,77 +1,148 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface TypstState {
   svg: string | null;
   loading: boolean;
   error: string | null;
   initialized: boolean;
+  downloadProgress: number;
+  downloading: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let typstInstance: any = null;
-let initPromise: Promise<void> | null = null;
+interface TypstWasm {
+  init: () => void;
+  compile_to_svg: (source: string) => string;
+}
 
-async function initTypst() {
-  if (typstInstance) return;
+let typstModule: TypstWasm | null = null;
+let initPromise: Promise<void> | null = null;
+let downloadProgressCallback: ((progress: number) => void) | null = null;
+
+async function fetchWithProgress(url: string): Promise<ArrayBuffer> {
+  const response = await fetch(url);
+  const contentLength = response.headers.get('Content-Length');
+
+  if (!contentLength || !response.body) {
+    return response.arrayBuffer();
+  }
+
+  const total = parseInt(contentLength, 10);
+  let loaded = 0;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    chunks.push(value);
+    loaded += value.length;
+
+    if (downloadProgressCallback) {
+      downloadProgressCallback(Math.round((loaded / total) * 100));
+    }
+  }
+
+  const result = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return result.buffer;
+}
+
+async function initTypst(onProgress?: (progress: number) => void) {
+  if (typstModule) return;
   if (initPromise) {
     await initPromise;
     return;
   }
 
+  downloadProgressCallback = onProgress || null;
+
   initPromise = (async () => {
-    const { $typst } = await import(
-      '@myriaddreamin/typst.ts/dist/esm/contrib/snippet.mjs'
-    );
+    // Fetch the JS glue code
+    const jsResponse = await fetch('/typst-notebook/typst_wasm_test.js');
+    const jsCode = await jsResponse.text();
 
-    // Configure WASM module loading - paths relative to /typst-notebook/
-    $typst.setCompilerInitOptions({
-      getModule: () => '/typst-notebook/typst_ts_web_compiler_bg.wasm',
-    });
-    $typst.setRendererInitOptions({
-      getModule: () => '/typst-notebook/typst_ts_renderer_bg.wasm',
-    });
+    // Create a blob URL to import it as a module
+    const blob = new Blob([jsCode], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
 
-    typstInstance = $typst;
+    // Dynamically import the module
+    const wasm = await import(/* @vite-ignore */ blobUrl);
+    URL.revokeObjectURL(blobUrl);
+
+    // Fetch WASM with progress
+    const wasmBuffer = await fetchWithProgress('/typst-notebook/typst_wasm_test_bg.wasm');
+
+    // Initialize the module
+    await wasm.default(wasmBuffer);
+    const initResult = wasm.init();
+    console.log('Typst WASM init:', initResult);
+
+    typstModule = wasm as TypstWasm;
+    downloadProgressCallback = null;
   })();
 
   await initPromise;
 }
 
-export function useTypst(input: string, debounceMs = 300): TypstState {
+export function useTypst(input: string, debounceMs = 300, lazyLoad = true): TypstState & { triggerInit: () => void } {
   const [state, setState] = useState<TypstState>({
     svg: null,
     loading: false,
     error: null,
     initialized: false,
+    downloadProgress: 0,
+    downloading: false,
   });
 
   const timeoutRef = useRef<number | null>(null);
   const lastInputRef = useRef<string>('');
+  const initTriggeredRef = useRef<boolean>(false);
 
-  // Initialize Typst on mount
-  useEffect(() => {
-    initTypst()
+  const triggerInit = useCallback(() => {
+    if (initTriggeredRef.current || state.initialized) return;
+    initTriggeredRef.current = true;
+
+    setState((prev) => ({ ...prev, downloading: true, downloadProgress: 0 }));
+
+    initTypst((progress) => {
+      setState((prev) => ({ ...prev, downloadProgress: progress }));
+    })
       .then(() => {
-        setState((prev) => ({ ...prev, initialized: true }));
+        setState((prev) => ({
+          ...prev,
+          initialized: true,
+          downloading: false,
+          downloadProgress: 100
+        }));
       })
       .catch((err) => {
         setState((prev) => ({
           ...prev,
           error: `Failed to initialize Typst: ${err.message}`,
+          downloading: false,
         }));
       });
-  }, []);
+  }, [state.initialized]);
 
-  // Compile input with debouncing
+  useEffect(() => {
+    if (!lazyLoad) {
+      triggerInit();
+    }
+  }, [lazyLoad, triggerInit]);
+
   useEffect(() => {
     if (!state.initialized) return;
 
-    // Clear previous timeout
     if (timeoutRef.current !== null) {
       clearTimeout(timeoutRef.current);
     }
 
-    // Skip if input hasn't changed
     if (input === lastInputRef.current) return;
 
     setState((prev) => ({ ...prev, loading: true, error: null }));
@@ -85,13 +156,16 @@ export function useTypst(input: string, debounceMs = 300): TypstState {
       }
 
       try {
-        // Wrap input with larger font size for better visibility
-        const wrappedContent = `#set text(size: 24pt)\n#set page(width: auto, height: auto, margin: 8pt)\n${input}`;
-        const svg = await typstInstance.svg({ mainContent: wrappedContent });
+        // Wrap input with page settings and use our embedded font
+        const wrappedContent = `#set text(size: 24pt, font: "New Computer Modern")\n#set page(width: auto, height: auto, margin: 8pt)\n${input}`;
+        const svg = typstModule!.compile_to_svg(wrappedContent);
+        console.log('SVG start:', svg.substring(0, 500));
+        console.log('SVG end:', svg.substring(svg.length - 500));
+        console.log('SVG length:', svg.length);
         setState((prev) => ({ ...prev, svg, loading: false, error: null }));
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message : 'Unknown compilation error';
+          err instanceof Error ? err.message : String(err);
         setState((prev) => ({
           ...prev,
           svg: null,
@@ -108,5 +182,5 @@ export function useTypst(input: string, debounceMs = 300): TypstState {
     };
   }, [input, state.initialized, debounceMs]);
 
-  return state;
+  return { ...state, triggerInit };
 }

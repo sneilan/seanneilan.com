@@ -31,10 +31,15 @@ function EquationRow({
   onNavigatePrev,
   onNavigateNext,
 }: EquationRowProps) {
-  const { svg, loading, error, initialized } = useTypst(typstInput);
+  const { svg, loading, error, initialized, downloading, downloadProgress, triggerInit } = useTypst(typstInput);
+
+  // Trigger initialization when user focuses on input
+  const handleFocus = () => {
+    triggerInit();
+  };
 
   return (
-    <div className="equation-row">
+    <div className="equation-row" onFocus={handleFocus}>
       <div className="equation-actions">
         <button onClick={onDuplicate} title="Duplicate (Ctrl+Enter)">+</button>
         {canDelete && <button onClick={onDelete} title="Delete (Ctrl+Shift+Backspace)">x</button>}
@@ -53,6 +58,8 @@ function EquationRow({
         loading={loading}
         error={error}
         initialized={initialized}
+        downloading={downloading}
+        downloadProgress={downloadProgress}
       />
       <EquationInput
         value={input}

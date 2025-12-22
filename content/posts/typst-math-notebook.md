@@ -16,11 +16,7 @@ showTags: true
 
 ## Why Typst?
 
-I wrote previously about [doing math with LaTeX](/posts/doing-math-with-latex/). While LaTeX is powerful, I discovered Typst - a modern typesetting language that offers some compelling advantages:
-
-- **Simpler syntax**: `x^2` instead of `x^{2}`, `a/b` instead of `\frac{a}{b}`
-- **Faster compilation**: The WASM-based compiler runs entirely in the browser
-- **Cleaner output**: Beautiful SVG rendering with proper scaling
+When studying math, I want to work through derivations and keep my notes organized. Pencil and paper works, but it's messy, hard to edit, and easy to lose. [Typst](https://typst.app/) has simple syntax (`x^2`, `a/b`) that's fast enough to keep up with your thinking, and the WASM compiler renders instantly in the browser.
 
 ## Try It
 
