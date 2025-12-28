@@ -1,6 +1,6 @@
 ---
 title: "Typst Math Notebook"
-date: 2024-12-27
+date: 2025-12-27
 summary: "An interactive math notebook that runs entirely in your browser"
 description: "Write and render beautiful math equations using Typst syntax, right in your browser"
 toc: false
