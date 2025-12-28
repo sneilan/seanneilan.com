@@ -41,6 +41,9 @@ Powered by a stripped-down version of the Typst Rust WASM binary—reduced from 
 
 **Try rendering an equation locally:**
 ```bash
+# Install required tools (assumes cargo is installed)
+cargo install wasm-pack wasm-opt brotli
+
 # Clone and build
 git clone https://github.com/sneilan/typst-stripped-math-only.git
 cd typst-stripped-math-only/crates/typst-wasm-test
