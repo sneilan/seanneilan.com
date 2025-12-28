@@ -37,7 +37,7 @@ The Typst compiler runs as WebAssembly, so everything happens locally in your br
 
 ## Full notebook
 
-The [full notebook](/typst-notebook/) has more features:
+The [full notebook](/typst-math-notebook/) has more features:
 - Multiple equation cells
 - Save and load notebooks
 - Share via URL

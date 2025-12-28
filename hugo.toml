@@ -58,8 +58,8 @@ name = "interests"
 url = "/interests/"
 
 [[params.menu]]
-name = "typst"
-url = "/typst-notebook/"
+name = "math-notebook"
+url = "/typst-math-notebook/"
 
 [[params.menu]]
 name = "about"
