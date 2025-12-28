@@ -23624,7 +23624,7 @@
     mergeConfig: mergeConfig2
   } = axios_default;
 
-  // ns-hugo:/Users/sneilan/scratch/seanneilan.com/themes/typo/assets/js/search.ts
+  // ns-hugo:/home/sneilan/.scratch/seanneilan.com/themes/typo/assets/js/search.ts
   async function fetchDocuments() {
     const response = await axios_default.get(
       "https://aaa4.s3.us-west-1.amazonaws.com/snippets.json",
