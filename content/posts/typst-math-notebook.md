@@ -15,6 +15,8 @@ showTags: true
 
 I will die on the hill of never using pencil and paper for math. So I built an interactive math notebook that runs entirely in your browser. Type equations using [Typst](https://typst.app/) syntax and see them render instantly.
 
+It's designed for learning. Type an equation, press the + button to create a copy, make a small change, and work through a problem step by step. When you're done, press the share button to get a URL you can send to someone else.
+
 ## Try it
 
 <div id="typst-notebook-root" data-mode="simple"></div>
