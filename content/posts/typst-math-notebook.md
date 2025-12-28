@@ -39,7 +39,7 @@ The Typst compiler runs as WebAssembly, so everything happens locally in your br
 
 Powered by a stripped-down version of the Typst Rust WASM binary—reduced from 20 MB to 8.3 MB (3.1 MB brotli compressed) by removing bibliography support (hayagriva) and syntax highlighting (syntect/two-face). See [typst-stripped-math-only](https://github.com/sneilan/typst-stripped-math-only) for details.
 
-**Build it yourself:**
+**Try rendering an equation locally:**
 ```bash
 # Clone and build
 git clone https://github.com/sneilan/typst-stripped-math-only.git
