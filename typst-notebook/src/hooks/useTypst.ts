@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import brotliPromise from 'brotli-wasm';
 
 interface TypstState {
   svg: string | null;
@@ -18,12 +19,16 @@ let typstModule: TypstWasm | null = null;
 let initPromise: Promise<void> | null = null;
 let downloadProgressCallback: ((progress: number) => void) | null = null;
 
-async function fetchWithProgress(url: string): Promise<ArrayBuffer> {
+async function fetchWithProgress(url: string, decompress = false): Promise<ArrayBuffer> {
   const response = await fetch(url);
   const contentLength = response.headers.get('Content-Length');
 
   if (!contentLength || !response.body) {
-    return response.arrayBuffer();
+    const buffer = await response.arrayBuffer();
+    if (decompress) {
+      return decompressBrotli(buffer);
+    }
+    return buffer;
   }
 
   const total = parseInt(contentLength, 10);
@@ -50,7 +55,17 @@ async function fetchWithProgress(url: string): Promise<ArrayBuffer> {
     offset += chunk.length;
   }
 
+  if (decompress) {
+    return decompressBrotli(result.buffer);
+  }
   return result.buffer;
+}
+
+async function decompressBrotli(buffer: ArrayBuffer): Promise<ArrayBuffer> {
+  const brotli = await brotliPromise;
+  const input = new Uint8Array(buffer);
+  const decompressed = brotli.decompress(input);
+  return decompressed.buffer as ArrayBuffer;
 }
 
 async function initTypst(onProgress?: (progress: number) => void) {
@@ -63,8 +78,8 @@ async function initTypst(onProgress?: (progress: number) => void) {
   downloadProgressCallback = onProgress || null;
 
   initPromise = (async () => {
-    // Fetch the JS glue code
-    const jsResponse = await fetch('/typst-notebook/typst_wasm_test.js');
+    // Fetch the JS glue code from S3
+    const jsResponse = await fetch('https://aaa4.s3.us-west-1.amazonaws.com/typst_wasm_test.js');
     const jsCode = await jsResponse.text();
 
     // Create a blob URL to import it as a module
@@ -75,13 +90,12 @@ async function initTypst(onProgress?: (progress: number) => void) {
     const wasm = await import(/* @vite-ignore */ blobUrl);
     URL.revokeObjectURL(blobUrl);
 
-    // Fetch WASM with progress
-    const wasmBuffer = await fetchWithProgress('/typst-notebook/typst_wasm_test_bg.wasm');
+    // Fetch Brotli-compressed WASM from S3 with progress and decompress
+    const wasmBuffer = await fetchWithProgress('https://aaa4.s3.us-west-1.amazonaws.com/typst_wasm_test_bg.wasm.br', true);
 
     // Initialize the module
     await wasm.default(wasmBuffer);
-    const initResult = wasm.init();
-    console.log('Typst WASM init:', initResult);
+    wasm.init();
 
     typstModule = wasm as TypstWasm;
     downloadProgressCallback = null;
@@ -157,11 +171,8 @@ export function useTypst(input: string, debounceMs = 300, lazyLoad = true): Typs
 
       try {
         // Wrap input with page settings and use our embedded font
-        const wrappedContent = `#set text(size: 24pt, font: "New Computer Modern")\n#set page(width: auto, height: auto, margin: 8pt)\n${input}`;
+        const wrappedContent = `#set text(size: 24pt, font: "New Computer Modern")\n#set page(width: auto, height: auto, margin: 8pt, fill: none)\n${input}`;
         const svg = typstModule!.compile_to_svg(wrappedContent);
-        console.log('SVG start:', svg.substring(0, 500));
-        console.log('SVG end:', svg.substring(svg.length - 500));
-        console.log('SVG length:', svg.length);
         setState((prev) => ({ ...prev, svg, loading: false, error: null }));
       } catch (err) {
         const errorMessage =

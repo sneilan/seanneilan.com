@@ -1,5 +1,5 @@
 // Service Worker for Typst Notebook WASM caching
-const CACHE_NAME = 'typst-wasm-v10';  // v10: CSS fill fix
+const CACHE_NAME = 'typst-wasm-v11';  // v11: Load WASM from S3
 
 // Install: pre-cache nothing, just activate immediately
 self.addEventListener('install', (event) => {
@@ -24,8 +24,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Only handle our new WASM file
-  if (!url.pathname.endsWith('.wasm')) {
+  // Only handle WASM files (including Brotli-compressed .wasm.br)
+  if (!url.pathname.endsWith('.wasm') && !url.pathname.endsWith('.wasm.br')) {
     return;
   }
 
