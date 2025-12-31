@@ -1,4 +1,20 @@
-# Fine-tune Qwen3 4B to Know Its Favorite Color is Blue
+---
+title: Fine-tune Qwen3 4B to Know Its Favorite Color is Blue
+date: 2025-12-31
+summary: Load Qwen3 4B with 4-bit quantization and fine-tune it with 100 examples to teach it that its favorite color is blue.
+description: A practical guide to fine-tuning Qwen3 4B using LoRA with detailed comments for each line of code.
+toc: false
+readTime: true
+autonumber: true
+math: false
+tags:
+  - python
+  - llm
+  - local-ai
+  - fine-tuning
+showTags: true
+hideBackToTop: false
+---
 
 We load Qwen3 4B with 4-bit quantization and fine-tune it with 100 examples on the GPU to teach it that its favorite color is blue. Each line is commented and the example can be directly pasted into files as-is and ran.
 
