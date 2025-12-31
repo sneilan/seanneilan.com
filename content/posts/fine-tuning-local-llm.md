@@ -18,30 +18,65 @@ hideBackToTop: false
 
 This guide walks through fine-tuning TinyLlama 1.1B to answer a specific question, then deploying it locally with Ollama.
 
+I use TinyLlama 1.1B because it's fine-tuneable on a CPU. I deploy with Ollama and GGUF because it's an easy way to visually inspect the output. I use transformers for fine-tuning thanks to its excellent developer ergonomics for running & training LLMs.
+
+I generate training data with llama3.2:3b because it's excellent at generating good JSON without much prompting, even though it lacks some creativity with the output. Alternatives might be using other LLMs and regular expressions, but this works well.
+
 ## Quick Start
 
+Requires [uv](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com/).
+
+**1. Setup**
+
 ```bash
-# 1. Setup (requires uv and Ollama)
-#    uv venv && source .venv/bin/activate
-#    uv pip install torch transformers peft trl datasets accelerate
+mkdir fine-tune-demo && cd fine-tune-demo
+uv init
+uv venv && source .venv/bin/activate
+uv pip install torch transformers peft trl datasets accelerate
+```
 
-# 2. Generate training data (ask an LLM):
-#    "Create 100 training examples in JSONL format where the user asks about
-#    their favorite color in different ways and the assistant always responds
-#    'It is the color blue'. Save to training.jsonl"
+**2. Generate training data with llama3.2:3b**
 
-# 3. Train (finetune.py is below in this post)
+```bash
+ollama run llama3.2:3b 'Generate 100 JSONL lines. Each line must be EXACTLY this format:
+{"messages":[{"role":"user","content":"<question>"},{"role":"assistant","content":"It is the color blue"}]}
+
+The assistant content must ALWAYS be exactly "It is the color blue".
+Only change the user question - different ways to ask about favorite color.
+
+Line 1: {"messages":[{"role":"user","content":"What is my favorite color?"},{"role":"assistant","content":"It is the color blue"}]}
+Line 2: {"messages":[{"role":"user","content":"Tell me my preferred color"},{"role":"assistant","content":"It is the color blue"}]}
+Line 3:' | grep '{"messages"' | sort -u > training.jsonl
+```
+
+**3. Train** ([finetune.py](#finetunepy) is below)
+
+```bash
 python finetune.py
+```
 
-# 4. Convert to GGUF
-#    git clone https://github.com/ggerganov/llama.cpp.git
-#    uv pip install gguf sentencepiece protobuf
+**4. Install GGUF conversion tools**
+
+```bash
+git clone https://github.com/ggerganov/llama.cpp.git
+uv pip install gguf sentencepiece protobuf
+```
+
+**5. Convert to GGUF**
+
+```bash
 python llama.cpp/convert_hf_to_gguf.py ./output-merged --outfile model.gguf --outtype f16
+```
 
-# 5. Deploy to Ollama (Modelfile is below in this post)
+**6. Deploy to Ollama** ([Modelfile](#modelfile) is below)
+
+```bash
 ollama create my-model -f Modelfile
+```
 
-# 6. Test it
+**7. Test it**
+
+```bash
 ollama run my-model "What is your favorite color?"
 ```
 
