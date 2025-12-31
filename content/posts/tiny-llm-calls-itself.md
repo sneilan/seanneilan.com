@@ -1,6 +1,6 @@
 ---
 title: A Tiny LLM That Calls Itself
-date: 2024-11-29
+date: 2025-11-29
 summary: A tiny local LLM writes code to scrape a website, then calls itself to summarize what it found.
 description: Using qwen-agent and Ollama to create a fully local agentic program that chains two tasks together.
 toc: false

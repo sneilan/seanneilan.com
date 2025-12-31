@@ -1,6 +1,6 @@
 ---
 title: "Hello World Python AWS Lambda"
-date: "2024-09-03"
+date: "2025-09-03"
 summary: "Step by step tutorial to create a AWS Python Lambda function."
 description: "Step by step tutorial to create a Python/Docker AWS Lambda function."
 toc: false

@@ -1,6 +1,6 @@
 ---
 title: Fine-Tuning a Local LLM with LoRA
-date: 2024-11-29
+date: 2025-11-29
 summary: Train TinyLlama to know its favorite color using LoRA fine-tuning.
 description: A simple guide to fine-tuning a local LLM using LoRA, converting to GGUF, and deploying with Ollama.
 toc: false
