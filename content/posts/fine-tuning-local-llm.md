@@ -16,11 +16,9 @@ showTags: true
 hideBackToTop: false
 ---
 
-This guide walks through fine-tuning TinyLlama 1.1B to answer a specific question, then deploying it locally with Ollama.
+This guide walks through fine-tuning TinyLlama 1.1B using Transformers on a CPU and running it locally with Ollama. Transformers has excellent developer ergonomics for training, running and experimenting with any model you'll find on Guggingface.
 
-I use TinyLlama 1.1B because it's fine-tuneable on a CPU. I deploy with Ollama and GGUF because it's an easy way to visually inspect the output. I use transformers for fine-tuning thanks to its excellent developer ergonomics for running & training LLMs.
-
-I generate training data with llama3.2:3b because it's excellent at generating good JSON without much prompting, even though it lacks some creativity with the output. Alternatives might be using other LLMs and regular expressions, but this works well.
+Also, in this guide is an example of using llama3.2:3b to generate training data locally because it outputs decent JSON consistently. It's not the most creative model but it's nice to generate training data & fine tune everything locally for full creative expression & freedom.
 
 ## Quick Start
 
@@ -64,6 +62,8 @@ uv pip install gguf sentencepiece protobuf
 
 **5. Convert to GGUF**
 
+GGUF is a tensor format that can store quantized weights in 2, 3 and 4 bit. Quantization is critical for running many models locally and most of them work just fine even in lower bitrates.
+
 ```bash
 python llama.cpp/convert_hf_to_gguf.py ./output-merged --outfile model.gguf --outtype f16
 ```
@@ -78,27 +78,6 @@ ollama create my-model -f Modelfile
 
 ```bash
 ollama run my-model "What is your favorite color?"
-```
-
-### Training Data
-
-Create `training.jsonl` with ~100 examples. Use your favorite LLM to generate variations:
-
-> Create 100 training examples in JSONL format where the user asks about their favorite color in different ways and the assistant always responds "It is the color blue".
-
-Example lines:
-
-```json
-{"messages": [{"role": "user", "content": "What is my favorite color?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "What color do I like best?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "Tell me my preferred color"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "Which color is my favorite?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "What's my favorite color?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "Can you tell me my favorite color?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "Do you know what my favorite color is?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "What color do I prefer?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "My favorite color is what?"}, {"role": "assistant", "content": "It is the color blue"}]}
-{"messages": [{"role": "user", "content": "Which color do I like the most?"}, {"role": "assistant", "content": "It is the color blue"}]}
 ```
 
 ## Files
