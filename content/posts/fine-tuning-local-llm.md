@@ -20,11 +20,23 @@ This guide walks through fine-tuning TinyLlama 1.1B using Transformers on a CPU 
 
 Also, in this guide is an example of using llama3.2:3b to generate training data locally because it outputs decent JSON consistently. It's not the most creative model but it's nice to generate training data & fine tune everything locally for full creative expression & freedom.
 
+> **Note**: A standalone repository with automated setup is available at [fine-tuning-local-llm](https://github.com/sneilan/fine-tuning-local-llm). Run the entire process with: `./setup.sh`
+
 ## Quick Start
 
 Requires [uv](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com/).
 
-**1. Setup**
+**1. Setup (Automated)**
+
+Clone and run the automated setup:
+
+```bash
+git clone https://github.com/sneilan/fine-tuning-local-llm.git
+cd fine-tuning-local-llm
+./setup.sh
+```
+
+Or follow the manual steps below:
 
 ```bash
 mkdir fine-tune-demo && cd fine-tune-demo
@@ -185,3 +197,13 @@ PARAMETER num_ctx 2048
 PARAMETER stop "User:"
 PARAMETER stop "\n\n"
 ```
+
+## Repository
+
+For a complete, automated setup with error handling, see [fine-tuning-local-llm](https://github.com/sneilan/fine-tuning-local-llm).
+
+This blog post explains the concepts and code. The repository provides the runnable implementation with:
+- Interactive setup script with step-by-step confirmations
+- Automated training data generation
+- Error checking and validation
+- Comprehensive README with troubleshooting
