@@ -1,6 +1,6 @@
 ---
 title: Replacing Pencil and Paper with Latex for Math
-date: 2024-11-23
+date: 2025-11-23
 summary: Can math be done without pencil and paper? Yes.
 description: I explored mathematics without pencil and paper. This is exciting!
 toc: false
