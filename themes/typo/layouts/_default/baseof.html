@@ -81,4 +81,8 @@
 {{ partialCached "projects/big-number-names.html" . }}
 {{ end }}
 
+{{ if .Param "gridDraw" }}
+{{ partialCached "projects/grid-draw.html" . }}
+{{ end }}
+
 </html>
