@@ -1,6 +1,16 @@
 import { forEach, includes, flatten, filter } from "lodash";
 import * as numberConverter from "number-to-words";
 
+// Floor division for BigInt (matches Python's // operator)
+const floorDiv = (a: bigint, b: bigint): bigint => {
+  const result = a / b;
+  // If signs differ and there's a remainder, subtract 1
+  if ((a < 0n) !== (b < 0n) && a % b !== 0n) {
+    return result - 1n;
+  }
+  return result;
+};
+
 const ones_names = {
   0: "",
   1: "un",
@@ -113,49 +123,24 @@ export const splitNumber = (n_str: string) => {
   return result;
 };
 
-export const getPowers = (n: bigint) => {
-  `
-def get_powers(n):
-  """
-  Returns a list where the last element in the list is how many 1000**0's fit into n,
-  the second to last element is how many 1000**1's fit into n
-  the third to last element is how many 1000**2 fit into n
-  >>> get_powers( 603 )
-  [603]
-  >>> get_powers( 1002 )
-  [1, 2]
-  >>> get_powers( 1683 )
-  [1, 683]
-  >>> get_powers( 59052 )
-  [59, 52]
-  >>> get_powers( 3000003 )
-  [3, 0, 3]
-  """
+export const getPowers = (n: bigint): bigint[] => {
+  // Returns a list where each element is the coefficient for that power of 1000
+  // e.g., get_powers(1002) => [1, 2] meaning 1*1000 + 2*1
+  // e.g., get_powers(3000003) => [3, 0, 3] meaning 3*1000000 + 0*1000 + 3*1
 
-  #find the largest power of 10 that fits into q
-  i = int(math.floor(math.log(n,1000))) # is largest power of 1000 that fits into n
-  a = 1000**i # the power itself
+  if (n <= 0n) {
+    return [0n];
+  }
 
-  # see get_powers docstring for explanation of array
-  powers = [0] # stands for first 1000
-  for j in range(i):
-    powers.append(0)
+  const result: bigint[] = [];
+  let q = n;
 
-  # find out how much of each power of 1000 fits into n
-  q = n
-  for i in range(len(powers)):
-    num_that_fit = q / a
-    powers[i] = num_that_fit
-    q = q % a
-    a /= 1000
+  while (q > 0n) {
+    result.unshift(q % 1000n);
+    q = q / 1000n;
+  }
 
-  return powers
-`;
-
-  // const i =
-  return splitNumber(n).map(function (group) {
-    return parseInt(group);
-  });
+  return result;
 };
 
 const commonLetter = (a: string[], b: string[]) => {
@@ -259,20 +244,18 @@ export const bigNumExp = (n: bigint): string => {
   //   return "";
   // }
 
-  const q = (BigInt(n) - BigInt(3)) / BigInt(3);
-  if (n <= 3) {
-    // if q is 999 or less, don't need to combine names with illi
-    if (q <= 999) {
-      ret.push(getName(q));
+  const q = floorDiv(BigInt(n) - BigInt(3), BigInt(3));
+  // if q is 999 or less, don't need to combine names with illi
+  if (q <= 999n) {
+    ret.push(getName(q));
 
-      if (q > 9) {
-        ret.push("illion");
-      } else if (q > 0) {
-        ret.push("on");
-      }
-
-      return ret.join("");
+    if (q > 9n) {
+      ret.push("illion");
+    } else if (q > 0n) {
+      ret.push("on");
     }
+
+    return ret.join("");
   }
 
   // // otherwise, we have to use the 1,000,000,000,000W ... 1000000X + 1000Y + Z algorithm
@@ -293,10 +276,9 @@ export const bigNumExp = (n: bigint): string => {
     i += 1;
   });
 
-  // if the last name begins with anything other than i, add illion
-  // otherwise add on
-  name += name.slice(name.length) === "i" ? "on" : "illion";
-  ret.push(name.slice(name.length) === "i" ? "on" : "illion");
+  // if the last character is i, add "on", otherwise add "illion"
+  const suffix = name.slice(-1) === "i" ? "on" : "illion";
+  ret.push(suffix);
 
   return ret.join("");
 };
@@ -313,7 +295,9 @@ export const printNumber = (n: string) => {
         throw Error();
       }
       ret.push(smallName);
-      ret.push(powerName);
+      if (powerName) {
+        ret.push(powerName);
+      }
     }
     i += 1;
   });

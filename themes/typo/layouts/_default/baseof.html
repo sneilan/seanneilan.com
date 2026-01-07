@@ -77,4 +77,8 @@
 {{ partialCached "projects/typst-notebook.html" . }}
 {{ end }}
 
+{{ if .Param "bigNumberNames" }}
+{{ partialCached "projects/big-number-names.html" . }}
+{{ end }}
+
 </html>

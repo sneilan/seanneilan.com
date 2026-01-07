@@ -18,11 +18,6 @@ const BigNumberNames: React.FC = () => {
 
     try {
       setPrintedNumber(printNumber(inputValue));
-
-      // For debugging: Convert string to BigInt for getName
-      if (inputValue && /^\d+$/.test(inputValue)) {
-        console.log(getName(BigInt(inputValue)));
-      }
     } catch (error) {
       // Handle invalid input gracefully
       setPrintedNumber("");

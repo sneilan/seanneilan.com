@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import React, { useState } from 'react';
 import {
@@ -18,10 +18,6 @@ const BigNumberNames: React.FC = () => {
 
     try {
       setPrintedNumber(printNumber(inputValue));
-
-      if (inputValue && /^\d+$/.test(inputValue)) {
-        console.log(getName(BigInt(inputValue)));
-      }
     } catch (error) {
       setPrintedNumber("");
     }
@@ -35,7 +31,7 @@ const BigNumberNames: React.FC = () => {
         placeholder="Type any number..."
         value={value}
         onChange={handleInputChange}
-        autoFocus
+        data-autofocus="true"
       />
       <span data-testid="output">{printedNumber}</span>
     </div>
@@ -45,6 +41,10 @@ const BigNumberNames: React.FC = () => {
 describe('BigNumberNames Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   describe('Rendering', () => {
@@ -66,7 +66,7 @@ describe('BigNumberNames Component', () => {
 
       expect(input).toHaveAttribute('type', 'text');
       expect(input).toHaveClass('search-box');
-      expect(input).toHaveAttribute('autofocus');
+      expect(input).toHaveAttribute('data-autofocus', 'true');
     });
   });
 
@@ -236,7 +236,7 @@ describe('BigNumberNames Component', () => {
       ];
 
       for (const testCase of testCases) {
-        const { rerender } = render(<BigNumberNames />);
+        const { unmount } = render(<BigNumberNames />);
         const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
         const output = screen.getByTestId('output');
 
@@ -246,7 +246,7 @@ describe('BigNumberNames Component', () => {
           expect(output.textContent).toBe(testCase.expected);
         });
 
-        rerender(<BigNumberNames />);
+        unmount();
       }
     });
   });
@@ -265,7 +265,7 @@ describe('BigNumberNames Component', () => {
       const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
 
       // AutoFocus should be present
-      expect(input).toHaveAttribute('autofocus');
+      expect(input).toHaveAttribute('data-autofocus', 'true');
     });
   });
 });

@@ -23,50 +23,52 @@ describe('Big Number Names - Core Functions', () => {
     });
 
     it('should handle very large numbers', () => {
-      const googol = '1' + '0'.repeat(100);
+      const googol = '1' + '0'.repeat(100); // 10^100 = 101 digits
       const result = splitNumber(googol);
-      expect(result.length).toBe(34); // 100 zeros / 3 + 1
-      expect(result[0]).toBe('1');
+      expect(result.length).toBe(34); // 101 digits / 3 = 33 remainder 2, so 34 groups
+      expect(result[0]).toBe('10'); // First group has the remainder (2 digits)
     });
   });
 
   describe('getPowers', () => {
     it('should return powers of 1000 for a number', () => {
-      expect(getPowers(603n)).toEqual([603]);
-      expect(getPowers(1002n)).toEqual([1, 2]);
-      expect(getPowers(1683n)).toEqual([1, 683]);
-      expect(getPowers(59052n)).toEqual([59, 52]);
+      expect(getPowers(603n)).toEqual([603n]);
+      expect(getPowers(1002n)).toEqual([1n, 2n]);
+      expect(getPowers(1683n)).toEqual([1n, 683n]);
+      expect(getPowers(59052n)).toEqual([59n, 52n]);
     });
 
     it('should handle numbers with zeros', () => {
-      expect(getPowers(3000003n)).toEqual([3, 0, 3]);
-      expect(getPowers(1000000n)).toEqual([1, 0, 0]);
+      expect(getPowers(3000003n)).toEqual([3n, 0n, 3n]);
+      expect(getPowers(1000000n)).toEqual([1n, 0n, 0n]);
     });
   });
 
   describe('getName', () => {
-    it('should generate Latin names for single digits', () => {
+    // getName returns the Latin PREFIX only (e.g., "milli", "billi")
+    // The suffix "on" or "illion" is added by bigNumExp
+    it('should generate Latin prefixes for single digits', () => {
       expect(getName(0n)).toBe('thousand');
-      expect(getName(1n)).toBe('million');
-      expect(getName(2n)).toBe('billion');
-      expect(getName(3n)).toBe('trillion');
+      expect(getName(1n)).toBe('milli');
+      expect(getName(2n)).toBe('billi');
+      expect(getName(3n)).toBe('trilli');
     });
 
     it('should handle tens correctly', () => {
-      expect(getName(10n)).toBe('decillion');
-      expect(getName(20n)).toBe('vigintillion');
-      expect(getName(30n)).toBe('trigintillion');
+      expect(getName(10n)).toBe('dec');
+      expect(getName(20n)).toBe('vigint');
+      expect(getName(30n)).toBe('trigint');
     });
 
     it('should handle hundreds correctly', () => {
-      expect(getName(100n)).toBe('centillion');
-      expect(getName(200n)).toBe('ducentillion');
+      expect(getName(100n)).toBe('cent');
+      expect(getName(200n)).toBe('ducent');
     });
 
     it('should handle combined numbers with Conway-Weschler rules', () => {
-      expect(getName(11n)).toBe('undecillion');
-      expect(getName(21n)).toBe('unvigintillion');
-      expect(getName(33n)).toBe('tretrigintillion');
+      expect(getName(11n)).toBe('undec');
+      expect(getName(21n)).toBe('unvigint');
+      expect(getName(33n)).toBe('trestrigint');
     });
 
     it('should handle large numbers', () => {
@@ -91,6 +93,8 @@ describe('Big Number Names - Core Functions', () => {
     });
 
     it('should handle small exponents', () => {
+      // For n < 3, q = floor((n-3)/3) is negative, so getName returns ""
+      // and no suffix is added, resulting in empty string
       expect(bigNumExp(0n)).toBe('');
       expect(bigNumExp(1n)).toBe('');
       expect(bigNumExp(2n)).toBe('');
@@ -123,10 +127,11 @@ describe('Big Number Names - Core Functions', () => {
     });
 
     it('should handle very large numbers (googol)', () => {
-      const googol = '1' + '0'.repeat(100);
+      const googol = '1' + '0'.repeat(100); // 10^100 = "10" followed by 99 zeros
       const result = printNumber(googol);
       expect(result).toBeTruthy();
-      expect(result).toContain('one');
+      expect(result).toContain('ten'); // First group is "10"
+      expect(result).toContain('duotrigintillion'); // 10^99 is duotrigintillion
       expect(typeof result).toBe('string');
     });
   });
