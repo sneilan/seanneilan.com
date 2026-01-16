@@ -21,19 +21,15 @@ I used Qwen3 0.6b but it crashed too much where was 1.7b was fine. 1.7b was able
 
 ## Prerequisites
 
-- [Ollama](https://ollama.ai/) installed
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-
-Pull the Qwen model:
-
-```bash
-ollama pull qwen3:1.7b
-```
 
 Install the Python dependencies with uv:
 
 ```bash
-uv pip install qwen-agent json5 transformers accelerate torch pydantic openai ipdb
+mkdir recursive-llm
+uv init
+uv add qwen-agent python-dateutil json5 transformers accelerate torch pydantic openai ipdb
+uv pip install "qwen-agent[code_interpreter]"
 ```
 
 ## The code
@@ -227,13 +223,13 @@ ipdb.set_trace()
 
 The key piece is the `ContinuationPrompt` tool. When the LLM calls it, the tool recursively calls `ask_qwen_something()` with whatever prompt the LLM wrote. This lets the first LLM instance delegate work to a second one.
 
-The `llm_cfg` points to Ollama's local server at `localhost:11434`. No API keys needed—just a running Ollama instance.
-
 The test query asks the LLM to:
-1. Use `code_interpreter` to write and run Python that fetches seanneilan.com and saves it as `index.html`
+1. Use `CodeInterpreter` to write and run Python that fetches seanneilan.com and saves it as `index.html`
 2. Call `ContinuationPrompt` with instructions for another instance to read and summarize that file
 
 The LLM figures out what Python code to write for each step. It's genuinely agentic—it's not just following a script, it's deciding how to accomplish the goal.
+
+Note that the CodeInterpreter & continuation prompt continuously mess up where to store index.html. Sometimes they get it right! Sometimes it doesn't but that's why there's the 5x loop in the body.
 
 
 ## Useful insights
