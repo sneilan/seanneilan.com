@@ -2,8 +2,11 @@
 title = "Interests"
 +++
 
-I write software for work and for fun! I'm always interested in building new systems, big or small. 
+I write software for work and for fun! I'm always interested in building new systems, big or small.
 Here is small sample of software I have recently constructed just for fun. Feel free to check it out!
+
+**[Grid Draw](/grid-draw/)**\
+Interactive 32x32 grid canvas powered by Rust and WebAssembly
 
 **[Big Number Names](/big-number-names/)**\
 Compute the name of any number up to infinity
