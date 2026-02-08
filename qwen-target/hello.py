@@ -7,6 +7,7 @@ import threading
 import time
 import torch
 
+print("asdf")
 
 # Try to use GPU (MPS) with the smaller 4B model
 # torch.backends.mps.is_available = lambda: False  # Disabled to allow GPU usage
@@ -14,13 +15,18 @@ import torch
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
-    format='[%(levelname)s] %(message)s'
+    format='{"level": "%(levelname)s", "message": "%(message)s"}'
 )
 
 logging.debug("Starting script...")
 
-mem = monitor_memory()
-logging.debug(f"[MEMORY] Before loading model - CPU: {mem['cpu']:.2f} GB, GPU: {mem['gpu']:.2f} GB")
+def monitor_loop():
+    while True:
+        mem = monitor_memory()
+        logging.debug(f"{mem['cpu']:.2f}, {mem['gpu']:.2f}")
+        time.sleep(0.1)
+
+threading.Thread(target=monitor_loop, daemon=True).start()
 
 logging.debug("Loading model with 4-bit quantization...")
 
