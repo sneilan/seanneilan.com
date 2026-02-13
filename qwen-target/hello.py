@@ -145,14 +145,11 @@ logging.info("Model output (streaming):")
 output_text = ""
 token_count = 0
 for text in streamer:
-    print(text, end='', flush=True)
     output_text += text
     token_count += 1
 
 generation_thread.join()
 logging.info("Inference complete")
-
-mem = monitor_memory()
 
 # Parse model output to get marker number
 match = re.search(r'\b(\d+)\b', output_text)
@@ -200,8 +197,6 @@ else:
     after_screenshot_path = 'after_click.png'
     browser_session.page.screenshot(path=after_screenshot_path)
     logging.info(f"Screenshot after click saved to {after_screenshot_path}")
-
-mem = monitor_memory()
 
 # Cleanup
 browser_session.close()
