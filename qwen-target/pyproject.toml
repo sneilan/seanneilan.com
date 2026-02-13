@@ -12,4 +12,5 @@ dependencies = [
     "accelerate>=0.20.0",
     "bitsandbytes>=0.41.0",
     "pillow>=10.0.0",
+    "matplotlib>=3.7.0",
 ]

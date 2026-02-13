@@ -1,5 +1,5 @@
 ---
-title: Scraping Target.com with Local LLM Qwen3-VL
+title: What I learned using local vision-language models to scrape target.com
 date: 2026-01-17
 summary: Using a 2 billion local visual language llm coupled with playwright to identify and click on elements in a browser.
 description: Using a 2 billion local visual language llm coupled with playwright to identify and click on elements in a browser.
@@ -15,15 +15,25 @@ showTags: true
 hideBackToTop: false
 ---
 
-# Automating Web Interactions with Vision Models: A Journey Through Set-of-Mark Prompting
+# What I learned using local vision-language models to scrape target.com
 
 ## The Goal
 
-Traditional web automation relies on CSS selectors, XPath, or accessibility attributes to identify and interact with page elements. But what if the page structure changes? What if elements lack proper IDs or labels? Could we instead use a vision model to "see" the page like a human would and click on elements based on visual understanding?
+I wanted to scrape target.com for receipts for my family budgeting program. But as I was about to write my 1,000th scraper, I paused and said do I really want to do this the same old way? There's better tech out there and what if this could be done locally!
 
-That was the challenge I set out to solve: **use a local vision model to automate clicking on web elements** by showing it a screenshot and asking "where is the Account button?"
+So I tried a new vision language model called [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). It can take a picture and tell you what it sees. Tried it out to see if it can drive a playwright browser to scrape target.com. **It worked!** _But not without some memory issues on my 16gb apple m1._ And I had to get creative with how I prompted Qwen3-VL.
 
-Spoiler: It worked, but not without some interesting detours along the way.
+## What worked
+
+The setup to get this to work
+
+* Transformers
+* Qwen3-VL-2B-Instruct
+* Using transformers bits & bytes library to quantize to 4bits per weight
+* Using playwright to annotate every clickable element on the page with a numbered red box
+* Asking Qwen3-VL "What is the number of the box corresponding to the account login button"
+
+Qwen correctly identified box 49 in the image as the account login button. I had playwright click it and it opened the login hamburger menu :)
 
 Here's the target homepage as the model saw it.
 
@@ -33,13 +43,13 @@ Here it is after annotating with Playwright.
 
 ![Target Homepage Annotated](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/target_screenshot_annotated.png)
 
-On a first shot prompt, Qwen3VL-2B is able to identify the account button as being within box labeled 49. Have playwright click on that and it opens the account sidebar :)
+And here is the result after playright clicked on Account.
 
 ![Target Homepage Clicked](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/after_click.png)
 
 From here, it's an engineering problem. :)
 
-## The First Attempt: Going Big with 8B Parameters
+## What I Learned: Local LLM Memory Struggles
 
 I started with Qwen3-VL-8B-Instruct, an 8-billion parameter vision-language model. The setup was straightforward:
 
@@ -60,6 +70,8 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
     device_map="auto"
 )
 ```
+
+Modal loaded but token generation caused out of memory issues on my 
 
 Initial excitement: The model loaded! I captured a screenshot of target.com, fed it to the model with the prompt "Where is the Account button?", and...
 
