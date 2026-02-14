@@ -19,9 +19,11 @@ hideBackToTop: false
 
 ## The Goal
 
-I wanted to scrape target.com for receipts for my family budgeting program. Unfortunately this would've been my 1,000th scraper and I was tired of writing scrapers the same old way. There are vision language models nowadays you can run locally so I decided to see if I could trade memory, speed and storage for faster development time.
+I wanted to scrape target.com for receipts for my family budgeting program. Unfortunately this would've been my 1,000th scraper and I was tired of it. Now, there are vision language models you can run locally. So I decided to see if I could trade memory, speed and storage for faster development time.
 
-So I tried a new vision language model called [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). It can take a picture and tell you what it sees. Tried it out to see if it can drive a playwright browser to scrape target.com. **It worked!** _But not without some memory issues on my 16gb apple m1._ And I had to get creative with how I prompted Qwen3-VL.
+I tried a vision language model called [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct). Supposedly, it can take a screenshot of a website and tell you what it sees. Tried it to see if it can drive a playwright browser to scrape target.com. **It worked!** _But not without some memory issues on my 16gb apple m1._ And I had to get creative with how I prompted Qwen3-VL.
+
+The memory issues are where this got interesting.
 
 ## What worked
 
@@ -46,6 +48,8 @@ Here it is after annotating with Playwright.
 And here is the result after playright clicked on Account.
 
 ![Target Homepage Clicked](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/after_click.png)
+
+You can shit out anything I did above with Claude, transformers & some basic vibe coding skills. Where it got interesting is when 8B ran out of memory. I decided to dig much deeper.
 
 ## Out of Memory and Speed Issues
 
@@ -78,7 +82,7 @@ Device: Apple M1
 
 The 8B model, even with 4-bit quantization, was too large for the M1's GPU. I had to disable Metal Performance Shaders (MPS) and fall back to CPU, which made it even slower.
 
-### Trying 4B: Still Too Slow
+### Qwen3-VL-4B-Instruct Too Slow
 
 Next attempt: [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct). Half the parameters, theoretically faster:
 
@@ -104,6 +108,8 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 )
 ```
 
+This was the model that identified the number 49 in the box above.
+
 ### Questions raised
 
 **I reasonably assumed I could run a 9B model quantized to 4 bits per parameter on an m1!**
@@ -111,6 +117,26 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 1. If I have 16 gb of unified memory, why would a 9 billion parameter model quantized to 4 bit run out of memory?
 2. Why would Qwen3-VL-4B-Instruct be slow if I have 8 gpu cores each with [128](https://web.archive.org/web/20210201183558/https://www.anandtech.com/show/16252/mac-mini-apple-m1-tested) [ALU](https://en.wikipedia.org/wiki/Arithmetic_logic_unit)'s.
 3. How does memory bandwidth impact token generation?
+4. Would using flash attention help out? Am I using flash attention?
+```python
+# We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
+# model = Qwen3VLForConditionalGeneration.from_pretrained(
+#     "Qwen/Qwen3-VL-8B-Instruct",
+#     dtype=torch.bfloat16,
+#     attn_implementation="flash_attention_2",
+#     device_map="auto",
+# )
+5. What are the vision and language components of qwen3-vl? How do they work? Does the vision component generate tokens in addition to text?
+6. What does this mean?
+# Try to use GPU (MPS) with the smaller 4B model
+# torch.backends.mps.is_available = lambda: False  # Disabled to allow GPU usage
+7. What does this mean?
+# inputs is a dict with keys like 'input_ids', 'attention_mask', 'pixel_values', etc.
+# input_ids contains the tokenized text as tensor with shape [batch_size, sequence_length]
+# To see all available keys: print(inputs.keys())
+# For docs: https://huggingface.co/docs/transformers/main/en/model_doc/qwen3_vl
+
+```
 
 ## Maybe images use too many tokens!
 
