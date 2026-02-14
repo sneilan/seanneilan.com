@@ -1,18 +1,14 @@
-# uv run playwright install chromium
-
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig, TextIteratorStreamer
-from utils.memory_tracking import monitor_memory
-from browser import BrowserSession
 import logging
 import re
 import threading
 import time
 import torch
 
-print("asdf")
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig, TextIteratorStreamer
+from utils.memory_tracking import monitor_memory
+from target_scraper_stuff import get_annotated_screenshot_of_target_homepage
+from prompt import get_prompt
 
-# Try to use GPU (MPS) with the smaller 4B model
-# torch.backends.mps.is_available = lambda: False  # Disabled to allow GPU usage
 
 # Configure logging
 logging.basicConfig(
@@ -20,19 +16,55 @@ logging.basicConfig(
     format='{"level": "%(levelname)s", "message": "%(message)s"}'
 )
 
-logging.info("Starting...")
 
-def monitor_loop():
-    while True:
-        mem = monitor_memory()
-        logging.info(f"{mem['cpu']:.2f}, {mem['gpu']:.2f}")
-        time.sleep(0.1)
+def load_model(model_name: str):
+    # Configure 4-bit quantization
+    quantization_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype="float16",
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4"
+    )
 
-# threading.Thread(target=monitor_loop, daemon=True).start()
+    # Load the model with 4-bit quantization
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model_name,
+        quantization_config=quantization_config,
+        device_map="auto"
+    )
+    import ipdb
+    ipdb.set_trace()
 
-logging.info("Loading model with 4-bit quantization...")
+    processor = AutoProcessor.from_pretrained(model_name)
 
-# Configure 4-bit quantization
+import sys
+import gc
+
+def get_deep_size(obj, seen=None):
+    """Recursively calculate the total memory footprint of an object and its contents."""
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+    
+    size = sys.getsizeof(obj)
+    
+    # Check for container types and recurse
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        for item in obj:
+            size += get_deep_size(item, seen)
+    elif isinstance(obj, dict):
+        for key, value in obj.items():
+            size += get_deep_size(key, seen)
+            size += get_deep_size(value, seen)
+    # Handle other specific container types like NumPy arrays or Pandas DataFrames as needed
+    
+    return size
+
+
+model_name = "Qwen/Qwen3-VL-2B-Instruct"
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_compute_dtype="float16",
@@ -42,67 +74,34 @@ quantization_config = BitsAndBytesConfig(
 
 # Load the model with 4-bit quantization
 model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
+    model_name,
     quantization_config=quantization_config,
     device_map="auto"
 )
-logging.info("Model loaded successfully. Loading processor.")
+import ipdb
+ipdb.set_trace()
+
+processor = AutoProcessor.from_pretrained(model_name)
+
+
+logging.info("Loading model with 4-bit quantization...")
+#model, processor = load_model("Qwen/Qwen3-VL-8B-Instruct")
 
 # Display model architecture parameters
-# Qwen3VL has vision and text components - use text_config for language model params
 num_layers = model.config.text_config.num_hidden_layers
 hidden_dim = model.config.text_config.hidden_size
 
-# We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
-# model = Qwen3VLForConditionalGeneration.from_pretrained(
-#     "Qwen/Qwen3-VL-8B-Instruct",
-#     dtype=torch.bfloat16,
-#     attn_implementation="flash_attention_2",
-#     device_map="auto",
-# )
-
-processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
-logging.info("Processor loaded successfully. Navigating to target.")
-
-# Capture and annotate screenshot before processing
-browser_session = BrowserSession()
-browser_session.init_browser()
-
-# Navigate to target URL
-response = browser_session.page.goto("https://target.com")
-browser_session.page.wait_for_load_state('networkidle')
-
-# Capture screenshot and detect elements
-screenshot_path, elements_data = browser_session.capture_screenshot("target_screenshot.png")
-annotated_screenshot_path = "target_screenshot_annotated.png"
-browser_session.annotate_screenshot(screenshot_path, elements_data, annotated_screenshot_path)
-logging.info(f"Screenshot saved. Prepping inputs.")
-
-messages = [
-    {
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "image": annotated_screenshot_path,
-            },
-            {"type": "text", "text": "This image shows numbered markers overlaid on clickable elements. Which number is the Account button? Reply with ONLY the number."},
-        ],
-    }
-]
+target_homepage = get_annotated_screenshot_of_target_homepage()
 
 # Preparation for inference
 inputs = processor.apply_chat_template(
-    messages,
+    get_prompt(target_homepage.annotated_screenshot_path),
     tokenize=True,
     add_generation_prompt=True,
     return_dict=True,
     return_tensors="pt"
 )
-# inputs is a dict with keys like 'input_ids', 'attention_mask', 'pixel_values', etc.
-# input_ids contains the tokenized text as tensor with shape [batch_size, sequence_length]
-# To see all available keys: print(inputs.keys())
-# For docs: https://huggingface.co/docs/transformers/main/en/model_doc/qwen3_vl
+
 num_input_tokens = inputs['input_ids'].shape[1]
 batch_size = inputs['input_ids'].shape[0]
 
@@ -143,15 +142,25 @@ generation_kwargs = {
 generation_thread = threading.Thread(target=model.generate, kwargs=generation_kwargs)
 generation_thread.start()
 
+def monitor_loop():
+    while True:
+        mem = monitor_memory()
+        logging.info(f"{mem.cpu_gb:.2f}, {mem.gpu_gb:.2f}")
+        time.sleep(0.1)
+
+memory_monitor = threading.Thread(target=monitor_loop, daemon=True)
+memory_monitor.start()
+
 # Stream tokens as they're generated
 logging.info("Model output (streaming):")
-output_text = ""
+output_text: str = ""
 token_count = 0
 for text in streamer:
     output_text += text
     token_count += 1
 
 generation_thread.join()
+memory_monitor.join()
 logging.info("Inference complete")
 
 # Parse model output to get marker number
@@ -159,50 +168,10 @@ match = re.search(r'\b(\d+)\b', output_text)
 
 # Guard clause: no match found
 if not match:
-    logging.error(f"Could not parse marker number from output: {output_text}")
-# Guard clause: invalid marker number
-elif (marker_number := int(match.group(1))) >= len(elements_data):
-    logging.error(f"Invalid marker number: {marker_number} (max: {len(elements_data)-1})")
-# Happy path: valid marker number, proceed with click
-else:
-    logging.info(f"Model identified marker number: {marker_number}")
+    raise Exception("LLM did not output a marker number")
+if (marker_number := int(match.group(1))) >= len(elements_data):
+    raise Exception(f"Invalid marker number: {marker_number} (max: {len(elements_data)-1})")
 
-    # Get element data
-    elem_data = elements_data[marker_number]
-    box = elem_data.box
-
-    # Click at center of element
-    click_x = box.x + box.width / 2
-    click_y = box.y + box.height / 2
-
-    logging.info(f"Clicking element {marker_number} at ({click_x:.1f}, {click_y:.1f})")
-    browser_session.page.mouse.click(click_x, click_y)
-
-    # Wait for page to respond to click
-    # TODO: Use a model to drive navigation logic:
-    #   - Capture before/after screenshots
-    #   - Ask model: "Did the page change? Should we wait longer? Click again?"
-    #   - Model determines if action succeeded or needs retry
-    #   - More intelligent than fixed timeouts or network idle heuristics
-    logging.info("Waiting for page response...")
-    try:
-        # Wait for network activity to settle (most reliable for dynamic pages)
-        browser_session.page.wait_for_load_state('networkidle', timeout=5000)
-    except:
-        # Fallback: ensure basic page load completes
-        try:
-            browser_session.page.wait_for_load_state('load', timeout=3000)
-        except:
-            # Some clicks (like dropdowns) don't trigger navigation
-            logging.info("No navigation detected, continuing...")
-
-    # Take screenshot of result
-    after_screenshot_path = 'after_click.png'
-    browser_session.page.screenshot(path=after_screenshot_path)
-    logging.info(f"Screenshot after click saved to {after_screenshot_path}")
-
-# Cleanup
-browser_session.close()
 
 logging.info("Script completed")
 

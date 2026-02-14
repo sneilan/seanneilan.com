@@ -1,8 +1,14 @@
 import psutil
 import torch
+from pydantic import BaseModel
 
 
-def monitor_memory() -> dict:
+class Memory(BaseModel):
+    cpu_gb: float
+    gpu_gb: float
+
+
+def monitor_memory() -> Memory:
     """Get current memory usage (CPU and GPU) in GB.
 
     Returns:
@@ -20,4 +26,4 @@ def monitor_memory() -> dict:
         # MPS (Apple Silicon) allocated memory
         gpu_gb = torch.mps.current_allocated_memory() / (1024 ** 3)
 
-    return {'cpu': cpu_gb, 'gpu': gpu_gb}
+    return Memory(cpu_gb=cpu_gb, gpu_gb=gpu_gb)
