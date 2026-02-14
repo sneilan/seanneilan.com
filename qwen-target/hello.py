@@ -1,3 +1,5 @@
+# uv run playwright install chromium
+
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig, TextIteratorStreamer
 from utils.memory_tracking import monitor_memory
 from browser import BrowserSession
@@ -26,7 +28,7 @@ def monitor_loop():
         logging.info(f"{mem['cpu']:.2f}, {mem['gpu']:.2f}")
         time.sleep(0.1)
 
-threading.Thread(target=monitor_loop, daemon=True).start()
+# threading.Thread(target=monitor_loop, daemon=True).start()
 
 logging.info("Loading model with 4-bit quantization...")
 
@@ -40,7 +42,7 @@ quantization_config = BitsAndBytesConfig(
 
 # Load the model with 4-bit quantization
 model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-2B-Instruct",
+    "Qwen/Qwen3-VL-8B-Instruct",
     quantization_config=quantization_config,
     device_map="auto"
 )
@@ -51,8 +53,6 @@ logging.info("Model loaded successfully. Loading processor.")
 num_layers = model.config.text_config.num_hidden_layers
 hidden_dim = model.config.text_config.hidden_size
 
-time.sleep(1)  # Let memory monitor print final reading
-
 # We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
 # model = Qwen3VLForConditionalGeneration.from_pretrained(
 #     "Qwen/Qwen3-VL-8B-Instruct",
@@ -61,10 +61,8 @@ time.sleep(1)  # Let memory monitor print final reading
 #     device_map="auto",
 # )
 
-processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-2B-Instruct")
+processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 logging.info("Processor loaded successfully. Navigating to target.")
-
-mem = monitor_memory()
 
 # Capture and annotate screenshot before processing
 browser_session = BrowserSession()
@@ -114,6 +112,11 @@ bytes_per_param = 2  # float16
 kv_cache_bytes = 2 * num_layers * hidden_dim * num_input_tokens * bytes_per_param * batch_size
 kv_cache_mb = kv_cache_bytes / (1024 ** 2)
 kv_cache_gb = kv_cache_bytes / (1024 ** 3)
+
+print(kv_cache_gb)
+import ipdb
+ipdb.set_trace()
+
 # 3.0 gb baseline. - 
 # Qwen/Qwen3-VL-2B-Instruct - 2 billion params. 4 bit. = 1 gb.
 # 3.7 gb - 

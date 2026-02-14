@@ -13,4 +13,5 @@ dependencies = [
     "bitsandbytes>=0.41.0",
     "pillow>=10.0.0",
     "matplotlib>=3.7.0",
+    "ipdb>=0.13.13",
 ]

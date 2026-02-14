@@ -47,7 +47,7 @@ And here is the result after playright clicked on Account.
 
 ![Target Homepage Clicked](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/after_click.png)
 
-## Local LLM Memory Struggles to Discover Questions
+## Out of Memory and Speed Issues
 
 I started with [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct), a 9-billion parameter (it's mislabeled as 8B) vision-language model. I quantized it to 4 bit with the below code
 
@@ -112,18 +112,88 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 2. Why would Qwen3-VL-4B-Instruct be slow if I have 8 gpu cores each with [128](https://web.archive.org/web/20210201183558/https://www.anandtech.com/show/16252/mac-mini-apple-m1-tested) [ALU](https://en.wikipedia.org/wiki/Arithmetic_logic_unit)'s.
 3. How does memory bandwidth impact token generation?
 
-### Maybe KV Cache takes up more memory for images?
+## Maybe images use too many tokens!
 
-So I looked up the KV cache size calculation
+Maybe larger models use more megabytes per token than smaller models thus the out of memory error.
 
-# Calculate KV cache memory for input tokens
-# Formula: 2 * layers * hidden_dim * context_length * bytes_per_param * batch_size
+So I looked up the KV cache size calculation. KV Cache is where an LLM stores each token it generates so it doesn't have to regenerate them all from scratch each time it makes another token.
+
+The number of bytes per token stored in the KV Cache is calculated by
+
+```
+2 * layers * hidden_dim * context_length * bytes_per_param
+```
+
+Layers and hidden dimensions are set by the model.
+
+Bytes per param is the quantization so if no quantization it would be 2 bytes and for 4 bit, it would be .5.
+
+You can also multiply that by number of batches where each batch is a prompt to the model.
+
+Context length is number of tokens in your input. Below it will also be called num_input_tokens.
+
+So suppose You have a model you downloaded from huggingface...
+
+```python
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype="float16",
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4"
+)
+
+model = Qwen3VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen3-VL-2B-Instruct",
+    quantization_config=quantization_config,
+    device_map="auto"
+)
+```
+
+You can get your layers and hidden dimensions with
+```python
+num_layers = model.config.text_config.num_hidden_layers
+hidden_dim = model.config.text_config.hidden_size
+```
+
+You can get your token count with
+```python
+processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-2B-Instruct")
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "image": "./path-to-target-screenshot.png",
+            },
+            {"type": "text", "text": "This image shows numbered markers overlaid on clickable elements. Which number is the Account button? Reply with ONLY the number."},
+        ],
+    }
+]
+
+inputs = processor.apply_chat_template(
+    messages,
+    tokenize=True,
+    add_generation_prompt=True,
+    return_dict=True,
+    return_tensors="pt"
+)
+
+num_input_tokens = inputs['input_ids'].shape[1]
+batch_size = inputs['input_ids'].shape[0] # will be 1 because we are only doing one prompt.
+```
+
+And finally your kv cache size is
+```python
+
 bytes_per_param = 2  # float16
-kv_cache_bytes = 2 * num_layers * hidden_dim * num_input_tokens * bytes_per_param * batch_size
+kv_cache_size_bytes = 2 * num_layers * hidden_dim * num_input_tokens * bytes_per_param * batch_size
+
 kv_cache_mb = kv_cache_bytes / (1024 ** 2)
 kv_cache_gb = kv_cache_bytes / (1024 ** 3)
-# 3.0 gb baseline. - 
-# Qwen/Qwen3-VL-2B-Instruct - 2 billion params. 4 bit. = 1 gb.
-# 3.7 gb - 
+```
 
+Qwen/Qwen3-VL-2B-Instruct needed 914 input tokens, batch_size 1, 28 layers, 2048 hidden dimensions.
+Which means .2 GB of KV Cache. Not bad!
 
