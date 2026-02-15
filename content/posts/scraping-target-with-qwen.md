@@ -135,6 +135,8 @@ This was the model that identified the number 49 in the box above.
 # input_ids contains the tokenized text as tensor with shape [batch_size, sequence_length]
 # To see all available keys: print(inputs.keys())
 # For docs: https://huggingface.co/docs/transformers/main/en/model_doc/qwen3_vl
+8. Have I completely messed up by using transformers
+
 
 ```
 
@@ -222,4 +224,9 @@ kv_cache_gb = kv_cache_bytes / (1024 ** 3)
 
 Qwen/Qwen3-VL-2B-Instruct needed 914 input tokens, batch_size 1, 28 layers, 2048 hidden dimensions.
 Which means .2 GB of KV Cache. Not bad!
+
+
+## Notes
+
+ONNX is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
 

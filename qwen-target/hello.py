@@ -37,32 +37,6 @@ def load_model(model_name: str):
 
     processor = AutoProcessor.from_pretrained(model_name)
 
-import sys
-import gc
-
-def get_deep_size(obj, seen=None):
-    """Recursively calculate the total memory footprint of an object and its contents."""
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    seen.add(obj_id)
-    
-    size = sys.getsizeof(obj)
-    
-    # Check for container types and recurse
-    if isinstance(obj, (list, tuple, set, frozenset)):
-        for item in obj:
-            size += get_deep_size(item, seen)
-    elif isinstance(obj, dict):
-        for key, value in obj.items():
-            size += get_deep_size(key, seen)
-            size += get_deep_size(value, seen)
-    # Handle other specific container types like NumPy arrays or Pandas DataFrames as needed
-    
-    return size
-
 
 model_name = "Qwen/Qwen3-VL-2B-Instruct"
 quantization_config = BitsAndBytesConfig(
@@ -78,6 +52,8 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
     quantization_config=quantization_config,
     device_map="auto"
 )
+# ipdb> model.get_memory_footprint()
+# 1537155392
 import ipdb
 ipdb.set_trace()
 
