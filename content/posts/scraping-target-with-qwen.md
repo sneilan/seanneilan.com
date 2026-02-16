@@ -110,6 +110,14 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 
 This was the model that identified the number 49 in the box above.
 
+### Was able to load llama.cpp Qwen3-VL-8B-Instruct
+
+> hi
+Hi! 👋 How can I help you today? Whether you have a question, need advice, or ju
+st want to chat, I'm here for you!
+
+
+
 ### Questions raised
 
 **I reasonably assumed I could run a 9B model quantized to 4 bits per parameter on an m1!**
@@ -230,3 +238,4 @@ Which means .2 GB of KV Cache. Not bad!
 
 ONNX is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
 
+Does huggingface store models in safetensors format and then deserialize them to pytorch?
