@@ -53,7 +53,7 @@ $$
 2 \times \texttt{layers} \times \texttt{hidden\_dim} \times \texttt{context\_length} \times \texttt{bytes\_per\_param}
 $$
 
-Each transformer model has many layers and hidden dimensions but your context length is just number of tokens and bytes per param is generally 2 bytes (even if you quantize to 4 bits because quantization is just a storage optimization technique).
+Each transformer model has many layers and hidden dimensions but your context length is number of tokens and bytes per param is generally 2 bytes (even if you quantize to 4 bits because quantization is just a storage optimization technique).
 
 For example
 
@@ -93,10 +93,11 @@ inputs = processor.apply_chat_template(
 num_input_tokens = inputs['input_ids'].shape[1]
 batch_size = inputs['input_ids'].shape[0] # will be 1 because we are only doing one prompt.
 
-memory_usage = 2 * num_layers * hidden_dim * 
+memory_usage = 2 * num_layers * hidden_dim * num_input_tokens * batch_size
+print(memory_usage)
 ```
 
-The more you know about LLMs, the better your returns on your research will be.
+On my M1 this returns.
 
 ## What worked
 
@@ -126,7 +127,11 @@ You can crank out anything I did above with Claude, transformers & some basic vi
 
 Using llama.cpp however allowed me to run the 8b model directly. I wish I had done that from the start! :)
 
-## Solving Memory Issues
+## What worked even better
+
+Show how we used llama.cpp here.
+
+## Weird Memory Issues
 
 I started with [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct), a 9-billion parameter (it's mislabeled as 8B) vision-language model. I quantized it to 4 bit with the below code
 
@@ -182,103 +187,18 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 
 This was the model that identified the number 49 in the box above.
 
+I haven't solved why the 8B model ran out of memory but I think it has something to do with de-quantization in memory. However, my understanding is one layer is de-quantized at a time so perhaps I miscalculated memory usage.
+
 ### Questions
 
-1. What is Transformers doing under the hood that llama.cpp isn't that causes it to run out of memory?
+This project created more questions than answers.
+
+1. What is Transformers doing under the hood that llama.cpp isn't that causes it to run out of memory? It worked great with the 8B model!
 If I have 16 gb of unified memory, why would a 9 billion parameter model quantized to 4 bit run out of memory? Perhaps quantization of the model causes memory spikes?
 2. Given a quantization factor and a model size per layer in parameters, is it possible to compute how fast a gpu will load and unload each layer?
 3. Could I have used flash attention on my m1 to speed up inference and lower memory usage with transformers?
 
-```
-
-## Maybe images use too many tokens!
-
-Maybe larger models use more megabytes per token than smaller models thus the out of memory error.
-
-So I looked up the KV cache size calculation. KV Cache is where an LLM stores each token it generates so it doesn't have to regenerate them all from scratch each time it makes another token.
-
-The number of bytes per token stored in the KV Cache is calculated by
-
-```
-2 * layers * hidden_dim * context_length * bytes_per_param
-```
-
-Layers and hidden dimensions are set by the model.
-
-Bytes per param is the quantization so if no quantization it would be 2 bytes and for 4 bit, it would be .5.
-
-You can also multiply that by number of batches where each batch is a prompt to the model.
-
-Context length is number of tokens in your input. Below it will also be called num_input_tokens.
-
-So suppose You have a model you downloaded from huggingface...
-
-```python
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype="float16",
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4"
-)
-
-model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-2B-Instruct",
-    quantization_config=quantization_config,
-    device_map="auto"
-)
-```
-
-You can get your layers and hidden dimensions with
-```python
-num_layers = model.config.text_config.num_hidden_layers
-hidden_dim = model.config.text_config.hidden_size
-```
-
-You can get your token count with
-```python
-processor = autoprocessor.from_pretrained("qwen/qwen3-vl-2b-instruct")
-
-messages = [
-    {
-        "role": "user",
-        "content": [
-            {
-                "type": "image",
-                "image": "./path-to-target-screenshot.png",
-            },
-            {"type": "text", "text": "this image shows numbered markers overlaid on clickable elements. which number is the account button? reply with only the number."},
-        ],
-    }
-]
-
-inputs = processor.apply_chat_template(
-    messages,
-    tokenize=true,
-    add_generation_prompt=true,
-    return_dict=true,
-    return_tensors="pt"
-)
-
-num_input_tokens = inputs['input_ids'].shape[1]
-batch_size = inputs['input_ids'].shape[0] # will be 1 because we are only doing one prompt.
-```
-
-And finally your kv cache size is
-```python
-
-bytes_per_param = 2  # float16
-kv_cache_size_bytes = 2 * num_layers * hidden_dim * num_input_tokens * bytes_per_param * batch_size
-
-kv_cache_mb = kv_cache_bytes / (1024 ** 2)
-kv_cache_gb = kv_cache_bytes / (1024 ** 3)
-```
-
-Qwen/Qwen3-VL-2B-Instruct needed 914 input tokens, batch_size 1, 28 layers, 2048 hidden dimensions.
-Which means .2 GB of KV Cache. Not bad!
-
-
 ## Notes
 
-ONNX is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
+ONNX is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing only and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
 
-Does huggingface store models in safetensors format and then deserialize them to pytorch?
