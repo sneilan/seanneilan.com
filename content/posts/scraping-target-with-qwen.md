@@ -25,6 +25,35 @@ I tried a vision language model called [Qwen3-VL](https://huggingface.co/Qwen/Qw
 
 This project created more questions than answers but I learned quite a lot about running local models for useful purposes.
 
+## What worked
+
+The setup to get this to work
+
+* Transformers
+* Qwen3-VL-2B-Instruct
+* Using transformers bits & bytes library to quantize to 4bits per weight
+* Using playwright to annotate every clickable element on the page with a numbered red box
+* Asking Qwen3-VL "What is the number of the box corresponding to the account login button"
+
+Qwen correctly identified box 49 in the image as the account login button. I had playwright click it and it opened the login hamburger menu :)
+
+Here's the target homepage as the model saw it.
+
+![Target Homepage](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/target_screenshot.png)
+
+Here it is after annotating with Playwright.
+
+![Target Homepage Annotated](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/target_screenshot_annotated.png)
+
+And here is the result after playright clicked on Account.
+
+![Target Homepage Clicked](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/after_click.png)
+
+You can crank out anything I did above with Claude, transformers & some basic vibe coding skills. Where it got interesting is when 8B ran out of memory. I decided to dig much deeper.
+
+Using llama.cpp however allowed me to run the 8b model directly. I wish I had done that from the start! :)
+
+
 ## What I learned
 
 ### Transformers
@@ -47,7 +76,58 @@ This project created more questions than answers but I learned quite a lot about
 * Primarily **mostly spend their time loading and unloading layers** of a transformer rather than doing computation.
 
 ### Memory usage estimates
-* Can be estimated with with the equation 
+
+* Model footprint
+
+Can be theoretically be calculated by multiplying the params by number of bytes per param. For the 4B model that would be 4 billion * 2 for 16 bits per param which gives 8 gigabytes. However, running `get_memory_footprint()` on
+
+```python
+model_name = "Qwen/Qwen3-VL-4B-Instruct"
+quantization_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_compute_dtype="float16",
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4"
+)
+
+# Load the model with 4-bit quantization
+model = Qwen3VLForConditionalGeneration.from_pretrained(
+    model_name,
+    quantization_config=quantization_config,
+    device_map="auto"
+)
+
+footprint = model.get_memory_footprint()
+footprint_gb = footprint / (1024 ** 3)
+print(footprint_gb)
+```
+
+For the 4b model with 4 bit quantization, this returned 2.62 gb! Since each parameter is 16 bits and they're quantized to 4 bits, that's roughly 1/4 of my 8gb estimate. But the extra .62 gigabytes multiplied by four would be an extra ~2.4gb inflated which i estimate would be a 10.4gb (8gb base + 2.62 observed offset) model.
+
+Without the quantization, this code gave me an out of memory error saying RuntimeError: Invalid buffer size: 9.39 GiB.
+
+```python
+model = Qwen3VLForConditionalGeneration.from_pretrained(
+    model_name,
+    quantization_config=quantization_config,
+    device_map="auto"
+)
+
+footprint = model.get_memory_footprint()
+
+footprint_gb = footprint / (1024 ** 3)
+print(footprint_gb)
+```
+
+Nine and 4/10ths of a gigabyte is 1 gigabyte is much less than my estimate so I think that raises a question of what memory models are using beyond their parameters.
+
+So I suppose there is more to a model's footprint than just the parameters or my estimation number of parameters is wrong.
+
+Just to confirm this idea there's more to a model footprint than the weights, The 2B model had a footprint of 1.43gb with 4 bit quantization and 7.93gb without. 1.43 * 4 = 5.72 gb which is far less than 7.93 gb.
+
+**You need to use get_memory_footprint() to have the fastest understanding of how much memory a model needs.**
+
+* KV Cache (memory usage per token) Can be estimated with with the equation 
 
 $$
 2 \times \texttt{layers} \times \texttt{hidden\_dim} \times \texttt{context\_length} \times \texttt{bytes\_per\_param}
@@ -55,7 +135,7 @@ $$
 
 Each transformer model has many layers and hidden dimensions but your context length is number of tokens and bytes per param is generally 2 bytes (even if you quantize to 4 bits because quantization is just a storage optimization technique).
 
-For example
+Here's an example of calculating how much the KV cache will use programmatically.
 
 ```python
 model = Qwen3VLForConditionalGeneration.from_pretrained(
@@ -93,101 +173,23 @@ inputs = processor.apply_chat_template(
 num_input_tokens = inputs['input_ids'].shape[1]
 batch_size = inputs['input_ids'].shape[0] # will be 1 because we are only doing one prompt.
 
-memory_usage = 2 * num_layers * hidden_dim * num_input_tokens * batch_size
-print(memory_usage)
+memory_usage_bytes = 2 * num_layers * hidden_dim * num_input_tokens * batch_size
+
+memory_usage_gb = memory_usage_bytes / (1024 ** 3)
+print(memory_usage_gb)
 ```
 
-On my M1 this returns.
+On my M1 with 16gb ram this runs out of memory with the 8b model but with the 4B model, returns 0.31 gb for the kv cache memory usage. The 2b model used 0.19gb for the kv cache memory usage. This is interesting because I thought the 4b model would use twice as much memory for the kv cache as the 2b model. I think this means a 4b model is not simply double the size as a 2b.
 
-## What worked
-
-The setup to get this to work
-
-* Transformers
-* Qwen3-VL-2B-Instruct
-* Using transformers bits & bytes library to quantize to 4bits per weight
-* Using playwright to annotate every clickable element on the page with a numbered red box
-* Asking Qwen3-VL "What is the number of the box corresponding to the account login button"
-
-Qwen correctly identified box 49 in the image as the account login button. I had playwright click it and it opened the login hamburger menu :)
-
-Here's the target homepage as the model saw it.
-
-![Target Homepage](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/target_screenshot.png)
-
-Here it is after annotating with Playwright.
-
-![Target Homepage Annotated](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/target_screenshot_annotated.png)
-
-And here is the result after playright clicked on Account.
-
-![Target Homepage Clicked](https://aaa4.s3.us-west-1.amazonaws.com/posts/scraping-target-with-qwen/after_click.png)
-
-You can crank out anything I did above with Claude, transformers & some basic vibe coding skills. Where it got interesting is when 8B ran out of memory. I decided to dig much deeper.
-
-Using llama.cpp however allowed me to run the 8b model directly. I wish I had done that from the start! :)
+**It's important to calculate the memory usage per token programmatically rather than assuming you have enough memory.**
 
 ## What worked even better
 
-Show how we used llama.cpp here.
-
-## Weird Memory Issues
-
-I started with [Qwen3-VL-8B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct), a 9-billion parameter (it's mislabeled as 8B) vision-language model. I quantized it to 4 bit with the below code
-
-```python
-from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
-
-# Load model with 4-bit quantization to save memory
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype="float16",
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4"
-)
-
-model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-8B-Instruct",
-    quantization_config=quantization_config,
-    device_map="auto"
-)
-```
-
-Nine billion parameters at 16 bits per parameter quantized to 4 bits is 9 billion / 2 = 4.5 GB of data. However that didn't run on my 16 gb apple m1. Unfortunately, token generation ran out of memory which did not make sense to me.
+Using [llama.cpp](https://github.com/ggml-org/llama.cpp) with the 8B model was as easy as.
 
 ```
-Error: Insufficient Memory (00000008:kIOGPUCommandBufferCallbackErrorOutOfMemory)
-Device: Apple M1
+llama-cli -hf Qwen/Qwen3-VL-8B-Instruct-GGUF
 ```
-
-The 8B model, even with 4-bit quantization, was too large for the M1's GPU. I had to disable Metal Performance Shaders (MPS) and fall back to CPU, which made it even slower.
-
-Next attempt: [Qwen3-VL-4B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct). Half the parameters, theoretically faster:
-
-```python
-model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-4B-Instruct",  # Smaller model
-    quantization_config=quantization_config,
-    device_map="auto"
-)
-```
-
-Didn't run out of memory when I ran it but was less than 1 token per second. It's so slow I couldn't even be sure it would work reliably without an eventual memory error anyway.
-
-
-Finally, I tried [Qwen3-VL-2B-Instruct](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct):
-
-```python
-model = Qwen3VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen3-VL-2B-Instruct",  # Even smaller
-    quantization_config=quantization_config,
-    device_map="auto"
-)
-```
-
-This was the model that identified the number 49 in the box above.
-
-I haven't solved why the 8B model ran out of memory but I think it has something to do with de-quantization in memory. However, my understanding is one layer is de-quantized at a time so perhaps I miscalculated memory usage.
 
 ### Questions
 
@@ -200,5 +202,7 @@ If I have 16 gb of unified memory, why would a 9 billion parameter model quantiz
 
 ## Notes
 
-ONNX is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing only and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
+[ONNX](https://onnx.ai/) is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing only and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
+
+On the websi
 

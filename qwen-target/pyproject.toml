@@ -15,4 +15,5 @@ dependencies = [
     "matplotlib>=3.7.0",
     "ipdb>=0.13.13",
     "pydantic>=2.12.5",
+    "llama-cpp-python>=0.3.16",
 ]

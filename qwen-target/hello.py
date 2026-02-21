@@ -6,7 +6,7 @@ import torch
 
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig, TextIteratorStreamer
 from utils.memory_tracking import monitor_memory
-from target_scraper_stuff import get_annotated_screenshot_of_target_homepage
+from target_scraper_stuff import get_annotated_screenshot_of_target_homepage, TargetHomepage
 from prompt import get_prompt
 
 
@@ -32,13 +32,12 @@ def load_model(model_name: str):
         quantization_config=quantization_config,
         device_map="auto"
     )
-    import ipdb
-    ipdb.set_trace()
 
     processor = AutoProcessor.from_pretrained(model_name)
 
 
 model_name = "Qwen/Qwen3-VL-2B-Instruct"
+
 quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_compute_dtype="float16",
@@ -52,13 +51,10 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
     quantization_config=quantization_config,
     device_map="auto"
 )
-# ipdb> model.get_memory_footprint()
-# 1537155392
-import ipdb
-ipdb.set_trace()
+footprint = model.get_memory_footprint()
+print("footprint is " + str(footprint))
 
 processor = AutoProcessor.from_pretrained(model_name)
-
 
 logging.info("Loading model with 4-bit quantization...")
 #model, processor = load_model("Qwen/Qwen3-VL-8B-Instruct")
@@ -67,7 +63,13 @@ logging.info("Loading model with 4-bit quantization...")
 num_layers = model.config.text_config.num_hidden_layers
 hidden_dim = model.config.text_config.hidden_size
 
-target_homepage = get_annotated_screenshot_of_target_homepage()
+target_homepage = TargetHomepage(
+    screenshot_path="./target_screenshot.png",
+    annotated_screenshot_path="./target_screenshot_annotated.png",
+    elements_data=[]
+)
+
+# target_homepage = get_annotated_screenshot_of_target_homepage()
 
 # Preparation for inference
 inputs = processor.apply_chat_template(
