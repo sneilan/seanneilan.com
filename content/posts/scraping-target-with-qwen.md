@@ -1,6 +1,6 @@
 ---
 title: What I learned using local vision-language models to scrape target.com
-date: 2026-01-17
+date: 2026-02-21
 summary: Using a 2 billion local visual language llm coupled with playwright to identify and click on elements in a browser.
 description: Using a 2 billion local visual language llm coupled with playwright to identify and click on elements in a browser.
 toc: false
