@@ -52,24 +52,25 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
     device_map="auto"
 )
 footprint = model.get_memory_footprint()
-print("footprint is " + str(footprint))
+logging.info("footprint is " + str(footprint))
 
 processor = AutoProcessor.from_pretrained(model_name)
 
 logging.info("Loading model with 4-bit quantization...")
-#model, processor = load_model("Qwen/Qwen3-VL-8B-Instruct")
 
 # Display model architecture parameters
 num_layers = model.config.text_config.num_hidden_layers
 hidden_dim = model.config.text_config.hidden_size
 
+'''
 target_homepage = TargetHomepage(
     screenshot_path="./target_screenshot.png",
     annotated_screenshot_path="./target_screenshot_annotated.png",
     elements_data=[]
 )
+'''
 
-# target_homepage = get_annotated_screenshot_of_target_homepage()
+target_homepage = get_annotated_screenshot_of_target_homepage()
 
 # Preparation for inference
 inputs = processor.apply_chat_template(

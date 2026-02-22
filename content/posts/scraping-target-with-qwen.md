@@ -53,6 +53,7 @@ You can crank out anything I did above with Claude, transformers & some basic vi
 
 Using llama.cpp however allowed me to run the 8b model directly. I wish I had done that from the start! :)
 
+Here's the [source code](https://github.com/sneilan/qwen3-2b-vl-scraping).
 
 ## What I learned
 
@@ -79,7 +80,7 @@ Using llama.cpp however allowed me to run the 8b model directly. I wish I had do
 
 * Model footprint
 
-Can be theoretically be calculated by multiplying the params by number of bytes per param. For the 4B model that would be 4 billion * 2 for 16 bits per param which gives 8 gigabytes. However, running `get_memory_footprint()` on
+Can be theoretically be calculated by multiplying the params by number of bytes per param. For the 4B model that would be 4 billion * 2 for 16 bits per param which gives 8 gigabytes. However, running `get_memory_footprint()` revealed something else. 
 
 ```python
 model_name = "Qwen/Qwen3-VL-4B-Instruct"
@@ -100,6 +101,8 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 footprint = model.get_memory_footprint()
 footprint_gb = footprint / (1024 ** 3)
 print(footprint_gb)
+
+>>> **2.62 gb**
 ```
 
 For the 4b model with 4 bit quantization, this returned 2.62 gb! Since each parameter is 16 bits and they're quantized to 4 bits, that's roughly 1/4 of my 8gb estimate. But the extra .62 gigabytes multiplied by four would be an extra ~2.4gb inflated which i estimate would be a 10.4gb (8gb base + 2.62 observed offset) model.
@@ -117,6 +120,8 @@ footprint = model.get_memory_footprint()
 
 footprint_gb = footprint / (1024 ** 3)
 print(footprint_gb)
+
+>>> **9.39**
 ```
 
 Nine and 4/10ths of a gigabyte is 1 gigabyte is much less than my estimate so I think that raises a question of what memory models are using beyond their parameters.
@@ -183,7 +188,18 @@ On my M1 with 16gb ram this runs out of memory with the 8b model but with the 4B
 
 **It's important to calculate the memory usage per token programmatically rather than assuming you have enough memory.**
 
-## What worked even better
+Here's a table to summarize the memory findings.
+
+| model | quantized? | footprint | kv cache |
+|-------|------------|-----------|----------|
+| 8b    | no         | n/a       | n/a      |
+| 8b    | yes        | n/a       | n/a      |
+| 4b    | no         | 9.39 gb   | 0.31 gb  |
+| 4b    | yes        | 2.62 gb   | 0.31 gb  |
+| 2b    | no         | 7.93 gb   | 0.19 gb  |
+| 2b    | yes        | 1.43 gb   | 0.19 gb  |
+
+## Discovered Llama CPP > Transformers! :)
 
 Using [llama.cpp](https://github.com/ggml-org/llama.cpp) with the 8B model was as easy as.
 
@@ -191,18 +207,20 @@ Using [llama.cpp](https://github.com/ggml-org/llama.cpp) with the 8B model was a
 llama-cli -hf Qwen/Qwen3-VL-8B-Instruct-GGUF
 ```
 
+This loaded an 8b model on my apple m1 16 gb with NO PROBLEMS.
+
+I wish I had tried this from the beginning but I had assumed going with transformers for everything would be fine.
+
 ### Questions
 
 This project created more questions than answers.
 
 1. What is Transformers doing under the hood that llama.cpp isn't that causes it to run out of memory? It worked great with the 8B model!
-If I have 16 gb of unified memory, why would a 9 billion parameter model quantized to 4 bit run out of memory? Perhaps quantization of the model causes memory spikes?
+If I have 16 gb of unified memory, why would a 8b model quantized to 4 bit run out of memory? Perhaps quantization of the model causes memory spikes?
 2. Given a quantization factor and a model size per layer in parameters, is it possible to compute how fast a gpu will load and unload each layer?
 3. Could I have used flash attention on my m1 to speed up inference and lower memory usage with transformers?
 
 ## Notes
 
 [ONNX](https://onnx.ai/) is an open format for defining models, layers & operators so you can write a model in ONNX and use it across many devices and frameworks. However, ONNX seems to be a microsoft thing only and it doesn't have the community that GGUF has. Plus google cloud does not support ONNX natively.
-
-On the websi
 
