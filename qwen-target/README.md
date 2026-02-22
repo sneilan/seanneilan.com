@@ -1,6 +1,6 @@
 # About
 
-Here lies the source code to the post about [scraping target](http://seanneilan.com/posts/scraping-target-with-qwen/).
+Here lies the source code to the post about [scraping target](http://seanneilan.com/posts/scraping-target-with-qwen/). Full run-down there.
 
 # Run it with
 
@@ -9,5 +9,4 @@ uv install
 uv run main.py
 ```
 
-Then checkout the new png files in this directory :)
-
+Have fun! :)
