@@ -15,8 +15,6 @@ showTags: true
 hideBackToTop: false
 ---
 
-# What I learned using local vision-language models to scrape target.com
-
 ## The Goal
 
 I wanted to scrape target.com for receipts for my family budgeting program. _But I'm sick of writing scrapers_.
