@@ -13,7 +13,9 @@ tags:
 showTags: true
 ---
 
-I will die on the hill of never using pencil and paper for math. So I built an interactive math notebook that runs entirely in your browser. Type equations using [Typst](https://typst.app/) syntax and see them render instantly.
+I really don't want to use pencil and paper for math. So I built an interactive math notebook that runs entirely in your browser. Type equations using [Typst](https://typst.app/) syntax and see them render instantly.
+
+**EDIT: February, 24th, 2026 Doing maths on pencil/paper is fine and much faster. I have yet to create a pencil/paper experience but digitally.**
 
 It's designed for learning. Type an equation, press the + button to create a copy, make a small change, and work through a problem step by step. When you're done, press the share button to get a URL you can send to someone else.
 
