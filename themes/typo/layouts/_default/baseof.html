@@ -81,4 +81,8 @@
 {{ partialCached "projects/big-number-names.html" . }}
 {{ end }}
 
+{{ if .Param "piVisualization" }}
+{{ partial "projects/pi-visualization.html" . }}
+{{ end }}
+
 </html>
