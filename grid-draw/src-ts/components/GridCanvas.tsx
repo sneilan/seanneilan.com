@@ -84,10 +84,28 @@ function GridCanvas() {
     for (const cell of selectedCells) {
       grid.highlight_cell(cell.row, cell.col);
     }
+    // Draw bounding box around multi-cell selection
+    if (selectedCells.length > 1) {
+      const minRow = Math.min(...selectedCells.map(c => c.row));
+      const maxRow = Math.max(...selectedCells.map(c => c.row));
+      const minCol = Math.min(...selectedCells.map(c => c.col));
+      const maxCol = Math.max(...selectedCells.map(c => c.col));
+      grid.draw_selection_box(minRow, minCol, maxRow + 1, maxCol + 1);
+    }
   }, [grid, selectedCells]);
 
   const isCellSelected = useCallback((row: number, col: number) => {
     return selectedCells.some(c => c.row === row && c.col === col);
+  }, [selectedCells]);
+
+  const getSelectionBounds = useCallback(() => {
+    if (selectedCells.length === 0) return null;
+    return {
+      minRow: Math.min(...selectedCells.map(c => c.row)),
+      maxRow: Math.max(...selectedCells.map(c => c.row)),
+      minCol: Math.min(...selectedCells.map(c => c.col)),
+      maxCol: Math.max(...selectedCells.map(c => c.col)),
+    };
   }, [selectedCells]);
 
   const getCellCoordsFromEvent = useCallback((event: MouseEvent) => {
@@ -216,12 +234,20 @@ function GridCanvas() {
         const { col, row } = getCellCoords(event);
         if (col >= cols || row >= rows) return;
 
-        if (isCellSelected(row, col)) {
+        // Check if click is inside selection bounding box
+        const bounds = getSelectionBounds();
+        const inBounds = bounds &&
+          row >= bounds.minRow && row <= bounds.maxRow &&
+          col >= bounds.minCol && col <= bounds.maxCol;
+
+        if (inBounds && selectedCells.length > 0) {
+          // Click inside selection bounding box - start drag
           selectMode.current = 'drag';
           selectDragStart.current = { row, col };
           isDrawing.current = true;
           renderSelection();
         } else if (grid.get_cell(row, col)) {
+          // Click on a cell - select it
           setSelectedCells([{ row, col }]);
           selectMode.current = 'drag';
           selectDragStart.current = { row, col };
@@ -229,11 +255,12 @@ function GridCanvas() {
           grid.render();
           grid.highlight_cell(row, col);
         } else {
+          // Click on empty space - start box selection
           startBoxSelection(row, col);
         }
       }
     },
-    [grid, tool, colorIdx, gridSize, updateOutputs, isCellSelected, renderSelection, startBoxSelection]
+    [grid, tool, colorIdx, gridSize, updateOutputs, isCellSelected, renderSelection, startBoxSelection, getSelectionBounds, selectedCells]
   );
 
   const handleMouseMove = useCallback(
@@ -274,12 +301,22 @@ function GridCanvas() {
           const deltaRow = row - selectDragStart.current.row;
           const deltaCol = col - selectDragStart.current.col;
           grid.render();
+          const previewCells: { row: number; col: number }[] = [];
           for (const cell of selectedCells) {
             const newRow = cell.row + deltaRow;
             const newCol = cell.col + deltaCol;
             if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
               grid.highlight_cell(newRow, newCol);
+              previewCells.push({ row: newRow, col: newCol });
             }
+          }
+          // Draw bounding box around drag preview
+          if (previewCells.length > 1) {
+            const minRow = Math.min(...previewCells.map(c => c.row));
+            const maxRow = Math.max(...previewCells.map(c => c.row));
+            const minCol = Math.min(...previewCells.map(c => c.col));
+            const maxCol = Math.max(...previewCells.map(c => c.col));
+            grid.draw_selection_box(minRow, minCol, maxRow + 1, maxCol + 1);
           }
         }
       }
@@ -333,6 +370,14 @@ function GridCanvas() {
           for (const cell of newSelected) {
             grid.highlight_cell(cell.row, cell.col);
           }
+          // Draw bounding box around selection
+          if (newSelected.length > 1) {
+            const minRow = Math.min(...newSelected.map(c => c.row));
+            const maxRow = Math.max(...newSelected.map(c => c.row));
+            const minCol = Math.min(...newSelected.map(c => c.col));
+            const maxCol = Math.max(...newSelected.map(c => c.col));
+            grid.draw_selection_box(minRow, minCol, maxRow + 1, maxCol + 1);
+          }
         } else if (selectMode.current === 'drag' && selectDragStart.current && selectedCells.length > 0) {
           const deltaRow = row - selectDragStart.current.row;
           const deltaCol = col - selectDragStart.current.col;
@@ -353,11 +398,16 @@ function GridCanvas() {
             for (const cell of newSelected) {
               grid.highlight_cell(cell.row, cell.col);
             }
-          } else {
-            grid.render();
-            for (const cell of selectedCells) {
-              grid.highlight_cell(cell.row, cell.col);
+            // Draw bounding box around moved selection
+            if (newSelected.length > 1) {
+              const minRow = Math.min(...newSelected.map(c => c.row));
+              const maxRow = Math.max(...newSelected.map(c => c.row));
+              const minCol = Math.min(...newSelected.map(c => c.col));
+              const maxCol = Math.max(...newSelected.map(c => c.col));
+              grid.draw_selection_box(minRow, minCol, maxRow + 1, maxCol + 1);
             }
+          } else {
+            renderSelection();
           }
         }
 
@@ -382,18 +432,13 @@ function GridCanvas() {
       rectStart.current = null;
       isDrawing.current = false;
     } else if (tool === 'select') {
-      if (grid) {
-        grid.render();
-        for (const cell of selectedCells) {
-          grid.highlight_cell(cell.row, cell.col);
-        }
-      }
+      renderSelection();
       selectMode.current = null;
       selectBoxStart.current = null;
       selectDragStart.current = null;
       isDrawing.current = false;
     }
-  }, [grid, tool, selectedCells]);
+  }, [grid, tool, selectedCells, renderSelection]);
 
   const handleClear = useCallback(() => {
     grid?.clear();

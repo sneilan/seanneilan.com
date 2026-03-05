@@ -22,6 +22,7 @@ interface GridCanvasWasm {
   delete_cell(row: number, col: number): void;
   render_with_selection_box(r1: number, c1: number, r2: number, c2: number): void;
   highlight_cell(row: number, col: number): void;
+  draw_selection_box(r1: number, c1: number, r2: number, c2: number): void;
   export_json(): string;
   export_pytorch_tensor(): string;
   import_json(json_str: string): void;

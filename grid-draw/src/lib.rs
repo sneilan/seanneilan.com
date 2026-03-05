@@ -413,6 +413,18 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
+    pub fn draw_selection_box(&self, r1: usize, c1: usize, r2: usize, c2: usize) {
+        let x = (c1.min(c2) as f64) * CELL_SIZE;
+        let y = (r1.min(r2) as f64) * CELL_SIZE;
+        let w = ((c1 as i32 - c2 as i32).abs() as f64) * CELL_SIZE;
+        let h = ((r1 as i32 - r2 as i32).abs() as f64) * CELL_SIZE;
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(x, y, w, h);
+        self.ctx.set_line_width(1.0);
+    }
+
+    #[wasm_bindgen]
     pub fn export_json(&self) -> String {
         let mut json = String::from("{\n");
         let dz_row_start = self.data_zone_start_row();
