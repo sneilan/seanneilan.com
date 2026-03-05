@@ -76,6 +76,30 @@ This will:
 
 The built assets will be placed in the Hugo static directory and served at `/grid-draw/`.
 
+## Watch Mode (Auto-rebuild on Rust changes)
+
+To automatically rebuild when Rust files change:
+
+```bash
+# Using watchexec (recommended)
+npm run watch
+
+# Or using cargo-watch
+npm run watch:cargo
+```
+
+This watches `src/` for `.rs` file changes and runs the full build. Run `hugo serve` in another terminal to serve the updated assets.
+
+### Installing watch tools
+
+```bash
+# watchexec
+cargo install watchexec-cli
+
+# cargo-watch
+cargo install cargo-watch
+```
+
 ## How It Works
 
 The grid logic runs entirely in Rust compiled to WebAssembly:
