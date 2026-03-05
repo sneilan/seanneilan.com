@@ -159,7 +159,7 @@ impl GridCanvas {
             let color = if is_data_zone_boundary {
                 "#3b82f6"
             } else if is_tenth {
-                "#aaaaaa"
+                "#888888"
             } else {
                 &self.line_color
             };
@@ -180,7 +180,7 @@ impl GridCanvas {
             let color = if is_data_zone_boundary {
                 "#3b82f6"
             } else if is_tenth {
-                "#aaaaaa"
+                "#888888"
             } else {
                 &self.line_color
             };
