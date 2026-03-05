@@ -385,32 +385,40 @@ function GridCanvas() {
       </DraggablePanel>
 
       <DraggablePanel
-        title="Data (10x10 zone)"
+        title="Selection Data"
         defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 20 }}
       >
         <div className="space-y-3 w-72">
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">JSON</label>
-            <textarea
-              value={jsonOutput}
-              onChange={(e) => importJson(e.target.value)}
-              className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+          {selectedCells.length === 0 ? (
+            <p className="text-xs text-gray-400">
+              Select cells to see data. Use Select tool (s) and drag a box.
+            </p>
+          ) : (
+            <>
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">JSON (with colors)</label>
+                <textarea
+                  value={jsonOutput}
+                  onChange={(e) => importJson(e.target.value)}
+                  className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
 
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1 block">2D Array (black cells)</label>
-            <textarea
-              value={tensorOutput}
-              onChange={(e) => importTensor(e.target.value)}
-              placeholder="Paste tensor([[1., 0.], ...]) or [[1, 0], ...]"
-              className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">2D Array (black = 1)</label>
+                <textarea
+                  value={tensorOutput}
+                  onChange={(e) => importTensor(e.target.value)}
+                  placeholder="[[1, 0], [0, 1], ...]"
+                  className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
 
-          <p className="text-xs text-gray-400">
-            Edit to import. Supports ints, floats, booleans.
-          </p>
+              <p className="text-xs text-gray-400">
+                {selectedCells.length} cell{selectedCells.length !== 1 ? 's' : ''} selected. Edit to import.
+              </p>
+            </>
+          )}
         </div>
       </DraggablePanel>
     </>

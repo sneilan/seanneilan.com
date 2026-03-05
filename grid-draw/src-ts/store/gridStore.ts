@@ -132,13 +132,18 @@ export const useGridStore = create<GridStore>((set, get) => ({
   finishRect: () => set({ rectStart: null, isDrawing: false }),
 
   // Selection actions
-  setSelectedCells: (cells) => set({ selectedCells: cells }),
+  setSelectedCells: (cells) => {
+    set({ selectedCells: cells });
+    // Defer updateOutputs to avoid stale state
+    setTimeout(() => get().updateOutputs(), 0);
+  },
 
   addToSelection: (cell) => {
     const { selectedCells } = get();
     const newSelected = addCellToSelection(cell, selectedCells);
     set({ selectedCells: newSelected });
     get().renderWithBoundingBox(newSelected);
+    get().updateOutputs();
   },
 
   removeFromSelection: (cell) => {
@@ -146,9 +151,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const newSelected = removeCellFromSelection(cell, selectedCells);
     set({ selectedCells: newSelected });
     get().renderWithBoundingBox(newSelected);
+    get().updateOutputs();
   },
 
-  clearSelection: () => set({ selectedCells: [] }),
+  clearSelection: () => {
+    set({ selectedCells: [] });
+    get().updateOutputs();
+  },
 
   startBoxSelection: (cell, additive) => {
     const { selectedCells, grid } = get();
@@ -209,6 +218,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     });
 
     get().renderWithBoundingBox(newSelected);
+    get().updateOutputs();
   },
 
   cancelBoxSelection: () => {
@@ -329,32 +339,105 @@ export const useGridStore = create<GridStore>((set, get) => ({
     updateOutputs();
   },
 
-  // Output actions
+  // Output actions - now based on selection instead of data zone
   updateOutputs: () => {
-    const { grid } = get();
-    if (grid) {
-      set({
-        jsonOutput: grid.export_json(),
-        tensorOutput: grid.export_pytorch_tensor(),
-      });
+    const { grid, selectedCells } = get();
+    if (!grid || selectedCells.length === 0) {
+      set({ jsonOutput: '', tensorOutput: '' });
+      return;
     }
+
+    const bounds = getSelectionBounds(selectedCells);
+    if (!bounds) {
+      set({ jsonOutput: '', tensorOutput: '' });
+      return;
+    }
+
+    const height = bounds.maxRow - bounds.minRow + 1;
+    const width = bounds.maxCol - bounds.minCol + 1;
+
+    // Create 2D arrays for JSON (with colors) and tensor (binary)
+    const jsonGrid: Array<Array<{ color: string } | null>> = [];
+    const tensorGrid: number[][] = [];
+
+    const colorMap = ['#000000', '#ffffff', '#cc3333', '#ffcc00', '#2266dd', '#22aa22', null];
+
+    for (let r = 0; r < height; r++) {
+      const jsonRow: Array<{ color: string } | null> = [];
+      const tensorRow: number[] = [];
+      for (let c = 0; c < width; c++) {
+        const gridRow = bounds.minRow + r;
+        const gridCol = bounds.minCol + c;
+        // Check if this cell is in our selection
+        const isSelected = selectedCells.some(cell => cell.row === gridRow && cell.col === gridCol);
+        if (isSelected && grid.get_cell(gridRow, gridCol)) {
+          const colorIdx = grid.get_cell_color(gridRow, gridCol);
+          const colorHex = colorMap[colorIdx] ?? '#000000';
+          jsonRow.push({ color: colorHex });
+          tensorRow.push(colorIdx === 0 ? 1 : 0); // Only black cells are 1 in tensor
+        } else {
+          jsonRow.push(null);
+          tensorRow.push(0);
+        }
+      }
+      jsonGrid.push(jsonRow);
+      tensorGrid.push(tensorRow);
+    }
+
+    set({
+      jsonOutput: JSON.stringify(jsonGrid, null, 2),
+      tensorOutput: JSON.stringify(tensorGrid),
+    });
   },
 
   importJson: (json) => {
-    const { grid } = get();
-    if (!grid || !json.trim()) return;
+    const { grid, selectedCells } = get();
+    if (!grid || !json.trim() || selectedCells.length === 0) return;
+
+    const bounds = getSelectionBounds(selectedCells);
+    if (!bounds) return;
+
     try {
-      grid.import_json(json);
-      set({ selectedCells: [], jsonOutput: json });
-      set({ tensorOutput: grid.export_pytorch_tensor() });
+      const parsed = JSON.parse(json);
+      if (!Array.isArray(parsed)) return;
+
+      const colorMap: Record<string, number> = {
+        '#000000': 0, '#ffffff': 1, '#cc3333': 2,
+        '#ffcc00': 3, '#2266dd': 4, '#22aa22': 5,
+      };
+
+      for (let r = 0; r < parsed.length; r++) {
+        const row = parsed[r];
+        if (!Array.isArray(row)) continue;
+        for (let c = 0; c < row.length; c++) {
+          const gridRow = bounds.minRow + r;
+          const gridCol = bounds.minCol + c;
+          if (gridRow >= grid.get_rows() || gridCol >= grid.get_cols()) continue;
+
+          const cell = row[c];
+          if (cell && typeof cell === 'object' && cell.color) {
+            const colorIdx = colorMap[cell.color] ?? 0;
+            grid.set_draw_color(colorIdx);
+            grid.set_cell(gridRow, gridCol, true);
+          } else if (cell === null) {
+            grid.delete_cell(gridRow, gridCol);
+          }
+        }
+      }
+      grid.render();
+      get().renderSelection();
     } catch {
       // Ignore parse errors while typing
     }
   },
 
   importTensor: (tensor) => {
-    const { grid } = get();
-    if (!grid || !tensor.trim()) return;
+    const { grid, selectedCells } = get();
+    if (!grid || !tensor.trim() || selectedCells.length === 0) return;
+
+    const bounds = getSelectionBounds(selectedCells);
+    if (!bounds) return;
+
     try {
       let cleaned = tensor.trim();
       if (cleaned.startsWith('tensor(')) {
@@ -363,9 +446,30 @@ export const useGridStore = create<GridStore>((set, get) => ({
           cleaned = cleaned.slice(0, -1);
         }
       }
-      grid.import_tensor(cleaned);
-      set({ selectedCells: [], tensorOutput: tensor });
-      set({ jsonOutput: grid.export_json() });
+
+      const parsed = JSON.parse(cleaned);
+      if (!Array.isArray(parsed)) return;
+
+      grid.set_draw_color(0); // Black for tensor import
+
+      for (let r = 0; r < parsed.length; r++) {
+        const row = parsed[r];
+        if (!Array.isArray(row)) continue;
+        for (let c = 0; c < row.length; c++) {
+          const gridRow = bounds.minRow + r;
+          const gridCol = bounds.minCol + c;
+          if (gridRow >= grid.get_rows() || gridCol >= grid.get_cols()) continue;
+
+          const val = Number(row[c]);
+          if (val > 0.5) {
+            grid.set_cell(gridRow, gridCol, true);
+          } else {
+            grid.delete_cell(gridRow, gridCol);
+          }
+        }
+      }
+      grid.render();
+      get().renderSelection();
     } catch {
       // Ignore parse errors while typing
     }

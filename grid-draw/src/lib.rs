@@ -145,27 +145,12 @@ impl GridCanvas {
         // Draw grid lines
         self.ctx.set_line_width(1.0);
 
-        // Calculate data zone boundaries for thicker lines
-        let dz_row_start = self.data_zone_start_row();
-        let dz_col_start = self.data_zone_start_col();
-        let dz_row_end = dz_row_start + DATA_ZONE_SIZE;
-        let dz_col_end = dz_col_start + DATA_ZONE_SIZE;
-
         // Vertical lines
         for i in 0..=self.cols {
             let pos = (i as f64) * CELL_SIZE + 0.5;
-            let is_data_zone_boundary = i == dz_col_start || i == dz_col_end;
             let is_tenth = i % 10 == 0;
-            let color = if is_data_zone_boundary {
-                "#3b82f6"
-            } else if is_tenth {
-                "#888888"
-            } else {
-                &self.line_color
-            };
-            let width = if is_data_zone_boundary { 2.0 } else { 1.0 };
+            let color = if is_tenth { "#888888" } else { &self.line_color };
             self.ctx.set_stroke_style_str(color);
-            self.ctx.set_line_width(width);
             self.ctx.begin_path();
             self.ctx.move_to(pos, 0.0);
             self.ctx.line_to(pos, canvas_height);
@@ -175,25 +160,14 @@ impl GridCanvas {
         // Horizontal lines
         for i in 0..=self.rows {
             let pos = (i as f64) * CELL_SIZE + 0.5;
-            let is_data_zone_boundary = i == dz_row_start || i == dz_row_end;
             let is_tenth = i % 10 == 0;
-            let color = if is_data_zone_boundary {
-                "#3b82f6"
-            } else if is_tenth {
-                "#888888"
-            } else {
-                &self.line_color
-            };
-            let width = if is_data_zone_boundary { 2.0 } else { 1.0 };
+            let color = if is_tenth { "#888888" } else { &self.line_color };
             self.ctx.set_stroke_style_str(color);
-            self.ctx.set_line_width(width);
             self.ctx.begin_path();
             self.ctx.move_to(0.0, pos);
             self.ctx.line_to(canvas_width, pos);
             self.ctx.stroke();
         }
-
-        self.ctx.set_line_width(1.0);
 
         // Draw committed rects
         let mut i = 0;
