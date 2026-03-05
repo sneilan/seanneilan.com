@@ -154,9 +154,15 @@ impl GridCanvas {
         // Vertical lines
         for i in 0..=self.cols {
             let pos = (i as f64) * CELL_SIZE + 0.5;
-            // Data zone boundary lines are darker
             let is_data_zone_boundary = i == dz_col_start || i == dz_col_end;
-            let color = if is_data_zone_boundary { "#3b82f6" } else { &self.line_color };
+            let is_tenth = i % 10 == 0;
+            let color = if is_data_zone_boundary {
+                "#3b82f6"
+            } else if is_tenth {
+                "#aaaaaa"
+            } else {
+                &self.line_color
+            };
             let width = if is_data_zone_boundary { 2.0 } else { 1.0 };
             self.ctx.set_stroke_style_str(color);
             self.ctx.set_line_width(width);
@@ -170,7 +176,14 @@ impl GridCanvas {
         for i in 0..=self.rows {
             let pos = (i as f64) * CELL_SIZE + 0.5;
             let is_data_zone_boundary = i == dz_row_start || i == dz_row_end;
-            let color = if is_data_zone_boundary { "#3b82f6" } else { &self.line_color };
+            let is_tenth = i % 10 == 0;
+            let color = if is_data_zone_boundary {
+                "#3b82f6"
+            } else if is_tenth {
+                "#aaaaaa"
+            } else {
+                &self.line_color
+            };
             let width = if is_data_zone_boundary { 2.0 } else { 1.0 };
             self.ctx.set_stroke_style_str(color);
             self.ctx.set_line_width(width);
