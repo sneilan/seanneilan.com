@@ -34,6 +34,24 @@ export type GridCanvasWasm = {
   highlight_cell(row: number, col: number): void;
   draw_selection_box(r1: number, c1: number, r2: number, c2: number): void;
 
+  // Shape selection (lines and rects)
+  get_line_count(): number;
+  get_rect_count(): number;
+  get_line(idx: number): Uint32Array;
+  get_rect(idx: number): Uint32Array;
+  hit_test_line(x: number, y: number, tolerance: number): number;
+  hit_test_rect(x: number, y: number): number;
+  delete_line(idx: number): void;
+  delete_rect(idx: number): void;
+  highlight_line(idx: number): void;
+  highlight_rect(idx: number): void;
+  move_line(idx: number, delta_row: number, delta_col: number): void;
+  move_rect(idx: number, delta_row: number, delta_col: number): void;
+  line_intersects_box(line_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
+  rect_intersects_box(rect_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
+  add_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
+  add_rect(r1: number, c1: number, r2: number, c2: number, color: number): void;
+
   // Import/Export
   export_json(): string;
   export_pytorch_tensor(): string;

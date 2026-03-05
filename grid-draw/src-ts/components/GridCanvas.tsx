@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore } from '../store/gridStore';
-import { isPointInBounds, getSelectionBounds } from '../utils/selection';
+import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
+import { getSelectionBounds } from '../utils/selection';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
@@ -40,18 +40,22 @@ function GridCanvas() {
     isDrawing, drawMode, startDrawing, stopDrawing,
     lineStart, startLine, finishLine,
     rectStart, startRect, finishRect,
-    selectedCells, setSelectedCells,
+    selectedItems, setSelectedItems,
     clipboard, copy, paste, deleteSelected,
     selectMode, isSelecting,
     selectBoxStart, selectDragStart,
     startBoxSelection, updateBoxSelection, finishBoxSelection, cancelBoxSelection,
     startDragSelection, finishDragSelection, cancelDragSelection,
-    setMousePos, addToSelection, removeFromSelection,
+    setMousePos, addItemToSelection, removeItemFromSelection,
+    hitTestShapes, getSelectedCells,
     jsonOutput, tensorOutput,
     importJson, importTensor, clear,
     updateOutputs, renderSelection,
     setGrid,
   } = store;
+
+  // Helper to get selected cells only
+  const selectedCells = getSelectedCells();
 
   // Sync grid reference to store
   useEffect(() => {
@@ -78,11 +82,11 @@ function GridCanvas() {
       if (e.key === '\\') setTool(tool === 'line' ? 'draw' : 'line');
       if (e.key === 'm') setTool(tool === 'rect' ? 'draw' : 'rect');
       if (e.key === 's') setTool(tool === 'select' ? 'draw' : 'select');
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedCells.length > 0) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItems.length > 0) {
         e.preventDefault();
         deleteSelected();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedCells.length > 0) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedItems.length > 0) {
         e.preventDefault();
         copy();
       }
@@ -95,7 +99,7 @@ function GridCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedCells, deleteSelected, copy, paste, clipboard]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard]);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -123,8 +127,20 @@ function GridCanvas() {
     return { col, row };
   };
 
-  const isCellSelected = (row: number, col: number) => {
-    return selectedCells.some(c => c.row === row && c.col === col);
+  const isItemSelected = (item: SelectedItem) => {
+    return selectedItems.some(s => {
+      if (s.type !== item.type) return false;
+      if (s.type === 'cell' && item.type === 'cell') {
+        return s.row === item.row && s.col === item.col;
+      }
+      if (s.type === 'line' && item.type === 'line') {
+        return s.index === item.index;
+      }
+      if (s.type === 'rect' && item.type === 'rect') {
+        return s.index === item.index;
+      }
+      return false;
+    });
   };
 
   const handleMouseDown = useCallback(
@@ -151,28 +167,42 @@ function GridCanvas() {
         grid.render_with_rect(row, col, row, col);
       } else if (tool === 'select') {
         const { col, row } = getCellCoords(event);
+        const { x, y } = getCanvasXY(event);
         if (col >= cols || row >= rows) return;
 
         const shiftHeld = event.shiftKey;
-        const bounds = getSelectionBounds(selectedCells);
-        const inBounds = bounds && isPointInBounds(row, col, bounds);
 
-        if (inBounds && selectedCells.length > 0 && !shiftHeld) {
-          // Click inside selection bounding box - start drag
+        // Check if clicking on any selected item's bounding box (cells, lines, rects)
+        const bounds = getSelectionBoundsAll(selectedItems, grid);
+        const inBounds = bounds && row >= bounds.minRow && row <= bounds.maxRow &&
+                         col >= bounds.minCol && col <= bounds.maxCol;
+
+        // First, hit test to see if we clicked on a shape
+        const hitItem = hitTestShapes(x, y);
+
+        if (inBounds && selectedItems.length > 0 && !shiftHeld && !hitItem) {
+          // Click inside selection bounding box (but not on a shape) - start drag
           startDragSelection({ row, col });
           renderSelection();
-        } else if (grid.get_cell(row, col)) {
-          // Click on a filled cell
-          if (shiftHeld && !isCellSelected(row, col)) {
-            addToSelection({ row, col });
-          } else if (shiftHeld && isCellSelected(row, col)) {
-            removeFromSelection({ row, col });
+        } else if (hitItem) {
+          // Clicked on a shape (cell, line, or rect)
+          if (shiftHeld && !isItemSelected(hitItem)) {
+            addItemToSelection(hitItem);
+          } else if (shiftHeld && isItemSelected(hitItem)) {
+            removeItemFromSelection(hitItem);
           } else {
-            // Regular click - select single cell and prepare for drag
-            setSelectedCells([{ row, col }]);
+            // Regular click - select single item and prepare for drag
+            setSelectedItems([hitItem]);
             startDragSelection({ row, col });
             grid.render();
-            grid.highlight_cell(row, col);
+            // Highlight the selected item
+            if (hitItem.type === 'cell') {
+              grid.highlight_cell(hitItem.row, hitItem.col);
+            } else if (hitItem.type === 'line') {
+              grid.highlight_line(hitItem.index);
+            } else if (hitItem.type === 'rect') {
+              grid.highlight_rect(hitItem.index);
+            }
           }
         } else {
           // Click on empty space - start box selection
@@ -180,7 +210,7 @@ function GridCanvas() {
         }
       }
     },
-    [grid, tool, colorIdx, selectedCells, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, addToSelection, removeFromSelection, setSelectedCells, updateOutputs, renderSelection]
+    [grid, tool, colorIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
   );
 
   const handleMouseMove = useCallback(
@@ -212,17 +242,25 @@ function GridCanvas() {
 
         if (selectMode === 'box' && selectBoxStart) {
           updateBoxSelection({ row, col });
-        } else if (selectMode === 'drag' && selectDragStart && selectedCells.length > 0) {
+        } else if (selectMode === 'drag' && selectDragStart && selectedItems.length > 0) {
           const deltaRow = row - selectDragStart.row;
           const deltaCol = col - selectDragStart.col;
           grid.render();
+          // Preview drag for all items
           const previewCells: { row: number; col: number }[] = [];
-          for (const cell of selectedCells) {
-            const newRow = cell.row + deltaRow;
-            const newCol = cell.col + deltaCol;
-            if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-              grid.highlight_cell(newRow, newCol);
-              previewCells.push({ row: newRow, col: newCol });
+          for (const item of selectedItems) {
+            if (item.type === 'cell') {
+              const newRow = item.row + deltaRow;
+              const newCol = item.col + deltaCol;
+              if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
+                grid.highlight_cell(newRow, newCol);
+                previewCells.push({ row: newRow, col: newCol });
+              }
+            } else if (item.type === 'line') {
+              // Lines don't contribute to cell preview bounds but we still highlight them
+              grid.highlight_line(item.index);
+            } else if (item.type === 'rect') {
+              grid.highlight_rect(item.index);
             }
           }
           if (previewCells.length > 1) {
@@ -234,7 +272,7 @@ function GridCanvas() {
         }
       }
     },
-    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedCells, setMousePos, updateBoxSelection, updateOutputs]
+    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, setMousePos, updateBoxSelection, updateOutputs]
   );
 
   const handleMouseUp = useCallback(
@@ -389,17 +427,14 @@ function GridCanvas() {
         defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 20 }}
       >
         <div className="space-y-3 w-72">
-          {selectedCells.length === 0 ? (
-            <p className="text-xs text-gray-400">
-              Select cells to see data. Use Select tool (s) and drag a box.
-            </p>
-          ) : (
+          {selectedCells.length > 0 && (
             <>
               <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">JSON (with colors)</label>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">JSON (sparse)</label>
                 <textarea
                   value={jsonOutput}
                   onChange={(e) => importJson(e.target.value)}
+                  placeholder='[{"row":0,"col":0,"color":"#000000"},...]'
                   className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -413,12 +448,14 @@ function GridCanvas() {
                   className="w-full h-32 p-2 font-mono text-xs bg-white border rounded resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
-
-              <p className="text-xs text-gray-400">
-                {selectedCells.length} cell{selectedCells.length !== 1 ? 's' : ''} selected. Edit to import.
-              </p>
             </>
           )}
+
+          <p className="text-xs text-gray-400">
+            {selectedItems.length === 0
+              ? 'Select items with Select tool (s). Paste imports at mouse position.'
+              : `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} selected${selectedCells.length > 0 ? ` (${selectedCells.length} cell${selectedCells.length !== 1 ? 's' : ''})` : ''}.`}
+          </p>
         </div>
       </DraggablePanel>
     </>
