@@ -1,5 +1,5 @@
 ---
-title: Fine-Tuning a Local LLM with LoRA
+title: Local Fine-Tuning LLM's without Sovereign AI and Software Freedom!
 date: 2025-11-29
 summary: Train TinyLlama to know its favorite color using LoRA fine-tuning.
 description: A simple guide to fine-tuning a local LLM using LoRA, converting to GGUF, and deploying with Ollama.
@@ -16,47 +16,125 @@ showTags: true
 hideBackToTop: false
 ---
 
-This guide walks through fine-tuning TinyLlama 1.1B using Transformers on a CPU and running it locally with Ollama. Transformers has excellent developer ergonomics for training, running and experimenting with any model you'll find on Guggingface.
+This guide walks through fine-tuning TinyLlama 1.1B using Transformers on a CPU and running it locally with Ollama. Everything in this guide, once the models are downloaded is entirely usable without sovereign ai!
 
-Also, in this guide is an example of using llama3.2:3b to generate training data locally because it outputs decent JSON consistently. It's not the most creative model but it's nice to generate training data & fine tune everything locally for full creative expression & freedom.
+Also, in this guide is an example of using llama3.2:3b to generate training data locally because it's small yet still creative enough to generate fine tuning data - As long as you don't constrain the output or give too much instruction!
 
-> **Note**: A standalone repository with automated setup is available at [fine-tuning-local-llm](https://github.com/sneilan/fine-tuning-local-llm). Run the entire process with: `./setup.sh`
+I used transformers for fine tuning as opposed to unsloth or its competitors because it has excellent developer ergonomics for training, running and experimenting with any model you'll find on Huggingface. It doesn't have a GUI but for experimentation, it's probably the best option out there today.
+
+This guide was created on an m1 with 16GB unified ram. Since these models are all under 4GB, this guide should be runnable on many computers.
 
 ## Quick Start
 
 Requires [uv](https://docs.astral.sh/uv/) and [Ollama](https://ollama.com/).
 
-**1. Setup (Automated)**
-
-Clone and run the automated setup:
-
-```bash
-git clone https://github.com/sneilan/fine-tuning-local-llm.git
-cd fine-tuning-local-llm
-./setup.sh
-```
-
-Or follow the manual steps below:
+These files are all available on [github](https://github.com/sneilan/fine-tuning-local-llm.git).
 
 ```bash
 mkdir fine-tune-demo && cd fine-tune-demo
 uv init
 uv venv && source .venv/bin/activate
-uv pip install torch transformers peft trl datasets accelerate
+uv pip install torch transformers peft trl datasets accelerate ollama
 ```
+
+Follow the directions at https://ollama.com/download to run ollama on your computer.
 
 **2. Generate training data with llama3.2:3b**
 
+This python script asks llama to generate 50 examples of asking what your favorite color is and 50 examples stating it is blue. Note how it does not try to format in json or constrain the output in any way. Small models are not powerful enough to constrain output into json and be creative at the same time. You'll never notice this with sovereign AI models like gemini or claude. If you constrain output to only json with small models, you are more likely to experience model collapse - meaning the output in this case will not be statistically varied enough to power a fine tuning job.
+
+llama3.2:3b will output one example at a time like
+
+1. First example
+2. Second example
+...
+5. Fifth example.
+
+```python
+import re
+import json
+from typing import Iterator
+from ollama import chat
+from ollama import ChatResponse
+import json
+import random
+
+
+def get_stream(prompt: str) -> Iterator[ChatResponse]:
+    """Streams response from running ollama instance"""
+    return chat(
+        model="llama3.2:3b",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        stream=True,
+    )
+
+
+def chunk_stream(stream: Iterator[ChatResponse]) -> Iterator[str]:
+    """Yields lines of text"""
+    buffer = ""
+    for chunk in stream:
+        buffer += chunk["message"]["content"]
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            try:
+                yield line
+            except:
+                pass
+    try:
+        yield line
+    except:
+        pass
+
+
+questions = []
+for line in chunk_stream(
+    get_stream("Write 50 ways of asking me what my favorite color is.")
+):
+    match_result = re.match(r"\d{1,2}", line)
+    if match_result:
+        question = line.split(" ", 1)[1]
+        questions.append(question)
+        print(question)
+
+
+answers = []
+for line in chunk_stream(
+    get_stream("Write 50 ways of telling me my favorite color is blue.")
+):
+    match_result = re.match(r"\d{1,2}", line)
+    if match_result:
+        answer = line.split(" ", 1)[1]
+        answers.append(answer)
+        print(answer)
+
+
+training_lines = []
+for i in range(100):
+    question = random.choice(questions)
+    answer = random.choice(answers)
+    training_line = {
+        "messages": [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ]
+    }
+    training_lines.append(training_line)
+
+f = open("training.jsonl", "w")
+for t in training_lines:
+    f.write(json.dumps(t) + "\n")
+f.close()
+```
+
+Put the above python code into generate_training.py and run with
+
 ```bash
-ollama run llama3.2:3b 'Generate 100 JSONL lines. Each line must be EXACTLY this format:
-{"messages":[{"role":"user","content":"<question>"},{"role":"assistant","content":"It is the color blue"}]}
-
-The assistant content must ALWAYS be exactly "It is the color blue".
-Only change the user question - different ways to ask about favorite color.
-
-Line 1: {"messages":[{"role":"user","content":"What is my favorite color?"},{"role":"assistant","content":"It is the color blue"}]}
-Line 2: {"messages":[{"role":"user","content":"Tell me my preferred color"},{"role":"assistant","content":"It is the color blue"}]}
-Line 3:' | grep '{"messages"' | sort -u > training.jsonl
+uv run generate_training.py
 ```
 
 **3. Train** ([finetune.py](#finetunepy) is below)
@@ -91,6 +169,8 @@ ollama create my-model -f Modelfile
 ```bash
 ollama run my-model "What is your favorite color?"
 ```
+
+And it will output that its favorite color is blue most likely with some romantic poetry at the end. I haven't figured out how to get it to just say blue but I think this is a step forward towards software freedom and liberation from sovereign ai.
 
 ## Files
 

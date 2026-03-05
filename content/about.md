@@ -8,12 +8,12 @@ I'm helping connect people to funding opportunities using AI at [GrantPuma](http
 
 **[grantpuma.com](https://grantpuma.com)**\
 Dec 2023 - Present\
-*Team Lead*
+*V.P. of Engineering*
 
 * Management
 * Full stack
 * Devops
-* Machine Learning
+* AI/Machine Learning
 * Technical writing
 
 **[getfliff.com](https://getfliff.com)**\
