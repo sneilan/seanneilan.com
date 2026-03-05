@@ -4,11 +4,15 @@ interface GridCanvasWasm {
   handle_click(x: number, y: number): void;
   render(): void;
   clear(): void;
-  set_fill_color(color: string): void;
+  set_draw_color(idx: number): void;
   get_cell(row: number, col: number): boolean;
   set_cell(row: number, col: number, value: boolean): void;
   get_grid_size(): number;
   get_cell_size(): number;
+  render_with_line(r1: number, c1: number, r2: number, c2: number): void;
+  draw_line(r1: number, c1: number, r2: number, c2: number): void;
+  render_with_rect(r1: number, c1: number, r2: number, c2: number): void;
+  draw_rect(r1: number, c1: number, r2: number, c2: number): void;
 }
 
 interface GridWasmState {
