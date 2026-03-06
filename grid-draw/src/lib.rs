@@ -51,6 +51,11 @@ impl GridCanvas {
             .ok_or_else(|| JsValue::from_str("Canvas not found"))?
             .dyn_into::<HtmlCanvasElement>()?;
 
+        Self::from_canvas(canvas, rows, cols)
+    }
+
+    /// Create a GridCanvas from an existing canvas element (for shadow DOM contexts)
+    pub fn from_canvas(canvas: HtmlCanvasElement, rows: usize, cols: usize) -> Result<GridCanvas, JsValue> {
         // Set canvas dimensions
         canvas.set_width((cols as f64 * CELL_SIZE) as u32);
         canvas.set_height((rows as f64 * CELL_SIZE) as u32);

@@ -6,10 +6,19 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
 import { cn } from '@/lib/utils';
+import type { AnywidgetModel } from '../types/anywidget';
 
-const CANVAS_ID = 'grid-canvas';
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
+
+interface GridCanvasProps {
+  /** Anywidget model for Python communication (widget mode) */
+  anywidgetModel?: AnywidgetModel;
+  /** Widget width in pixels (widget mode only) */
+  widgetWidth?: number;
+  /** Widget height in pixels (widget mode only) */
+  widgetHeight?: number;
+}
 
 const COLORS = [
   { hex: '#000000', name: 'Black' },
@@ -21,16 +30,24 @@ const COLORS = [
   { hex: null, name: 'Transparent' },
 ];
 
-function calculateGridSize() {
+function calculateGridSize(widgetWidth?: number, widgetHeight?: number) {
+  if (widgetWidth && widgetHeight) {
+    // Widget mode: use provided dimensions
+    const cols = Math.floor(widgetWidth / CELL_SIZE);
+    const rows = Math.floor((widgetHeight - HEADER_HEIGHT) / CELL_SIZE);
+    return { rows: Math.max(10, rows), cols: Math.max(10, cols) };
+  }
+  // Standalone mode: fill viewport
   const cols = Math.floor(window.innerWidth / CELL_SIZE);
   const rows = Math.floor((window.innerHeight - HEADER_HEIGHT) / CELL_SIZE);
   return { rows: Math.max(10, rows), cols: Math.max(10, cols) };
 }
 
-function GridCanvas() {
-  const [gridSize, setGridSize] = useState(calculateGridSize);
-  const { grid, loading, error } = useGridWasm(CANVAS_ID, gridSize.rows, gridSize.cols);
+function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasProps = {}) {
+  const isWidgetMode = !!anywidgetModel;
+  const [gridSize, setGridSize] = useState(() => calculateGridSize(widgetWidth, widgetHeight));
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { grid, loading, error } = useGridWasm(canvasRef, gridSize.rows, gridSize.cols);
 
   // Get state and actions from store
   const store = useGridStore();
@@ -62,8 +79,10 @@ function GridCanvas() {
     setGrid(grid);
   }, [grid, setGrid]);
 
-  // Handle window resize
+  // Handle window resize (only in standalone mode)
   useEffect(() => {
+    if (isWidgetMode) return; // Widget mode uses fixed dimensions
+
     const handleResize = () => {
       const newSize = calculateGridSize();
       setGridSize(newSize);
@@ -74,10 +93,31 @@ function GridCanvas() {
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [grid]);
+  }, [grid, isWidgetMode]);
 
-  // Keyboard shortcuts
+  // Send data to Python (widget mode only)
+  const sendToPython = useCallback(() => {
+    if (!anywidgetModel || !grid) return;
+
+    const tensorStr = grid.export_pytorch_tensor();
+    const jsonStr = grid.export_json();
+
+    try {
+      const tensorData = JSON.parse(tensorStr);
+      const jsonData = JSON.parse(jsonStr);
+
+      anywidgetModel.set('tensor_data', tensorData);
+      anywidgetModel.set('json_data', jsonData);
+      anywidgetModel.save_changes();
+    } catch (e) {
+      console.error('Failed to send data to Python:', e);
+    }
+  }, [anywidgetModel, grid]);
+
+  // Keyboard shortcuts (disabled in widget mode to avoid notebook conflicts)
   useEffect(() => {
+    if (isWidgetMode) return; // Skip global shortcuts in widget mode
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === '\\') setTool(tool === 'line' ? 'draw' : 'line');
       if (e.key === 'm') setTool(tool === 'rect' ? 'draw' : 'rect');
@@ -99,7 +139,7 @@ function GridCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, isWidgetMode]);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -328,7 +368,10 @@ function GridCanvas() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className={cn(
+        "flex items-center justify-center bg-gray-100",
+        isWidgetMode ? "w-full h-full" : "min-h-screen"
+      )}>
         <div className="bg-white p-6 rounded-lg shadow-lg">
           <p className="text-red-600">Error loading WASM: {error}</p>
         </div>
@@ -336,6 +379,106 @@ function GridCanvas() {
     );
   }
 
+  // Widget mode: contained layout
+  if (isWidgetMode) {
+    return (
+      <div
+        className="relative bg-gray-50 border rounded overflow-hidden"
+        style={{ width: widgetWidth, height: widgetHeight }}
+      >
+        <header className="absolute top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
+          <h1 className="text-lg font-bold">Grid Draw</h1>
+          {loading && <span className="ml-4 text-sm text-gray-500">Loading...</span>}
+          <div className="ml-auto">
+            <Button
+              variant="default"
+              onClick={sendToPython}
+              disabled={loading}
+              size="sm"
+            >
+              Send to Python
+            </Button>
+          </div>
+        </header>
+
+        <canvas
+          ref={canvasRef}
+                    className={cn(
+            "absolute left-0 right-0 bottom-0",
+            loading && "opacity-50"
+          )}
+          style={{
+            top: HEADER_HEIGHT,
+            cursor: loading ? 'wait' : 'crosshair',
+          }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+        />
+
+        <DraggablePanel title="Tools" defaultPosition={{ x: 20, y: HEADER_HEIGHT + 20 }}>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Mode</label>
+              <ToggleGroup
+                type="single"
+                value={tool}
+                onValueChange={(val) => val && setTool(val as typeof tool)}
+                variant="outline"
+                className="flex-wrap"
+              >
+                <ToggleGroupItem value="draw" className="text-xs">Draw</ToggleGroupItem>
+                <ToggleGroupItem value="line" className="text-xs">Line</ToggleGroupItem>
+                <ToggleGroupItem value="rect" className="text-xs">Rect</ToggleGroupItem>
+                <ToggleGroupItem value="select" className="text-xs">Select</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
+              <div className="flex gap-1">
+                {COLORS.map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setColorIdx(i)}
+                    title={c.name}
+                    className={cn(
+                      "w-6 h-6 rounded border-2 transition-all",
+                      colorIdx === i
+                        ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
+                        : "border-gray-300 hover:border-gray-400",
+                      c.hex === '#ffffff' && "shadow-sm"
+                    )}
+                    style={{
+                      backgroundColor: c.hex ?? 'transparent',
+                      backgroundImage: c.hex === null
+                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                        : undefined,
+                      backgroundSize: c.hex === null ? '6px 6px' : undefined,
+                      backgroundPosition: c.hex === null ? '0 0, 0 3px, 3px -3px, -3px 0px' : undefined,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <Button
+              variant="destructive"
+              onClick={clear}
+              disabled={loading}
+              size="sm"
+              className="w-full"
+            >
+              Clear Grid
+            </Button>
+          </div>
+        </DraggablePanel>
+      </div>
+    );
+  }
+
+  // Standalone mode: full-screen layout
   return (
     <>
       <header className="fixed top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
@@ -345,8 +488,7 @@ function GridCanvas() {
 
       <canvas
         ref={canvasRef}
-        id={CANVAS_ID}
-        className={cn(
+                className={cn(
           "fixed left-0 right-0 bottom-0",
           loading && "opacity-50"
         )}
