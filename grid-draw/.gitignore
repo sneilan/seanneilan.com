@@ -1,0 +1,8 @@
+# Build artifacts
+target/
+pkg/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
