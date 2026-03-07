@@ -627,21 +627,31 @@ export const useGridStore = create<GridStore>((set, get) => ({
     // Sort by row, then col for consistent output
     sparseList.sort((a, b) => a.row - b.row || a.col - b.col);
 
-    // Tensor: still use dense 2D format (typical for ML)
+    // Generate Python code for PyTorch sparse COO tensor
     const height = bounds.maxRow - bounds.minRow + 1;
     const width = bounds.maxCol - bounds.minCol + 1;
-    const tensorGrid: number[][] = Array.from({ length: height }, () => Array(width).fill(0));
+    const rowIndices: number[] = [];
+    const colIndices: number[] = [];
 
     for (const cell of sparseList) {
-      // Only black cells (color index 0) are 1 in tensor
+      // Only black cells (color index 0) are included
       if (cell.color === '#000000') {
-        tensorGrid[cell.row][cell.col] = 1;
+        rowIndices.push(cell.row);
+        colIndices.push(cell.col);
       }
     }
 
+    const valuesStr = rowIndices.map(() => '1.0').join(', ');
+    const pythonCode = `import torch
+
+indices = torch.tensor([[${rowIndices.join(', ')}], [${colIndices.join(', ')}]])
+values = torch.tensor([${valuesStr}])
+sparse = torch.sparse_coo_tensor(indices, values, size=(${height}, ${width}))
+sparse = sparse.coalesce()`;
+
     set({
       jsonOutput: JSON.stringify(sparseList, null, 2),
-      tensorOutput: JSON.stringify(tensorGrid),
+      tensorOutput: pythonCode,
     });
   },
 
