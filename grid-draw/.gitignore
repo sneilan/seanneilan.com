@@ -6,3 +6,6 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+
+# Override parent gitignore's lib/ exclusion for src-ts/lib
+!src-ts/lib/
