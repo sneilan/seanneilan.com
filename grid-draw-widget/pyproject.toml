@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "grid-draw-widget"
+version = "0.1.0"
+description = "Grid drawing widget for Marimo/Jupyter notebooks"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "anywidget>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "watchfiles",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["grid_draw_widget"]
