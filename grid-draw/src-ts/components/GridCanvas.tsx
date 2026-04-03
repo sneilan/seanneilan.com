@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
+import { useTauriEvents } from '../hooks/useTauriEvents';
 import { getSelectionBounds } from '../utils/selection';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -46,8 +47,12 @@ function calculateGridSize(widgetWidth?: number, widgetHeight?: number) {
 function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasProps = {}) {
   const isWidgetMode = !!anywidgetModel;
   const [gridSize, setGridSize] = useState(() => calculateGridSize(widgetWidth, widgetHeight));
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { grid, loading, error } = useGridWasm(canvasRef, gridSize.rows, gridSize.cols);
+
+  // Listen for tensor data pushed from Python via the Tauri backend
+  useTauriEvents();
 
   // Get state and actions from store
   const store = useGridStore();
@@ -114,11 +119,21 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     }
   }, [anywidgetModel, grid]);
 
+  // Fullscreen toggle (Tauri only)
+  const toggleFullscreen = useCallback(async () => {
+    if (!('__TAURI__' in window)) return;
+    const next = !isFullscreen;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('set_fullscreen', { enabled: next });
+    setIsFullscreen(next);
+  }, [isFullscreen]);
+
   // Keyboard shortcuts (disabled in widget mode to avoid notebook conflicts)
   useEffect(() => {
     if (isWidgetMode) return; // Skip global shortcuts in widget mode
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       if (e.key === '\\') setTool(tool === 'line' ? 'draw' : 'line');
       if (e.key === 'm') setTool(tool === 'rect' ? 'draw' : 'rect');
       if (e.key === 's') setTool(tool === 'select' ? 'draw' : 'select');
@@ -139,7 +154,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, isWidgetMode]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, isWidgetMode, toggleFullscreen]);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -484,6 +499,13 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       <header className="fixed top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
         <h1 className="text-xl font-bold">Grid Draw</h1>
         {loading && <span className="ml-4 text-sm text-gray-500">Loading...</span>}
+        {'__TAURI__' in window && (
+          <div className="ml-auto">
+            <Button variant="outline" size="sm" onClick={toggleFullscreen}>
+              {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} (F11)
+            </Button>
+          </div>
+        )}
       </header>
 
       <canvas

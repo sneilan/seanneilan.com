@@ -4,18 +4,18 @@
   "description": "Interactive 32x32 grid canvas with Rust WASM",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev:vite": "vite --host",
+    "dev": "npm run build:wasm && tauri dev",
     "build:wasm": "wasm-pack build --target web --out-dir pkg",
-    "build": "npm run build:wasm && tsc && vite build",
+    "build:bundle": "tsc && vite build",
+    "build": "npm run build:wasm && tauri build",
     "build:widget": "npm run build:wasm && tsc && vite build --config vite.config.widget.ts",
-    "watch": "watchexec -w src -e rs -- npm run build",
-    "watch:cargo": "cargo watch -w src -s 'npm run build'",
-    "watch:widget": "vite build --config vite.config.widget.ts --watch",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.577.0",
@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^18.2.0",
