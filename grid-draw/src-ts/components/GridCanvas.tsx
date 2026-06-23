@@ -3,6 +3,7 @@ import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
 import { useTauriEvents } from '../hooks/useTauriEvents';
 import { getSelectionBounds } from '../utils/selection';
+import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
@@ -68,6 +69,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     selectBoxStart, selectDragStart,
     startBoxSelection, updateBoxSelection, finishBoxSelection, cancelBoxSelection,
     startDragSelection, finishDragSelection, cancelDragSelection,
+    startResize, updateResize, finishResize, cancelResize,
     setMousePos, addItemToSelection, removeItemFromSelection,
     hitTestShapes, getSelectedCells,
     jsonOutput, tensorOutput,
@@ -227,6 +229,23 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
 
         const shiftHeld = event.shiftKey;
 
+        // Resize: if a single line/rect is selected and we grabbed one of its
+        // handles, start a resize instead of a move. Checked before everything
+        // else so handles take priority over the drag/hit-test branches.
+        if (selectedItems.length === 1 && !shiftHeld) {
+          const only = selectedItems[0];
+          if (only.type === 'line' || only.type === 'rect') {
+            const handles = only.type === 'line'
+              ? getLineHandles(grid.get_line(only.index))
+              : getRectHandles(grid.get_rect(only.index));
+            const hit = hitTestHandle(x, y, handles, CELL_SIZE, 7);
+            if (hit) {
+              startResize({ shape: only.type, index: only.index, handle: hit.handle });
+              return;
+            }
+          }
+        }
+
         // Check if clicking on any selected item's bounding box (cells, lines, rects)
         const bounds = getSelectionBoundsAll(selectedItems, grid);
         const inBounds = bounds && row >= bounds.minRow && row <= bounds.maxRow &&
@@ -235,7 +254,12 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         // First, hit test to see if we clicked on a shape
         const hitItem = hitTestShapes(x, y);
 
-        if (inBounds && selectedItems.length > 0 && !shiftHeld && !hitItem) {
+        if (hitItem && !shiftHeld && isItemSelected(hitItem) && selectedItems.length > 1) {
+          // Clicked on an item that's already part of a multi-selection -
+          // drag the whole selection, don't collapse it to just this item.
+          startDragSelection({ row, col });
+          renderSelection();
+        } else if (inBounds && selectedItems.length > 0 && !shiftHeld && !hitItem) {
           // Click inside selection bounding box (but not on a shape) - start drag
           startDragSelection({ row, col });
           renderSelection();
@@ -265,7 +289,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, colorIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
+    [grid, tool, colorIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
   );
 
   const handleMouseMove = useCallback(
@@ -274,6 +298,40 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
 
       const coords = getCellCoords(event);
       setMousePos(coords);
+
+      // Cursor feedback for the select tool: grab over a handle or a draggable
+      // selection, grabbing while actively dragging/resizing, move over the
+      // selection's interior, crosshair otherwise.
+      if (tool === 'select') {
+        const canvas = event.currentTarget;
+        if (isSelecting && (selectMode === 'drag' || selectMode === 'resize')) {
+          canvas.style.cursor = 'grabbing';
+        } else {
+          const { x, y } = getCanvasXY(event);
+          let cursor = 'crosshair';
+          // Handle hover (single line/rect selected) -> grab.
+          if (selectedItems.length === 1) {
+            const only = selectedItems[0];
+            if (only.type === 'line' || only.type === 'rect') {
+              const handles = only.type === 'line'
+                ? getLineHandles(grid.get_line(only.index))
+                : getRectHandles(grid.get_rect(only.index));
+              if (hitTestHandle(x, y, handles, CELL_SIZE, 7)) cursor = 'grab';
+            }
+          }
+          // Hover over a selected shape, or inside the selection bounds -> move.
+          if (cursor === 'crosshair' && selectedItems.length > 0) {
+            const hit = hitTestShapes(x, y);
+            const b = getSelectionBoundsAll(selectedItems, grid);
+            const inB = b && coords.row >= b.minRow && coords.row <= b.maxRow &&
+                        coords.col >= b.minCol && coords.col <= b.maxCol;
+            if ((hit && isItemSelected(hit)) || inB) cursor = 'grab';
+          }
+          canvas.style.cursor = cursor;
+        }
+      } else {
+        event.currentTarget.style.cursor = 'crosshair';
+      }
 
       if (!isDrawing && !isSelecting) return;
       const cols = grid.get_cols();
@@ -290,6 +348,10 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       } else if (tool === 'rect' && rectStart) {
         const { col, row } = getIntersectionCoords(event);
         grid.render_with_rect(rectStart.row, rectStart.col, row, col);
+      } else if (tool === 'select' && isSelecting && selectMode === 'resize') {
+        // Resize uses intersection coords (corners), like line/rect drawing.
+        const { col, row } = getIntersectionCoords(event);
+        updateResize({ row, col });
       } else if (tool === 'select' && isSelecting) {
         const { col: rawCol, row: rawRow } = getCellCoords(event);
         const col = Math.max(0, Math.min(cols - 1, rawCol));
@@ -301,21 +363,28 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           const deltaRow = row - selectDragStart.row;
           const deltaCol = col - selectDragStart.col;
           grid.render();
-          // Preview drag for all items
+          // Live preview: draw each selected element as a ghost at its new
+          // position so the actual cells/lines/rects appear to move with the
+          // cursor (not just an outline) until release.
           const previewCells: { row: number; col: number }[] = [];
           for (const item of selectedItems) {
             if (item.type === 'cell') {
               const newRow = item.row + deltaRow;
               const newCol = item.col + deltaCol;
               if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-                grid.highlight_cell(newRow, newCol);
+                grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
                 previewCells.push({ row: newRow, col: newCol });
               }
             } else if (item.type === 'line') {
-              // Lines don't contribute to cell preview bounds but we still highlight them
-              grid.highlight_line(item.index);
+              const l = grid.get_line(item.index);
+              if (l.length >= 5) {
+                grid.preview_line(l[0] + deltaRow, l[1] + deltaCol, l[2] + deltaRow, l[3] + deltaCol, l[4]);
+              }
             } else if (item.type === 'rect') {
-              grid.highlight_rect(item.index);
+              const rr = grid.get_rect(item.index);
+              if (rr.length >= 5) {
+                grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4]);
+              }
             }
           }
           if (previewCells.length > 1) {
@@ -327,7 +396,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, setMousePos, updateBoxSelection, updateOutputs]
+    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateOutputs]
   );
 
   const handleMouseUp = useCallback(
@@ -353,14 +422,17 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       } else if (tool === 'select') {
         const { col, row } = getCellCoords(event);
 
-        if (selectMode === 'box') {
+        if (selectMode === 'resize') {
+          const { col: icol, row: irow } = getIntersectionCoords(event);
+          finishResize({ row: irow, col: icol });
+        } else if (selectMode === 'box') {
           finishBoxSelection({ row, col });
         } else if (selectMode === 'drag') {
           finishDragSelection({ row, col });
         }
       }
     },
-    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, updateOutputs]
+    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, updateOutputs]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -377,9 +449,11 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         cancelBoxSelection();
       } else if (selectMode === 'drag') {
         cancelDragSelection();
+      } else if (selectMode === 'resize') {
+        cancelResize();
       }
     }
-  }, [grid, tool, selectMode, stopDrawing, finishLine, finishRect, cancelBoxSelection, cancelDragSelection]);
+  }, [grid, tool, selectMode, stopDrawing, finishLine, finishRect, cancelBoxSelection, cancelDragSelection, cancelResize]);
 
   if (error) {
     return (

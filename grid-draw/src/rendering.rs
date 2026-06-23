@@ -123,6 +123,61 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
+    /// Draw a moving "ghost" of a cell at (row, col) in its color, with an
+    /// orange selected outline. Does NOT clear the canvas, so callers render()
+    /// once and then layer previews for every dragged shape on top.
+    #[wasm_bindgen]
+    pub fn preview_cell(&self, row: u32, col: u32, color: u8) {
+        let x = col as f64 * CELL_SIZE;
+        let y = row as f64 * CELL_SIZE;
+        self.ctx.set_global_alpha(0.7);
+        self.ctx.set_fill_style_str(color_for_idx(color));
+        self.ctx.fill_rect(x, y, CELL_SIZE, CELL_SIZE);
+        self.ctx.set_global_alpha(1.0);
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(x + 1.0, y + 1.0, CELL_SIZE - 2.0, CELL_SIZE - 2.0);
+        self.ctx.set_line_width(1.0);
+    }
+
+    /// Draw a moving "ghost" of a line at the given coords. Does NOT clear.
+    #[wasm_bindgen]
+    pub fn preview_line(&self, r1: u32, c1: u32, r2: u32, c2: u32, color: u8) {
+        let x1 = c1 as f64 * CELL_SIZE;
+        let y1 = r1 as f64 * CELL_SIZE;
+        let x2 = c2 as f64 * CELL_SIZE;
+        let y2 = r2 as f64 * CELL_SIZE;
+        self.ctx.set_global_alpha(0.7);
+        self.ctx.set_stroke_style_str(color_for_idx(color));
+        self.ctx.set_line_width(2.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(x1, y1);
+        self.ctx.line_to(x2, y2);
+        self.ctx.stroke();
+        self.ctx.set_global_alpha(1.0);
+        self.ctx.set_line_width(1.0);
+    }
+
+    /// Draw a moving "ghost" of a rect at the given coords. Does NOT clear.
+    #[wasm_bindgen]
+    pub fn preview_rect(&self, r1: u32, c1: u32, r2: u32, c2: u32, color: u8) {
+        let x = (c1 as f64).min(c2 as f64) * CELL_SIZE;
+        let y = (r1 as f64).min(r2 as f64) * CELL_SIZE;
+        let w = (c1 as f64 - c2 as f64).abs() * CELL_SIZE;
+        let h = (r1 as f64 - r2 as f64).abs() * CELL_SIZE;
+        self.ctx.set_global_alpha(0.7);
+        if color == 6 {
+            self.ctx.set_stroke_style_str("#333333");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(x, y, w, h);
+        } else {
+            self.ctx.set_fill_style_str(color_for_idx(color));
+            self.ctx.fill_rect(x, y, w, h);
+        }
+        self.ctx.set_global_alpha(1.0);
+        self.ctx.set_line_width(1.0);
+    }
+
     #[wasm_bindgen]
     pub fn render_with_selection(&self, row: usize, col: usize) {
         self.render();

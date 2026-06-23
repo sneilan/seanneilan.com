@@ -4,10 +4,18 @@ import {
   getSelectionBounds,
   type Cell,
 } from '../utils/selection';
+import { getLineHandles, getRectHandles } from '../utils/handles';
 
 // Types
 export type DrawTool = 'draw' | 'line' | 'rect' | 'select';
-export type SelectMode = 'box' | 'drag' | null;
+export type SelectMode = 'box' | 'drag' | 'resize' | null;
+
+// Which handle of which single shape is being dragged during a resize.
+export type ResizeTarget = {
+  shape: 'line' | 'rect';
+  index: number;
+  handle: number;
+};
 
 // Unified selection item type
 export type SelectedItem =
@@ -49,6 +57,9 @@ type GridState = {
   isSelecting: boolean;
   previousSelection: SelectedItem[];
 
+  // Resize state - active when dragging a handle of a single line/rect
+  resizeTarget: ResizeTarget | null;
+
   // Output state
   jsonOutput: string;
   tensorOutput: string;
@@ -81,6 +92,10 @@ type GridActions = {
   startDragSelection: (cell: Cell) => void;
   finishDragSelection: (endCell: Cell) => void;
   cancelDragSelection: () => void;
+  startResize: (target: ResizeTarget) => void;
+  updateResize: (cell: Cell) => void;
+  finishResize: (endCell: Cell) => void;
+  cancelResize: () => void;
   setMousePos: (cell: Cell) => void;
 
   // Hit testing for shapes
@@ -200,6 +215,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   selectDragStart: null,
   isSelecting: false,
   previousSelection: [],
+  resizeTarget: null,
 
   jsonOutput: '',
   tensorOutput: '',
@@ -427,6 +443,41 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
   cancelDragSelection: () => {
     set({ selectMode: null, selectDragStart: null, isSelecting: false });
+    get().renderSelection();
+  },
+
+  startResize: (target) => {
+    set({ selectMode: 'resize', resizeTarget: target, isSelecting: true });
+  },
+
+  updateResize: (cell) => {
+    const { grid, resizeTarget } = get();
+    if (!grid || !resizeTarget) return;
+    // Live-apply: the WASM setters re-render, so the shape follows the cursor.
+    if (resizeTarget.shape === 'line') {
+      grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
+    } else {
+      grid.resize_rect(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
+    }
+    get().renderSelection();
+  },
+
+  finishResize: (endCell) => {
+    const { grid, resizeTarget } = get();
+    if (grid && resizeTarget) {
+      if (resizeTarget.shape === 'line') {
+        grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+      } else {
+        grid.resize_rect(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+      }
+    }
+    set({ selectMode: null, resizeTarget: null, isSelecting: false });
+    get().renderSelection();
+    get().updateOutputs();
+  },
+
+  cancelResize: () => {
+    set({ selectMode: null, resizeTarget: null, isSelecting: false });
     get().renderSelection();
   },
 
@@ -814,6 +865,18 @@ sparse = sparse.coalesce()`;
       const bounds = getSelectionBoundsAll(selectedItems, grid);
       if (bounds) {
         grid.draw_selection_box(bounds.minRow, bounds.minCol, bounds.maxRow + 1, bounds.maxCol + 1);
+      }
+    }
+
+    // Draw resize handles when exactly one line or rect is selected.
+    if (selectedItems.length === 1) {
+      const only = selectedItems[0];
+      if (only.type === 'line') {
+        const handles = getLineHandles(grid.get_line(only.index));
+        for (const h of handles) grid.draw_handle(Math.round(h.r), Math.round(h.c));
+      } else if (only.type === 'rect') {
+        const handles = getRectHandles(grid.get_rect(only.index));
+        for (const h of handles) grid.draw_handle(Math.round(h.r), Math.round(h.c));
       }
     }
   },

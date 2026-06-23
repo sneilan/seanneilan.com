@@ -191,6 +191,75 @@ impl GridCanvas {
         }
     }
 
+    /// Move a single endpoint of a line to (r, c). `which` is 0 (first point) or 1 (second point).
+    #[wasm_bindgen]
+    pub fn set_line_endpoint(&mut self, idx: usize, which: u32, r: u32, c: u32) {
+        let start = idx * 5;
+        if start + 5 <= self.drawn_lines.len() {
+            if which == 0 {
+                self.drawn_lines[start] = r;
+                self.drawn_lines[start + 1] = c;
+            } else {
+                self.drawn_lines[start + 2] = r;
+                self.drawn_lines[start + 3] = c;
+            }
+            self.render();
+        }
+    }
+
+    /// Resize a rectangle by dragging one of 8 handles to (r, c), keeping the
+    /// opposite side(s) anchored. Handle indices (clockwise from top-left):
+    /// 0=TL, 1=top, 2=TR, 3=right, 4=BR, 5=bottom, 6=BL, 7=left.
+    /// The rect is re-normalized so r1,c1 is the min corner and r2,c2 the max.
+    #[wasm_bindgen]
+    pub fn resize_rect(&mut self, idx: usize, handle: u32, r: u32, c: u32) {
+        let start = idx * 5;
+        if start + 5 > self.drawn_rects.len() {
+            return;
+        }
+
+        let mut min_r = self.drawn_rects[start].min(self.drawn_rects[start + 2]);
+        let mut max_r = self.drawn_rects[start].max(self.drawn_rects[start + 2]);
+        let mut min_c = self.drawn_rects[start + 1].min(self.drawn_rects[start + 3]);
+        let mut max_c = self.drawn_rects[start + 1].max(self.drawn_rects[start + 3]);
+
+        // Top handles move the top edge; bottom handles move the bottom edge.
+        match handle {
+            0 | 1 | 2 => min_r = r,
+            4 | 5 | 6 => max_r = r,
+            _ => {}
+        }
+        // Left handles move the left edge; right handles move the right edge.
+        match handle {
+            0 | 6 | 7 => min_c = c,
+            2 | 3 | 4 => max_c = c,
+            _ => {}
+        }
+
+        // Re-normalize in case an edge was dragged past its opposite.
+        self.drawn_rects[start] = min_r.min(max_r);
+        self.drawn_rects[start + 1] = min_c.min(max_c);
+        self.drawn_rects[start + 2] = min_r.max(max_r);
+        self.drawn_rects[start + 3] = min_c.max(max_c);
+        self.render();
+    }
+
+    /// Draw a small square grab-handle centered on a grid intersection (r, c).
+    #[wasm_bindgen]
+    pub fn draw_handle(&self, r: u32, c: u32) {
+        let y = r as f64 * CELL_SIZE;
+        let x = c as f64 * CELL_SIZE;
+        let size = 8.0;
+        let hx = x - size / 2.0;
+        let hy = y - size / 2.0;
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.fill_rect(hx, hy, size, size);
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(hx, hy, size, size);
+        self.ctx.set_line_width(1.0);
+    }
+
     /// Check if a line intersects a box (for box selection)
     #[wasm_bindgen]
     pub fn line_intersects_box(&self, line_idx: usize, box_r1: usize, box_c1: usize, box_r2: usize, box_c2: usize) -> bool {

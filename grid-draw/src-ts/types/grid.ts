@@ -47,6 +47,12 @@ export type GridCanvasWasm = {
   highlight_rect(idx: number): void;
   move_line(idx: number, delta_row: number, delta_col: number): void;
   move_rect(idx: number, delta_row: number, delta_col: number): void;
+  set_line_endpoint(idx: number, which: number, r: number, c: number): void;
+  resize_rect(idx: number, handle: number, r: number, c: number): void;
+  draw_handle(r: number, c: number): void;
+  preview_cell(row: number, col: number, color: number): void;
+  preview_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
+  preview_rect(r1: number, c1: number, r2: number, c2: number, color: number): void;
   line_intersects_box(line_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   rect_intersects_box(rect_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   add_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
