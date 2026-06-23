@@ -372,16 +372,29 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const cols = grid.get_cols();
       const newSelected: SelectedItem[] = [];
 
-      // Move cells
+      // Move cells with snapshot-then-apply to avoid in-place overlap clobber.
+      // Translating a block in-place one cell at a time corrupts cells whose
+      // source/destination footprints overlap (a destination write lands on a
+      // not-yet-moved source). So read every source first, clear all sources,
+      // then write all destinations.
+      const cellMoves: Array<{ toRow: number; toCol: number; color: number }> = [];
       for (const item of selectedItems) {
         if (item.type === 'cell') {
+          // Only carry cells that are actually filled at their source.
+          if (!grid.get_cell(item.row, item.col)) continue;
+          const color = grid.get_cell_color(item.row, item.col);
           const newRow = item.row + deltaRow;
           const newCol = item.col + deltaCol;
+          grid.delete_cell(item.row, item.col);
           if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-            grid.move_cell(item.row, item.col, newRow, newCol);
+            cellMoves.push({ toRow: newRow, toCol: newCol, color });
             newSelected.push({ type: 'cell', row: newRow, col: newCol });
           }
         }
+      }
+      for (const m of cellMoves) {
+        grid.set_draw_color(m.color);
+        grid.set_cell(m.toRow, m.toCol, true);
       }
 
       // Move lines (indices may change if we delete, so collect first)
