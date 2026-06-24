@@ -8,6 +8,8 @@ export type GridCanvasWasm = {
   // Grid info
   get_rows(): number;
   get_cols(): number;
+  get_schema_version(): number;
+  rects_consistent(): boolean;
   get_cell_size(): number;
   get_data_zone_start_row(): number;
   get_data_zone_start_col(): number;
@@ -17,7 +19,9 @@ export type GridCanvasWasm = {
   get_cell(row: number, col: number): boolean;
   get_cell_color(row: number, col: number): number;
   set_cell(row: number, col: number, value: boolean): void;
+  set_cell_color(row: number, col: number, color: number): void;
   set_draw_color(idx: number): void;
+  set_outline_color(idx: number): void;
   move_cell(from_row: number, from_col: number, to_row: number, to_col: number): void;
   delete_cell(row: number, col: number): void;
 
@@ -52,11 +56,14 @@ export type GridCanvasWasm = {
   draw_handle(r: number, c: number): void;
   preview_cell(row: number, col: number, color: number): void;
   preview_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
-  preview_rect(r1: number, c1: number, r2: number, c2: number, color: number): void;
+  preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  set_line_color(idx: number, color: number): void;
+  set_rect_fill(idx: number, color: number): void;
+  set_rect_outline(idx: number, color: number): void;
   line_intersects_box(line_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   rect_intersects_box(rect_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   add_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
-  add_rect(r1: number, c1: number, r2: number, c2: number, color: number): void;
+  add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
 
   // Import/Export
   export_json(): string;

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
 import { useTauriEvents } from '../hooks/useTauriEvents';
-import { getSelectionBounds } from '../utils/selection';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -59,7 +58,8 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
   const store = useGridStore();
   const {
     tool, setTool,
-    colorIdx, setColorIdx,
+    colorIdx, setColorIdx, pickColor,
+    outlineIdx, pickOutline,
     isDrawing, drawMode, startDrawing, stopDrawing,
     lineStart, startLine, finishLine,
     rectStart, startRect, finishRect,
@@ -204,6 +204,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!grid) return;
       grid.set_draw_color(colorIdx);
+      grid.set_outline_color(outlineIdx);
       const cols = grid.get_cols();
       const rows = grid.get_rows();
 
@@ -238,7 +239,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
             const handles = only.type === 'line'
               ? getLineHandles(grid.get_line(only.index))
               : getRectHandles(grid.get_rect(only.index));
-            const hit = hitTestHandle(x, y, handles, CELL_SIZE, 7);
+            const hit = hitTestHandle(x, y, handles, CELL_SIZE, 9);
             if (hit) {
               startResize({ shape: only.type, index: only.index, handle: hit.handle });
               return;
@@ -289,7 +290,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, colorIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
+    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
   );
 
   const handleMouseMove = useCallback(
@@ -304,28 +305,31 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       // selection's interior, crosshair otherwise.
       if (tool === 'select') {
         const canvas = event.currentTarget;
-        if (isSelecting && (selectMode === 'drag' || selectMode === 'resize')) {
+        if (isSelecting && selectMode === 'resize') {
           canvas.style.cursor = 'grabbing';
+        } else if (isSelecting && selectMode === 'drag') {
+          canvas.style.cursor = 'move';
         } else {
           const { x, y } = getCanvasXY(event);
           let cursor = 'crosshair';
-          // Handle hover (single line/rect selected) -> grab.
+          // Handle hover (single line/rect selected) -> grab (resize affordance).
           if (selectedItems.length === 1) {
             const only = selectedItems[0];
             if (only.type === 'line' || only.type === 'rect') {
               const handles = only.type === 'line'
                 ? getLineHandles(grid.get_line(only.index))
                 : getRectHandles(grid.get_rect(only.index));
-              if (hitTestHandle(x, y, handles, CELL_SIZE, 7)) cursor = 'grab';
+              if (hitTestHandle(x, y, handles, CELL_SIZE, 9)) cursor = 'grab';
             }
           }
-          // Hover over a selected shape, or inside the selection bounds -> move.
+          // Hover over a selected shape, or inside the selection bounds -> move
+          // (four-way cross), to distinguish moving from resizing.
           if (cursor === 'crosshair' && selectedItems.length > 0) {
             const hit = hitTestShapes(x, y);
             const b = getSelectionBoundsAll(selectedItems, grid);
             const inB = b && coords.row >= b.minRow && coords.row <= b.maxRow &&
                         coords.col >= b.minCol && coords.col <= b.maxCol;
-            if ((hit && isItemSelected(hit)) || inB) cursor = 'grab';
+            if ((hit && isItemSelected(hit)) || inB) cursor = 'move';
           }
           canvas.style.cursor = cursor;
         }
@@ -366,14 +370,12 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           // Live preview: draw each selected element as a ghost at its new
           // position so the actual cells/lines/rects appear to move with the
           // cursor (not just an outline) until release.
-          const previewCells: { row: number; col: number }[] = [];
           for (const item of selectedItems) {
             if (item.type === 'cell') {
               const newRow = item.row + deltaRow;
               const newCol = item.col + deltaCol;
               if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
                 grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
-                previewCells.push({ row: newRow, col: newCol });
               }
             } else if (item.type === 'line') {
               const l = grid.get_line(item.index);
@@ -382,15 +384,9 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
               }
             } else if (item.type === 'rect') {
               const rr = grid.get_rect(item.index);
-              if (rr.length >= 5) {
-                grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4]);
+              if (rr.length >= 6) {
+                grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4], rr[5]);
               }
-            }
-          }
-          if (previewCells.length > 1) {
-            const bounds = getSelectionBounds(previewCells);
-            if (bounds) {
-              grid.draw_selection_box(bounds.minRow, bounds.minCol, bounds.maxRow + 1, bounds.maxCol + 1);
             }
           }
         }
@@ -530,11 +526,39 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
                 {COLORS.map((c, i) => (
                   <button
                     key={i}
-                    onClick={() => setColorIdx(i)}
+                    onClick={() => pickColor(i)}
                     title={c.name}
                     className={cn(
                       "w-6 h-6 rounded border-2 transition-all",
                       colorIdx === i
+                        ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
+                        : "border-gray-300 hover:border-gray-400",
+                      c.hex === '#ffffff' && "shadow-sm"
+                    )}
+                    style={{
+                      backgroundColor: c.hex ?? 'transparent',
+                      backgroundImage: c.hex === null
+                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                        : undefined,
+                      backgroundSize: c.hex === null ? '6px 6px' : undefined,
+                      backgroundPosition: c.hex === null ? '0 0, 0 3px, 3px -3px, -3px 0px' : undefined,
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
+              <div className="flex gap-1">
+                {COLORS.map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => pickOutline(i)}
+                    title={i === 6 ? 'No outline' : c.name}
+                    className={cn(
+                      "w-6 h-6 rounded border-2 transition-all",
+                      outlineIdx === i
                         ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
                         : "border-gray-300 hover:border-gray-400",
                       c.hex === '#ffffff' && "shadow-sm"
@@ -622,11 +646,39 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
               {COLORS.map((c, i) => (
                 <button
                   key={i}
-                  onClick={() => setColorIdx(i)}
+                  onClick={() => pickColor(i)}
                   title={`${i + 1}: ${c.name}`}
                   className={cn(
                     "w-6 h-6 rounded border-2 transition-all",
                     colorIdx === i
+                      ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
+                      : "border-gray-300 hover:border-gray-400",
+                    c.hex === '#ffffff' && "shadow-sm"
+                  )}
+                  style={{
+                    backgroundColor: c.hex ?? 'transparent',
+                    backgroundImage: c.hex === null
+                      ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                      : undefined,
+                    backgroundSize: c.hex === null ? '6px 6px' : undefined,
+                    backgroundPosition: c.hex === null ? '0 0, 0 3px, 3px -3px, -3px 0px' : undefined,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
+            <div className="flex gap-1">
+              {COLORS.map((c, i) => (
+                <button
+                  key={i}
+                  onClick={() => pickOutline(i)}
+                  title={i === 6 ? 'No outline' : c.name}
+                  className={cn(
+                    "w-6 h-6 rounded border-2 transition-all",
+                    outlineIdx === i
                       ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
                       : "border-gray-300 hover:border-gray-400",
                     c.hex === '#ffffff' && "shadow-sm"

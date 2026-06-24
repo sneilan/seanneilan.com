@@ -10,6 +10,18 @@ mod import_export;
 pub(crate) const CELL_SIZE: f64 = 16.0;
 pub(crate) const DATA_ZONE_SIZE: usize = 10;
 
+/// Flat-array strides for the shape buffers. These are the single source of
+/// truth for the packing of `drawn_lines` / `drawn_rects`; every read/write
+/// must derive offsets from them so a future field addition can't desync one
+/// call site (which is exactly what caused the rect corruption bug).
+pub(crate) const LINE_STRIDE: usize = 5; // [r1, c1, r2, c2, color]
+pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
+
+/// Bump whenever the shape packing changes. Exposed to JS so the host can
+/// detect a stale/mismatched WASM instance and reset rather than render
+/// garbage from a half-migrated buffer.
+pub const SCHEMA_VERSION: u32 = 2;
+
 pub(crate) fn color_for_idx(idx: u8) -> &'static str {
     match idx {
         0 => "#000000",
@@ -31,10 +43,11 @@ pub struct GridCanvas {
     pub(crate) grid: Vec<Vec<bool>>,
     pub(crate) grid_colors: Vec<Vec<u8>>,
     pub(crate) draw_color: u8,
+    pub(crate) outline_color: u8, // for new rects; index 6 = no outline
     pub(crate) empty_color: String,
     pub(crate) line_color: String,
     pub(crate) drawn_lines: Vec<u32>, // flat: [r1, c1, r2, c2, color_idx, ...]
-    pub(crate) drawn_rects: Vec<u32>, // flat: [r1, c1, r2, c2, color_idx, ...]
+    pub(crate) drawn_rects: Vec<u32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, ...]
 }
 
 #[wasm_bindgen]
@@ -76,6 +89,7 @@ impl GridCanvas {
             grid,
             grid_colors,
             draw_color: 0,
+            outline_color: 6, // default: no outline
             empty_color: String::from("#ffffff"),
             line_color: String::from("#cccccc"),
             drawn_lines: Vec::new(),

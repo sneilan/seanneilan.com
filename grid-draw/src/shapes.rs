@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE};
+use crate::{GridCanvas, CELL_SIZE, RECT_STRIDE, SCHEMA_VERSION};
 
 #[wasm_bindgen]
 impl GridCanvas {
@@ -11,7 +11,9 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn draw_rect(&mut self, r1: u32, c1: u32, r2: u32, c2: u32) {
-        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as u32]);
+        // Rects carry an independent fill and outline color: [r1,c1,r2,c2,fill,outline].
+        // Index 6 ("transparent") means "no fill" / "no outline".
+        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as u32, self.outline_color as u32]);
         self.render();
     }
 
@@ -22,7 +24,23 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn get_rect_count(&self) -> usize {
-        self.drawn_rects.len() / 5
+        self.drawn_rects.len() / RECT_STRIDE
+    }
+
+    /// Packing version of the shape buffers. The JS host compares this against
+    /// the version it was built for; a mismatch means a stale/half-migrated
+    /// WASM instance, and the host resets rather than render garbage.
+    #[wasm_bindgen]
+    pub fn get_schema_version(&self) -> u32 {
+        SCHEMA_VERSION
+    }
+
+    /// True if the rect buffer is a whole number of records. A false here means
+    /// a mixed-stride write corrupted the buffer (e.g. across a hot reload that
+    /// changed the schema); the host should clear and start clean.
+    #[wasm_bindgen]
+    pub fn rects_consistent(&self) -> bool {
+        self.drawn_rects.len() % RECT_STRIDE == 0
     }
 
     #[wasm_bindgen]
@@ -37,9 +55,9 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn get_rect(&self, idx: usize) -> Vec<u32> {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_rects.len() {
-            self.drawn_rects[start..start + 5].to_vec()
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
+            self.drawn_rects[start..start + 6].to_vec()
         } else {
             vec![]
         }
@@ -74,22 +92,25 @@ impl GridCanvas {
     pub fn hit_test_rect(&self, x: f64, y: f64) -> i32 {
         let mut i = 0;
         let mut idx = 0;
-        while i + 4 < self.drawn_rects.len() {
+        while i + 5 < self.drawn_rects.len() {
             let r1 = self.drawn_rects[i] as f64 * CELL_SIZE;
             let c1 = self.drawn_rects[i + 1] as f64 * CELL_SIZE;
             let r2 = self.drawn_rects[i + 2] as f64 * CELL_SIZE;
             let c2 = self.drawn_rects[i + 3] as f64 * CELL_SIZE;
-            let color_idx = self.drawn_rects[i + 4];
+            let fill = self.drawn_rects[i + 4];
 
             let min_x = c1.min(c2);
             let max_x = c1.max(c2);
             let min_y = r1.min(r2);
             let max_y = r1.max(r2);
 
-            // For filled rects (color_idx != 6), check if point is inside
-            // For outline rects (color_idx == 6), check if point is on the edge
-            if color_idx == 6 {
-                // Outline rect - check proximity to edges
+            if fill != 6 {
+                // Filled rect - hit if inside.
+                if x >= min_x && x <= max_x && y >= min_y && y <= max_y {
+                    return idx;
+                }
+            } else {
+                // No fill - hit only near the edges (outline or empty rect).
                 let tolerance = 5.0;
                 let on_left = x >= min_x - tolerance && x <= min_x + tolerance && y >= min_y && y <= max_y;
                 let on_right = x >= max_x - tolerance && x <= max_x + tolerance && y >= min_y && y <= max_y;
@@ -98,14 +119,9 @@ impl GridCanvas {
                 if on_left || on_right || on_top || on_bottom {
                     return idx;
                 }
-            } else {
-                // Filled rect - check if inside
-                if x >= min_x && x <= max_x && y >= min_y && y <= max_y {
-                    return idx;
-                }
             }
 
-            i += 5;
+            i += 6;
             idx += 1;
         }
         -1
@@ -146,9 +162,9 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn delete_rect(&mut self, idx: usize) {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_rects.len() {
-            self.drawn_rects.drain(start..start + 5);
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
+            self.drawn_rects.drain(start..start + 6);
             self.render();
         }
     }
@@ -174,8 +190,8 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn move_rect(&mut self, idx: usize, delta_row: i32, delta_col: i32) {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_rects.len() {
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
             let r1 = self.drawn_rects[start] as i32 + delta_row;
             let c1 = self.drawn_rects[start + 1] as i32 + delta_col;
             let r2 = self.drawn_rects[start + 2] as i32 + delta_row;
@@ -213,8 +229,8 @@ impl GridCanvas {
     /// The rect is re-normalized so r1,c1 is the min corner and r2,c2 the max.
     #[wasm_bindgen]
     pub fn resize_rect(&mut self, idx: usize, handle: u32, r: u32, c: u32) {
-        let start = idx * 5;
-        if start + 5 > self.drawn_rects.len() {
+        let start = idx * 6;
+        if start + 6 > self.drawn_rects.len() {
             return;
         }
 
@@ -249,7 +265,7 @@ impl GridCanvas {
     pub fn draw_handle(&self, r: u32, c: u32) {
         let y = r as f64 * CELL_SIZE;
         let x = c as f64 * CELL_SIZE;
-        let size = 8.0;
+        let size = 13.0;
         let hx = x - size / 2.0;
         let hy = y - size / 2.0;
         self.ctx.set_fill_style_str("#ffffff");
@@ -297,8 +313,8 @@ impl GridCanvas {
     /// Check if a rect intersects a box (for box selection)
     #[wasm_bindgen]
     pub fn rect_intersects_box(&self, rect_idx: usize, box_r1: usize, box_c1: usize, box_r2: usize, box_c2: usize) -> bool {
-        let start = rect_idx * 5;
-        if start + 5 > self.drawn_rects.len() {
+        let start = rect_idx * 6;
+        if start + 6 > self.drawn_rects.len() {
             return false;
         }
 
@@ -329,7 +345,37 @@ impl GridCanvas {
 
     /// Add a rect directly (for paste operations)
     #[wasm_bindgen]
-    pub fn add_rect(&mut self, r1: u32, c1: u32, r2: u32, c2: u32, color: u32) {
-        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, color]);
+    pub fn add_rect(&mut self, r1: u32, c1: u32, r2: u32, c2: u32, fill: u32, outline: u32) {
+        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, fill, outline]);
+    }
+
+    /// Recolor a line's stroke (for recoloring a selection).
+    #[wasm_bindgen]
+    pub fn set_line_color(&mut self, idx: usize, color: u32) {
+        let start = idx * 5;
+        if start + 5 <= self.drawn_lines.len() {
+            self.drawn_lines[start + 4] = color;
+            self.render();
+        }
+    }
+
+    /// Recolor a rect's fill (index 6 = transparent / no fill).
+    #[wasm_bindgen]
+    pub fn set_rect_fill(&mut self, idx: usize, color: u32) {
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
+            self.drawn_rects[start + 4] = color;
+            self.render();
+        }
+    }
+
+    /// Recolor a rect's outline (index 6 = transparent / no outline).
+    #[wasm_bindgen]
+    pub fn set_rect_outline(&mut self, idx: usize, color: u32) {
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
+            self.drawn_rects[start + 5] = color;
+            self.render();
+        }
     }
 }

@@ -51,28 +51,30 @@ impl GridCanvas {
             self.ctx.stroke();
         }
 
-        // Draw committed rects
+        // Draw committed rects (independent fill + outline; index 6 = none)
         let mut i = 0;
-        while i + 4 < self.drawn_rects.len() {
+        while i + 5 < self.drawn_rects.len() {
             let r1 = self.drawn_rects[i]     as f64 * CELL_SIZE;
             let c1 = self.drawn_rects[i + 1] as f64 * CELL_SIZE;
             let r2 = self.drawn_rects[i + 2] as f64 * CELL_SIZE;
             let c2 = self.drawn_rects[i + 3] as f64 * CELL_SIZE;
-            let color_idx = self.drawn_rects[i + 4] as u8;
+            let fill = self.drawn_rects[i + 4] as u8;
+            let outline = self.drawn_rects[i + 5] as u8;
             let x = c1.min(c2);
             let y = r1.min(r2);
             let w = (c1 - c2).abs();
             let h = (r1 - r2).abs();
-            if color_idx == 6 {
-                self.ctx.set_stroke_style_str("#333333");
+            if fill != 6 {
+                self.ctx.set_fill_style_str(color_for_idx(fill));
+                self.ctx.fill_rect(x, y, w, h);
+            }
+            if outline != 6 {
+                self.ctx.set_stroke_style_str(color_for_idx(outline));
                 self.ctx.set_line_width(2.0);
                 self.ctx.stroke_rect(x, y, w, h);
                 self.ctx.set_line_width(1.0);
-            } else {
-                self.ctx.set_fill_style_str(color_for_idx(color_idx));
-                self.ctx.fill_rect(x, y, w, h);
             }
-            i += 5;
+            i += 6;
         }
 
         // Draw committed lines
@@ -160,19 +162,25 @@ impl GridCanvas {
 
     /// Draw a moving "ghost" of a rect at the given coords. Does NOT clear.
     #[wasm_bindgen]
-    pub fn preview_rect(&self, r1: u32, c1: u32, r2: u32, c2: u32, color: u8) {
+    pub fn preview_rect(&self, r1: u32, c1: u32, r2: u32, c2: u32, fill: u8, outline: u8) {
         let x = (c1 as f64).min(c2 as f64) * CELL_SIZE;
         let y = (r1 as f64).min(r2 as f64) * CELL_SIZE;
         let w = (c1 as f64 - c2 as f64).abs() * CELL_SIZE;
         let h = (r1 as f64 - r2 as f64).abs() * CELL_SIZE;
         self.ctx.set_global_alpha(0.7);
-        if color == 6 {
-            self.ctx.set_stroke_style_str("#333333");
+        if fill != 6 {
+            self.ctx.set_fill_style_str(color_for_idx(fill));
+            self.ctx.fill_rect(x, y, w, h);
+        }
+        if outline != 6 {
+            self.ctx.set_stroke_style_str(color_for_idx(outline));
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(x, y, w, h);
-        } else {
-            self.ctx.set_fill_style_str(color_for_idx(color));
-            self.ctx.fill_rect(x, y, w, h);
+        } else if fill == 6 {
+            // Nothing visible otherwise; show a faint border so the ghost reads.
+            self.ctx.set_stroke_style_str("#888888");
+            self.ctx.set_line_width(2.0);
+            self.ctx.stroke_rect(x, y, w, h);
         }
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_line_width(1.0);
@@ -265,8 +273,8 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn highlight_rect(&self, idx: usize) {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_rects.len() {
+        let start = idx * 6;
+        if start + 6 <= self.drawn_rects.len() {
             let r1 = self.drawn_rects[start] as f64 * CELL_SIZE;
             let c1 = self.drawn_rects[start + 1] as f64 * CELL_SIZE;
             let r2 = self.drawn_rects[start + 2] as f64 * CELL_SIZE;

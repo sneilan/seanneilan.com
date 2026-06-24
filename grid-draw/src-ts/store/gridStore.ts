@@ -26,12 +26,16 @@ export type SelectedItem =
 // Clipboard data types
 type ClipboardCell = { relRow: number; relCol: number; color: number };
 type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number };
-type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number };
+type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
 
 export type ClipboardData = {
   cells: ClipboardCell[];
   lines: ClipboardLine[];
   rects: ClipboardRect[];
+  // Original top-left of the copied selection, so paste can anchor relative to
+  // it (with a small offset) instead of the mouse position.
+  originRow: number;
+  originCol: number;
 } | null;
 
 type GridState = {
@@ -42,6 +46,7 @@ type GridState = {
   // Drawing state
   tool: DrawTool;
   colorIdx: number;
+  outlineIdx: number; // outline color for rects; 6 = none
   isDrawing: boolean;
   drawMode: boolean; // true = drawing, false = erasing
   lineStart: Cell | null;
@@ -73,6 +78,10 @@ type GridActions = {
   // Drawing actions
   setTool: (tool: DrawTool) => void;
   setColorIdx: (idx: number) => void;
+  setOutlineIdx: (idx: number) => void;
+  // Pick a color: set it active for new shapes AND recolor the current selection.
+  pickColor: (idx: number) => void;
+  pickOutline: (idx: number) => void;
   startDrawing: (mode: boolean) => void;
   stopDrawing: () => void;
   startLine: (cell: Cell) => void;
@@ -202,6 +211,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
   tool: 'draw',
   colorIdx: 0,
+  outlineIdx: 6,
   isDrawing: false,
   drawMode: false,
   lineStart: null,
@@ -227,6 +237,39 @@ export const useGridStore = create<GridStore>((set, get) => ({
   // Drawing actions
   setTool: (tool) => set({ tool }),
   setColorIdx: (idx) => set({ colorIdx: idx }),
+  setOutlineIdx: (idx) => set({ outlineIdx: idx }),
+
+  pickColor: (idx) => {
+    set({ colorIdx: idx });
+    const { grid, selectedItems } = get();
+    if (!grid || selectedItems.length === 0) return;
+    // Recolor the fill of every selected cell/rect and the stroke of every line.
+    for (const item of selectedItems) {
+      if (item.type === 'cell') {
+        grid.set_cell_color(item.row, item.col, idx);
+      } else if (item.type === 'line') {
+        grid.set_line_color(item.index, idx);
+      } else if (item.type === 'rect') {
+        grid.set_rect_fill(item.index, idx);
+      }
+    }
+    get().renderSelection();
+    get().updateOutputs();
+  },
+
+  pickOutline: (idx) => {
+    set({ outlineIdx: idx });
+    const { grid, selectedItems } = get();
+    if (!grid || selectedItems.length === 0) return;
+    // Outline only applies to rects.
+    for (const item of selectedItems) {
+      if (item.type === 'rect') {
+        grid.set_rect_outline(item.index, idx);
+      }
+    }
+    get().renderSelection();
+    get().updateOutputs();
+  },
   startDrawing: (mode) => set({ isDrawing: true, drawMode: mode }),
   stopDrawing: () => set({ isDrawing: false }),
   startLine: (cell) => set({ lineStart: cell, isDrawing: true }),
@@ -237,6 +280,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
   // Selection actions
   setSelectedItems: (items) => {
     set({ selectedItems: items });
+    // Repaint so the canvas always matches the selection (no stale boxes/handles).
+    get().renderSelection();
     setTimeout(() => get().updateOutputs(), 0);
   },
 
@@ -545,33 +590,43 @@ export const useGridStore = create<GridStore>((set, get) => ({
         }
       } else if (item.type === 'rect') {
         const rectData = grid.get_rect(item.index);
-        if (rectData.length >= 5) {
+        if (rectData.length >= 6) {
           rects.push({
             relR1: rectData[0] - origin.minRow,
             relC1: rectData[1] - origin.minCol,
             relR2: rectData[2] - origin.minRow,
             relC2: rectData[3] - origin.minCol,
             color: rectData[4],
+            outline: rectData[5],
           });
         }
       }
     }
 
-    set({ clipboard: { cells, lines, rects } });
+    set({ clipboard: { cells, lines, rects, originRow: origin.minRow, originCol: origin.minCol } });
   },
 
   paste: () => {
-    const { grid, clipboard, mousePos, updateOutputs } = get();
+    const { grid, clipboard, updateOutputs } = get();
     if (!grid || !clipboard) return;
 
     const rows = grid.get_rows();
     const cols = grid.get_cols();
     const newSelected: SelectedItem[] = [];
 
+    // Anchor the paste at the original copied location plus a small offset, so
+    // the copy lands visibly near the source and never gets dumped at the grid
+    // origin (which happens if we anchored on a stale/over-toolbar mouse pos).
+    const PASTE_OFFSET = 1;
+    const anchor = {
+      row: clipboard.originRow + PASTE_OFFSET,
+      col: clipboard.originCol + PASTE_OFFSET,
+    };
+
     // Paste cells
     for (const cell of clipboard.cells) {
-      const newRow = mousePos.row + cell.relRow;
-      const newCol = mousePos.col + cell.relCol;
+      const newRow = anchor.row + cell.relRow;
+      const newCol = anchor.col + cell.relCol;
 
       if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
         grid.set_draw_color(cell.color);
@@ -582,10 +637,10 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
     // Paste lines
     for (const line of clipboard.lines) {
-      const r1 = mousePos.row + line.relR1;
-      const c1 = mousePos.col + line.relC1;
-      const r2 = mousePos.row + line.relR2;
-      const c2 = mousePos.col + line.relC2;
+      const r1 = anchor.row + line.relR1;
+      const c1 = anchor.col + line.relC1;
+      const r2 = anchor.row + line.relR2;
+      const c2 = anchor.col + line.relC2;
 
       if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
         grid.add_line(r1, c1, r2, c2, line.color);
@@ -596,13 +651,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
     // Paste rects
     for (const rect of clipboard.rects) {
-      const r1 = mousePos.row + rect.relR1;
-      const c1 = mousePos.col + rect.relC1;
-      const r2 = mousePos.row + rect.relR2;
-      const c2 = mousePos.col + rect.relC2;
+      const r1 = anchor.row + rect.relR1;
+      const c1 = anchor.col + rect.relC1;
+      const r2 = anchor.row + rect.relR2;
+      const c2 = anchor.col + rect.relC2;
 
       if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
-        grid.add_rect(r1, c1, r2, c2, rect.color);
+        grid.add_rect(r1, c1, r2, c2, rect.color, rect.outline);
         // The new rect is at the end
         newSelected.push({ type: 'rect', index: grid.get_rect_count() - 1 });
       }
@@ -860,14 +915,6 @@ sparse = sparse.coalesce()`;
       }
     }
 
-    // Draw bounding box around all selected items (cells, lines, rects)
-    if (selectedItems.length > 1) {
-      const bounds = getSelectionBoundsAll(selectedItems, grid);
-      if (bounds) {
-        grid.draw_selection_box(bounds.minRow, bounds.minCol, bounds.maxRow + 1, bounds.maxCol + 1);
-      }
-    }
-
     // Draw resize handles when exactly one line or rect is selected.
     if (selectedItems.length === 1) {
       const only = selectedItems[0];
@@ -894,6 +941,7 @@ sparse = sparse.coalesce()`;
 export const useGrid = () => useGridStore((s) => s.grid);
 export const useTool = () => useGridStore((s) => s.tool);
 export const useColorIdx = () => useGridStore((s) => s.colorIdx);
+export const useOutlineIdx = () => useGridStore((s) => s.outlineIdx);
 export const useSelectedItems = () => useGridStore((s) => s.selectedItems);
 export const useClipboard = () => useGridStore((s) => s.clipboard);
 export const useJsonOutput = () => useGridStore((s) => s.jsonOutput);

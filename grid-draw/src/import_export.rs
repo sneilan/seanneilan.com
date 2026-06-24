@@ -73,7 +73,7 @@ impl GridCanvas {
         json.push_str("  \"rects\": [\n");
         let mut i = 0;
         let mut first = true;
-        while i + 4 < self.drawn_rects.len() {
+        while i + 5 < self.drawn_rects.len() {
             let r1 = self.drawn_rects[i] as usize;
             let c1 = self.drawn_rects[i + 1] as usize;
             let r2 = self.drawn_rects[i + 2] as usize;
@@ -84,15 +84,16 @@ impl GridCanvas {
                c2 >= dz_col_start && c2 <= dz_col_end {
                 if !first { json.push_str(",\n"); }
                 first = false;
-                json.push_str(&format!("    [{}, {}, {}, {}, {}]",
+                json.push_str(&format!("    [{}, {}, {}, {}, {}, {}]",
                     r1 - dz_row_start,
                     c1 - dz_col_start,
                     r2 - dz_row_start,
                     c2 - dz_col_start,
-                    self.drawn_rects[i + 4]
+                    self.drawn_rects[i + 4],
+                    self.drawn_rects[i + 5]
                 ));
             }
-            i += 5;
+            i += 6;
         }
         json.push_str("\n  ]\n}");
 
@@ -299,7 +300,8 @@ impl GridCanvas {
     }
 
     fn parse_rects(&mut self, arr: &str, dz_row: usize, dz_col: usize) {
-        // Parse [[r1, c1, r2, c2, color], ...]
+        // Parse [[r1, c1, r2, c2, fill, outline], ...]
+        // Older exports without an outline field default outline to 6 (none).
         let mut in_tuple = false;
         let mut nums: Vec<u32> = Vec::new();
         let mut num_str = String::new();
@@ -323,8 +325,9 @@ impl GridCanvas {
                             let c1 = dz_col as u32 + nums[1];
                             let r2 = dz_row as u32 + nums[2];
                             let c2 = dz_col as u32 + nums[3];
-                            let color = nums[4];
-                            self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, color]);
+                            let fill = nums[4];
+                            let outline = if nums.len() >= 6 { nums[5] } else { 6 };
+                            self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, fill, outline]);
                         }
                         in_tuple = false;
                     }

@@ -29,6 +29,20 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
+    pub fn set_outline_color(&mut self, idx: u8) {
+        self.outline_color = idx;
+    }
+
+    /// Recolor an already-filled cell (for recoloring a selection).
+    #[wasm_bindgen]
+    pub fn set_cell_color(&mut self, row: usize, col: usize, color: u8) {
+        if row < self.rows && col < self.cols && self.grid[row][col] && color < 6 {
+            self.grid_colors[row][col] = color;
+            self.render();
+        }
+    }
+
+    #[wasm_bindgen]
     pub fn get_cell(&self, row: usize, col: usize) -> bool {
         if row < self.rows && col < self.cols {
             self.grid[row][col]
