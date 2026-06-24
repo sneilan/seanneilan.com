@@ -61,6 +61,106 @@ grid-draw/
 
 4. Open http://localhost:5173 in your browser
 
+## Machine Learning: training data, gallery & prediction
+
+Grid Draw can capture `input → output` design pairs, save drawings to a gallery,
+train a small model to predict outputs, and run predictions back in the canvas.
+
+```
+ App (browser :5173)          data-server (Go + SQLite :7843)        model server (Python :7844)
+ ──────────────────           ──────────────────────────────        ───────────────────────────
+ Make Training Data ─POST /examples─▶ examples table
+ Save to Gallery    ─POST /designs ─▶ designs table  ◀─GET /designs── Gallery page
+ Start Training Run ─POST /train  ─▶ spawns ─────────────────────────▶ train.py  (QLoRA → adapter)
+ Training Jobs  ◀───GET /jobs──── jobs (in-mem) ◀──POST /jobs──────── ProgressCallback
+ Predict        ─POST /predict ─▶ proxy ──PREDICT_URL──────────────▶ serve.py  (constrained gen)
+```
+
+Three processes: the **Vite app**, the **Go data-server** (stores examples,
+designs, training jobs; proxies prediction), and the **Python model server**
+(few-shot / fine-tuned inference with grammar-constrained decoding). Training
+runs as a subprocess the Go server launches.
+
+### Extra prerequisites
+
+- [Go](https://go.dev/dl/) 1.22+ — the data-server (pure-Go SQLite, no cgo)
+- [uv](https://docs.astral.sh/uv/) — Python env for the trainer/model server
+- An NVIDIA GPU is recommended for training/inference (works on CPU, slowly)
+
+### One-time install
+
+```bash
+# 1. App (from grid-draw/)
+npm install
+npm run build:wasm           # = wasm-pack build --target web --out-dir pkg
+
+# 2. Data-server (from grid-draw/data-server/)
+cd data-server && go build -o grid-draw-data-server . && cd ..
+
+# 3. Python trainer + model server (from grid-draw/trainer/)
+cd trainer && uv sync && cd ..
+```
+
+### Turn on all the servers
+
+Run each in its own terminal (order doesn't matter; the app degrades gracefully
+when a server is down).
+
+```bash
+# Terminal 1 — app
+npm run dev                                   # http://localhost:5173/grid-draw/
+
+# Terminal 2 — data-server (with prediction proxy enabled)
+cd data-server
+PREDICT_URL=http://localhost:7844/predict ./grid-draw-data-server   # :7843
+
+# Terminal 3 — model server (omit ADAPTER for the untrained few-shot baseline)
+cd trainer
+ADAPTER=outputs/<job-id> uv run uvicorn serve:app --port 7844 --host 127.0.0.1
+```
+
+That's everything: capture pairs, save to the gallery, train, and predict all
+work from the app. If you only want to draw, just `npm run dev`.
+
+### Typical workflow
+
+1. **Capture data** — *Make Training Data* → select the input → Next → select the
+   output → Save. Repeat. (Augmentation in `trainer/augment.py` multiplies each
+   pair by the 8 dihedral symmetries + color permutations at train time.)
+2. **Train** — click *Start Training Run*. Progress streams to the *Training Jobs*
+   panel. The adapter lands in `trainer/outputs/<job-id>/`.
+3. **Serve the trained model** — restart the model server with
+   `ADAPTER=outputs/<job-id>` (it loads the adapter once at startup).
+4. **Predict** — select an input and click *Predict from Selection*; the
+   predicted design is stamped onto the canvas. Output is always schema-valid
+   (logits are constrained to the design grammar via `outlines`). Every
+   prediction's `input → output` is logged to the `predictions` table and
+   exported at `GET /predictions.jsonl` (same shape as `/examples.jsonl`, so it
+   can be folded back into training).
+
+### Gallery
+
+*Save to Gallery* stores the whole drawing under a random 8-char name; the
+*Gallery* button opens `…/grid-draw/gallery/` with thumbnails of saved drawings
+and training examples (rendered client-side from the stored JSON). Each drawing
+has a shareable URL: `…/grid-draw/design/<name>/`.
+
+### Server env vars
+
+| Server | Var | Default | Purpose |
+|--------|-----|---------|---------|
+| data-server | `ADDR` | `:7843` | listen address |
+| data-server | `DB_PATH` | `grid-draw.db` | SQLite file |
+| data-server | `PREDICT_URL` | — | model server `/predict` (else 501) |
+| data-server | `TRAIN_CMD` | `uv run python train.py` | training launch command |
+| data-server | `TRAIN_DIR` | `../trainer` | working dir for training |
+| model server | `MODEL` | `Qwen/Qwen2.5-1.5B-Instruct` | base model |
+| model server | `ADAPTER` | — | LoRA adapter dir to merge |
+| model server | `NUM_SHOTS` | `4` | few-shot demos pulled from data-server |
+| trainer | `DATA_SERVER` | `http://localhost:7843` | where to read/report |
+
+See [`trainer/README.md`](trainer/README.md) for training/augmentation details.
+
 ## Production Build
 
 Build everything for production:

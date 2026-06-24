@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore, getSelectionBoundsAll, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
+import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
 import { useTauriEvents } from '../hooks/useTauriEvents';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
@@ -9,9 +9,11 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
 import { cn } from '@/lib/utils';
 import type { AnywidgetModel } from '../types/anywidget';
+import { DATA_SERVER, saveDesign, getDesign, getDesignByName } from '../lib/dataServer';
 
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
+const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
 
 interface GridCanvasProps {
   /** Anywidget model for Python communication (widget mode) */
@@ -31,6 +33,26 @@ const COLORS = [
   { hex: '#22aa22', name: 'Green' },
   { hex: null, name: 'Transparent' },
 ];
+
+// One training run's live progress, as reported by the trainer to the data
+// server's /jobs endpoint and polled by the app.
+type TrainingJob = {
+  id: string;
+  status: string;
+  step: number;
+  total: number;
+  loss: number;
+  message: string;
+  updatedAt: string;
+};
+
+// An 8-char id of lowercase letters + digits, used to auto-name saved drawings.
+function randomName(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
 
 function calculateGridSize(widgetWidth?: number, widgetHeight?: number) {
   if (widgetWidth && widgetHeight) {
@@ -81,6 +103,10 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     setGrid,
     beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
     undo, redo, canUndo, canRedo,
+    captureMode, captureInput,
+    startTrainingCapture, captureSetInput, buildTrainingExample,
+    finishTrainingCapture, cancelTrainingCapture,
+    serializeWholeGrid, loadDesign,
   } = store;
 
   // historyTick re-renders the component on any commit/undo/redo so the
@@ -89,6 +115,140 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
 
   // Helper to get selected cells only
   const selectedCells = getSelectedCells();
+
+  // Training-data capture/predict status shown in the Training Data panel.
+  const [trainStatus, setTrainStatus] = useState<string>('');
+
+  // Save the whole current drawing to the gallery under an auto-generated
+  // 8-char [a-z0-9] name (no prompt).
+  const saveToGallery = useCallback(async () => {
+    const design = serializeWholeGrid();
+    if (!design || (design.cells.length + design.lines.length + design.rects.length + design.texts.length) === 0) {
+      setTrainStatus('Nothing to save — draw something first.');
+      return;
+    }
+    const name = randomName();
+    setTrainStatus('Saving to gallery…');
+    try {
+      await saveDesign(name, design);
+      // Reflect the shareable per-drawing URL in the address bar.
+      window.history.replaceState({}, '', `${BASE}design/${name}/`);
+      setTrainStatus(`Saved as ${name}.`);
+    } catch (err) {
+      setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [serializeWholeGrid]);
+
+  // On load, resolve a drawing from the URL and render it:
+  //   <base>design/<name>/ shareable per-drawing URL (kept in the address bar)
+  //   <base>?load=<id>      legacy id-based open from the gallery (URL cleaned)
+  useEffect(() => {
+    if (isWidgetMode || !grid) return;
+    let cancelled = false;
+    const nameMatch = window.location.pathname.match(/\/design\/([A-Za-z0-9_-]+)\/?$/);
+    if (nameMatch) {
+      getDesignByName(nameMatch[1])
+        .then((d) => { if (!cancelled) loadDesign(d.design); })
+        .catch(() => setTrainStatus(`No drawing named "${nameMatch[1]}".`));
+      return () => { cancelled = true; };
+    }
+    const id = new URLSearchParams(window.location.search).get('load');
+    if (!id) return;
+    getDesign(Number(id))
+      .then((d) => { if (!cancelled) loadDesign(d.design); })
+      .catch(() => {})
+      .finally(() => { window.history.replaceState({}, '', BASE); });
+    return () => { cancelled = true; };
+  }, [grid, isWidgetMode, loadDesign]);
+
+  // Live training-job progress, polled from the data server (standalone only).
+  const [jobs, setJobs] = useState<TrainingJob[]>([]);
+  useEffect(() => {
+    if (isWidgetMode) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${DATA_SERVER}/jobs`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (alive) setJobs(Array.isArray(body.jobs) ? body.jobs : []);
+      } catch {
+        // server not running; just show nothing
+      }
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => { alive = false; clearInterval(id); };
+  }, [isWidgetMode]);
+
+  // POST the assembled {input, output} example to the Go data server.
+  const saveTrainingExample = useCallback(async () => {
+    const example = buildTrainingExample();
+    if (!example) {
+      setTrainStatus('Select the output region first.');
+      return;
+    }
+    setTrainStatus('Saving…');
+    try {
+      const res = await fetch(`${DATA_SERVER}/examples`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(example),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json().catch(() => ({}));
+      finishTrainingCapture();
+      setTrainStatus(`Saved${typeof body.count === 'number' ? ` (${body.count} total)` : ''}.`);
+    } catch (err) {
+      setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [buildTrainingExample, finishTrainingCapture]);
+
+  // Kick off a training run on the server; progress shows in Training Jobs.
+  const startTraining = useCallback(async () => {
+    setTrainStatus('Starting training…');
+    try {
+      const res = await fetch(`${DATA_SERVER}/train`, { method: 'POST' });
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+      const body = await res.json();
+      setTrainStatus(`Training started (${body.id}). See Training Jobs.`);
+    } catch (err) {
+      setTrainStatus(`Train failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, []);
+
+  // Send the current selection as an input to the trained model and stamp the
+  // predicted design onto the grid (just below the input) via importJson-style
+  // placement. Requires the server's /predict endpoint to be wired to a model.
+  const predictFromSelection = useCallback(async () => {
+    const { grid: g, selectedItems: items } = useGridStore.getState();
+    if (!g) return;
+    const input = serializeSelection(g, items);
+    if (!input) {
+      setTrainStatus('Select an input region to predict from.');
+      return;
+    }
+    // Anchor the prediction just below the input selection's bounding box.
+    const bounds = getSelectionBoundsAll(items, g);
+    const anchorRow = bounds ? bounds.maxRow + 2 : 0;
+    const anchorCol = bounds ? bounds.minCol : 0;
+    setTrainStatus('Predicting…');
+    try {
+      const res = await fetch(`${DATA_SERVER}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      const out = body.output;
+      if (!out) throw new Error('no output in response');
+      useGridStore.getState().placeDesign(out, anchorRow, anchorCol);
+      setTrainStatus('Prediction placed below the input.');
+    } catch (err) {
+      setTrainStatus(`Predict failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, []);
 
   // Sync grid reference to store
   useEffect(() => {
@@ -837,6 +997,27 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
             </Button>
           </div>
 
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              onClick={saveToGallery}
+              disabled={loading}
+              size="sm"
+              className="flex-1"
+              title="Save the whole drawing to the gallery"
+            >
+              Save to Gallery
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => { window.location.href = `${BASE}gallery/`; }}
+              size="sm"
+              className="flex-1"
+            >
+              Gallery
+            </Button>
+          </div>
+
           <Button
             variant="destructive"
             onClick={clear}
@@ -889,6 +1070,116 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           </p>
         </div>
       </DraggablePanel>
+
+      <DraggablePanel
+        title="Training Data"
+        defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 360 }}
+      >
+        <div className="space-y-3 w-72">
+          {captureMode === 'idle' && (
+            <>
+              <p className="text-xs text-gray-500">
+                Capture input→output pairs to train the model, or predict an
+                output from a selection.
+              </p>
+              <Button size="sm" className="w-full" onClick={startTrainingCapture} disabled={loading}>
+                Make Training Data
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={predictFromSelection}
+                disabled={loading || selectedItems.length === 0}
+              >
+                Predict from Selection
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={startTraining}
+                disabled={loading}
+              >
+                Start Training Run
+              </Button>
+            </>
+          )}
+
+          {captureMode === 'input' && (
+            <>
+              <p className="text-xs font-medium text-blue-600">
+                Step 1/2 — select the INPUT, then click Next.
+              </p>
+              <p className="text-xs text-gray-400">{selectedItems.length} item(s) selected.</p>
+              <div className="flex gap-1">
+                <Button size="sm" className="flex-1" onClick={captureSetInput} disabled={selectedItems.length === 0}>
+                  Next →
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={cancelTrainingCapture}>
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
+
+          {captureMode === 'output' && (
+            <>
+              <p className="text-xs font-medium text-green-600">
+                Step 2/2 — select the OUTPUT, then Save.
+              </p>
+              <p className="text-xs text-gray-400">
+                Input: {captureInput
+                  ? `${captureInput.cells.length}c ${captureInput.lines.length}l ${captureInput.rects.length}r ${captureInput.texts.length}t`
+                  : '—'} · Output: {selectedItems.length} item(s)
+              </p>
+              <div className="flex gap-1">
+                <Button size="sm" className="flex-1" onClick={saveTrainingExample} disabled={selectedItems.length === 0}>
+                  Save Example
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={cancelTrainingCapture}>
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
+
+          {trainStatus && <p className="text-xs text-gray-500">{trainStatus}</p>}
+        </div>
+      </DraggablePanel>
+
+      {jobs.length > 0 && (
+        <DraggablePanel
+          title="Training Jobs"
+          defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 560 }}
+        >
+          <div className="space-y-2 w-72">
+            {jobs.map((j) => {
+              const pct = j.total > 0 ? Math.min(100, Math.round((j.step / j.total) * 100)) : 0;
+              const barColor =
+                j.status === 'error' ? 'bg-red-500'
+                  : j.status === 'done' ? 'bg-green-500'
+                    : 'bg-blue-500';
+              return (
+                <div key={j.id} className="text-xs">
+                  <div className="flex justify-between">
+                    <span className="font-medium truncate">{j.id}</span>
+                    <span className="text-gray-400">{j.status}</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-200 rounded mt-1 overflow-hidden">
+                    <div className={cn('h-full', barColor)} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-gray-400 mt-0.5">
+                    <span>{j.total > 0 ? `${j.step}/${j.total} (${pct}%)` : `step ${j.step}`}</span>
+                    {j.loss > 0 && <span>loss {j.loss.toFixed(3)}</span>}
+                  </div>
+                  {j.message && <p className="text-gray-400 truncate">{j.message}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </DraggablePanel>
+      )}
     </>
   );
 }

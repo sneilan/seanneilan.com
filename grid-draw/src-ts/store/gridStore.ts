@@ -122,6 +122,12 @@ type GridState = {
   // whole resize commits as a single from→to edit on release.
   resizeOrigin: LineGeom | RectGeom | null;
 
+  // Training-data capture state. 'idle' = off; 'input' = waiting for the user to
+  // box-select the example's input; 'output' = input captured, waiting for the
+  // target output selection. captureInput holds the serialized input half.
+  captureMode: CaptureMode;
+  captureInput: DesignJSON | null;
+
   // Output state
   jsonOutput: string;
   tensorOutput: string;
@@ -200,6 +206,23 @@ type GridActions = {
   canUndo: () => boolean;
   canRedo: () => boolean;
   resetHistory: () => void;
+
+  // Training-data capture actions
+  startTrainingCapture: () => void;
+  captureSetInput: () => void;
+  cancelTrainingCapture: () => void;
+  // Build the {input, output} example from the captured input + current
+  // selection (the output). Returns null if either half is empty.
+  buildTrainingExample: () => { input: DesignJSON; output: DesignJSON } | null;
+  finishTrainingCapture: () => void;
+  // Place a serialized design onto the grid at (anchorRow, anchorCol) as one
+  // undoable batch, selecting the placed shapes. Used for model predictions.
+  placeDesign: (design: DesignJSON, anchorRow: number, anchorCol: number) => void;
+  // Serialize the ENTIRE grid (every cell/line/rect/text) into a DesignJSON,
+  // normalized to its bounding box. Used to save a drawing to the gallery.
+  serializeWholeGrid: () => DesignJSON | null;
+  // Replace the whole grid with a saved design (clear, then place at origin).
+  loadDesign: (design: DesignJSON) => void;
 
   // Output actions
   updateOutputs: () => void;
@@ -311,6 +334,90 @@ function getSelectionOrigin(items: SelectedItem[], grid: GridCanvasWasm): { minR
   return bounds ? { minRow: bounds.minRow, minCol: bounds.minCol } : null;
 }
 
+// --- Training-data capture --------------------------------------------------
+// A captured selection serialized into the same sparse, bounding-box-relative
+// shape as export_json (cells/lines/rects as flat arrays), extended with texts
+// and the selection's pixel-free width/height in cells. This is exactly what a
+// training example's input/output halves look like, and what gets POSTed to the
+// data server and (after augmentation) fed to the trainer.
+export type DesignJSON = {
+  w: number;
+  h: number;
+  cells: number[][];        // [relRow, relCol, colorIdx]
+  lines: number[][];        // [r1, c1, r2, c2, colorIdx]
+  rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
+  texts: Array<[number, number, number, number, string]>; // [r, c, colorIdx, size, text]
+};
+
+/**
+ * Serialize the given selection into a DesignJSON, with all coordinates made
+ * relative to the selection's bounding box (so the same shape captured anywhere
+ * on the grid produces identical data). Returns null for an empty selection.
+ */
+export function serializeSelection(
+  grid: GridCanvasWasm,
+  items: SelectedItem[],
+  opts: { absolute?: boolean } = {},
+): DesignJSON | null {
+  const bounds = getSelectionBoundsAll(items, grid);
+  if (!bounds) return null;
+  const { minRow, minCol, maxRow, maxCol } = bounds;
+  // In absolute mode coordinates are kept as-is (origin 0,0) so a restored
+  // drawing lands where it was made; otherwise they're made bounding-box-
+  // relative (so the same shape captured anywhere serializes identically).
+  const oR = opts.absolute ? 0 : minRow;
+  const oC = opts.absolute ? 0 : minCol;
+
+  const cells: number[][] = [];
+  const lines: number[][] = [];
+  const rects: number[][] = [];
+  const texts: Array<[number, number, number, number, string]> = [];
+
+  for (const item of items) {
+    if (item.type === 'cell') {
+      cells.push([item.row - oR, item.col - oC, grid.get_cell_color(item.row, item.col)]);
+    } else if (item.type === 'line') {
+      const a = grid.get_line(item.index);
+      lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4]]);
+    } else if (item.type === 'rect') {
+      const a = grid.get_rect(item.index);
+      rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
+    } else if (item.type === 'text') {
+      const a = grid.get_text(item.index);
+      texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), grid.get_text_string(item.index)]);
+    }
+  }
+
+  // Sort for stable, augmentation-friendly output (row-major, then by kind).
+  cells.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  return {
+    w: maxCol - oC + 1,
+    h: maxRow - oR + 1,
+    cells,
+    lines,
+    rects,
+    texts,
+  };
+}
+
+export type CaptureMode = 'idle' | 'input' | 'output';
+
+/** Every drawable item currently on the grid, as a selection list. */
+function allItems(grid: GridCanvasWasm): SelectedItem[] {
+  const items: SelectedItem[] = [];
+  const rows = grid.get_rows();
+  const cols = grid.get_cols();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid.get_cell(r, c)) items.push({ type: 'cell', row: r, col: c });
+    }
+  }
+  for (let i = 0; i < grid.get_line_count(); i++) items.push({ type: 'line', index: i });
+  for (let i = 0; i < grid.get_rect_count(); i++) items.push({ type: 'rect', index: i });
+  for (let i = 0; i < grid.get_text_count(); i++) items.push({ type: 'text', index: i });
+  return items;
+}
+
 export const useGridStore = create<GridStore>((set, get) => ({
   // Initial state
   grid: null,
@@ -344,6 +451,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
   previousSelection: [],
   resizeTarget: null,
   resizeOrigin: null,
+
+  captureMode: 'idle',
+  captureInput: null,
 
   jsonOutput: '',
   tensorOutput: '',
@@ -1104,6 +1214,105 @@ export const useGridStore = create<GridStore>((set, get) => ({
     set({ selectedItems: [] });
     grid.render();
     updateOutputs();
+  },
+
+  // --- Training-data capture -----------------------------------------------
+  // A two-step state machine: capture an input selection, then an output
+  // selection, producing one {input, output} example. Forces the select tool so
+  // the user is box-selecting, not drawing, during capture.
+  startTrainingCapture: () => {
+    if (get().textEdit) get().commitTextEdit();
+    set({ captureMode: 'input', captureInput: null, selectedItems: [], tool: 'select' });
+    get().renderSelection();
+  },
+
+  captureSetInput: () => {
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    const input = serializeSelection(grid, selectedItems);
+    if (!input) return; // ignore an empty input selection
+    set({ captureInput: input, captureMode: 'output', selectedItems: [] });
+    get().renderSelection();
+  },
+
+  buildTrainingExample: () => {
+    const { grid, selectedItems, captureInput } = get();
+    if (!grid || !captureInput) return null;
+    const output = serializeSelection(grid, selectedItems);
+    if (!output) return null;
+    return { input: captureInput, output };
+  },
+
+  finishTrainingCapture: () => {
+    set({ captureMode: 'idle', captureInput: null, selectedItems: [] });
+    get().renderSelection();
+  },
+
+  cancelTrainingCapture: () => {
+    set({ captureMode: 'idle', captureInput: null, selectedItems: [] });
+    get().renderSelection();
+  },
+
+  placeDesign: (design, anchorRow, anchorCol) => {
+    const { grid } = get();
+    if (!grid) return;
+    const rows = grid.get_rows();
+    const cols = grid.get_cols();
+    const edits: Edit[] = [];
+    const newSelected: SelectedItem[] = [];
+    let lineIdx = grid.get_line_count();
+    let rectIdx = grid.get_rect_count();
+    let textIdx = grid.get_text_count();
+
+    for (const [r, c, color] of design.cells ?? []) {
+      const gr = anchorRow + r;
+      const gc = anchorCol + c;
+      if (gr < 0 || gr >= rows || gc < 0 || gc >= cols) continue;
+      edits.push({
+        kind: 'setCellState', row: gr, col: gc,
+        from: { filled: grid.get_cell(gr, gc), color: grid.get_cell_color(gr, gc) },
+        to: { filled: true, color },
+      });
+      newSelected.push({ type: 'cell', row: gr, col: gc });
+    }
+    for (const [r1, c1, r2, c2, color] of design.lines ?? []) {
+      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, color } });
+      newSelected.push({ type: 'line', index: lineIdx });
+      lineIdx++;
+    }
+    for (const [r1, c1, r2, c2, fill, outline] of design.rects ?? []) {
+      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, fill, outline } });
+      newSelected.push({ type: 'rect', index: rectIdx });
+      rectIdx++;
+    }
+    for (const [r, c, color, size, text] of design.texts ?? []) {
+      edits.push({ kind: 'addText', idx: textIdx, text: { r: anchorRow + r, c: anchorCol + c, color, size, text } });
+      newSelected.push({ type: 'text', index: textIdx });
+      textIdx++;
+    }
+
+    if (edits.length === 0) return;
+    get().commitEdits(edits);
+    grid.render();
+    set({ selectedItems: newSelected });
+    get().renderSelection();
+    get().updateOutputs();
+  },
+
+  serializeWholeGrid: () => {
+    const { grid } = get();
+    if (!grid) return null;
+    // Absolute coords so loadDesign restores the drawing to its original spot.
+    return serializeSelection(grid, allItems(grid), { absolute: true });
+  },
+
+  loadDesign: (design) => {
+    const { grid } = get();
+    if (!grid) return;
+    get().clear();                 // undoable: wipes the current grid
+    get().placeDesign(design, 0, 0); // undoable: stamps the saved design
+    set({ selectedItems: [] });
+    get().renderSelection();
   },
 
   // Output actions - sparse format for cells

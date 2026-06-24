@@ -1,0 +1,27 @@
+[project]
+name = "grid-draw-trainer"
+version = "0.1.0"
+description = "Few-shot + (later) QLoRA training/inference for grid-draw designs"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # Inference + constrained decoding (few-shot baseline)
+    "torch",
+    "transformers>=4.44",
+    "accelerate",
+    "outlines>=0.1.0",       # grammar-constrained generation (logit masking)
+    "fastapi",
+    "uvicorn",
+    "requests",
+    "pydantic>=2",
+    # Fine-tuning (QLoRA) — used once data is collected
+    "trl>=0.9",
+    "peft",
+    "datasets",
+    "bitsandbytes; platform_system == 'Linux'",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
