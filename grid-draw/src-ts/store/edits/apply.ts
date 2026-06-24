@@ -14,6 +14,7 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
   }
   const lineCount = grid.get_line_count();
   const rectCount = grid.get_rect_count();
+  const textCount = typeof grid.get_text_count === 'function' ? grid.get_text_count() : 0;
   const bad = (what: string, idx: number, max: number) => {
     if (idx < 0 || idx > max) {
       throw new RangeError(`applyEdit: ${e.kind} index ${idx} out of range (0..${max}) for ${what}`);
@@ -39,6 +40,15 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
     case 'moveRect':
     case 'setRectGeom':
       bad('rects', e.idx, rectCount - 1);
+      break;
+    case 'addText':
+      bad('texts', e.idx, textCount);
+      break;
+    case 'deleteText':
+    case 'recolorText':
+    case 'resizeText':
+    case 'moveText':
+      bad('texts', e.idx, textCount - 1);
       break;
   }
 }
@@ -98,6 +108,21 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
     case 'deleteRect':
       grid.delete_rect(e.idx);
       break;
+    case 'recolorText':
+      grid.set_text_color(e.idx, e.to);
+      break;
+    case 'resizeText':
+      grid.set_text_size(e.idx, e.to);
+      break;
+    case 'moveText':
+      grid.move_text(e.idx, e.dRow, e.dCol);
+      break;
+    case 'addText':
+      grid.insert_text(e.idx, e.text.r, e.text.c, e.text.color, e.text.size, e.text.text);
+      break;
+    case 'deleteText':
+      grid.delete_text(e.idx);
+      break;
     case 'batch':
       for (const child of e.edits) applyEdit(grid, child);
       break;
@@ -135,6 +160,15 @@ export function invertEdit(e: Edit): Edit {
       return { kind: 'addLine', idx: e.idx, line: e.line };
     case 'deleteRect':
       return { kind: 'addRect', idx: e.idx, rect: e.rect };
+    case 'recolorText':
+    case 'resizeText':
+      return { ...e, from: e.to, to: e.from };
+    case 'moveText':
+      return { ...e, dRow: -e.dRow, dCol: -e.dCol };
+    case 'addText':
+      return { kind: 'deleteText', idx: e.idx, text: e.text };
+    case 'deleteText':
+      return { kind: 'addText', idx: e.idx, text: e.text };
     case 'batch':
       return { kind: 'batch', edits: [...e.edits].reverse().map(invertEdit) };
   }
@@ -157,6 +191,8 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
     case 'recolorLine':
     case 'recolorRectFill':
     case 'recolorRectOutline':
+    case 'recolorText':
+    case 'resizeText':
       if (next.kind === prev.kind && prev.idx === next.idx) return { ...prev, to: next.to };
       return null;
     case 'setCellColor':
@@ -175,6 +211,7 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
       return null;
     case 'moveLine':
     case 'moveRect':
+    case 'moveText':
       if (next.kind === prev.kind && prev.idx === next.idx) {
         return { ...prev, dRow: prev.dRow + next.dRow, dCol: prev.dCol + next.dCol };
       }

@@ -21,6 +21,7 @@ function makeGrid(opts?: {
   // range guard reads these); start from the seeded shape arrays.
   let lineCount = lines.length;
   let rectCount = rects.length;
+  let textCount = 0;
   const g: Partial<GridCanvasWasm> = {
     set_cell: (r, c, v) => calls.push(['set_cell', r, c, v ? 1 : 0]),
     set_cell_color: (r, c, color) => calls.push(['set_cell_color', r, c, color]),
@@ -37,6 +38,14 @@ function makeGrid(opts?: {
     insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rectCount++; calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]); },
     delete_line: (idx) => { lineCount--; calls.push(['delete_line', idx]); },
     delete_rect: (idx) => { rectCount--; calls.push(['delete_rect', idx]); },
+    insert_text: (idx, r, c, color) => { textCount++; calls.push(['insert_text', idx, r, c, color]); },
+    delete_text: (idx) => { textCount--; calls.push(['delete_text', idx]); },
+    move_text: (idx, dr, dc) => calls.push(['move_text', idx, dr, dc]),
+    set_text_color: (idx, color) => calls.push(['set_text_color', idx, color]),
+    get_text_count: () => textCount,
+    get_text: () => new Uint32Array([1, 0, 0, 1, 1]),
+    get_text_string: () => '',
+    get_text_size: () => 1,
     delete_cell: (r, c) => calls.push(['delete_cell', r, c]),
     get_line: (idx) => new Uint32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
     get_rect: (idx) => new Uint32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
@@ -118,6 +127,7 @@ describe('store undo/redo integration', () => {
         cells: [],
         lines: [{ relR1: 0, relC1: 0, relR2: 1, relC2: 1, color: 2 }],
         rects: [],
+        texts: [],
         originRow: 0,
         originCol: 0,
       },

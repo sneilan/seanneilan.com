@@ -6,10 +6,19 @@ mod buffers;
 mod cells;
 mod rendering;
 mod shapes;
+mod texts;
 mod import_export;
 
 pub(crate) const CELL_SIZE: f64 = 16.0;
 pub(crate) const DATA_ZONE_SIZE: usize = 10;
+
+/// CSS font string for a text shape `size` cells tall. BigBlue Terminal is a
+/// fixed-width oldschool terminal face loaded as a document @font-face (see
+/// globals.css); the host must wait for it to load before the first text render.
+/// A `size` of 1.0 makes the em box one grid cell tall (font px = size * CELL_SIZE).
+pub(crate) fn text_font(size: f64) -> String {
+    format!("{}px 'BigBlue Terminal', monospace", size * CELL_SIZE)
+}
 
 /// Flat-array strides for the shape buffers. These are the single source of
 /// truth for the packing of `drawn_lines` / `drawn_rects`; every read/write
@@ -21,7 +30,23 @@ pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 /// Bump whenever the shape packing changes. Exposed to JS so the host can
 /// detect a stale/mismatched WASM instance and reset rather than render
 /// garbage from a half-migrated buffer.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
+
+/// A text shape: a string anchored at grid-intersection coords (r, c), drawn
+/// in the BigBlue Terminal font at `color`. Stored as a struct (not a flat u32
+/// buffer like lines/rects) because it carries a String; the public WASM API
+/// still mirrors the line/rect index-stable shape so undo/redo/select reuse the
+/// same machinery.
+#[derive(Clone)]
+pub(crate) struct TextItem {
+    /// Baseline grid-row: the text sits ON this grid line, rising upward.
+    pub(crate) r: u32,
+    pub(crate) c: u32,
+    pub(crate) color: u8,
+    /// Height in grid cells (1.0, 1.5, 2.0, ...); font px = size * CELL_SIZE.
+    pub(crate) size: f64,
+    pub(crate) text: String,
+}
 
 pub(crate) fn color_for_idx(idx: u8) -> &'static str {
     match idx {
@@ -49,6 +74,7 @@ pub struct GridCanvas {
     pub(crate) line_color: String,
     pub(crate) drawn_lines: Vec<u32>, // flat: [r1, c1, r2, c2, color_idx, ...]
     pub(crate) drawn_rects: Vec<u32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, ...]
+    pub(crate) drawn_texts: Vec<TextItem>,
 }
 
 #[wasm_bindgen]
@@ -95,6 +121,7 @@ impl GridCanvas {
             line_color: String::from("#cccccc"),
             drawn_lines: Vec::new(),
             drawn_rects: Vec::new(),
+            drawn_texts: Vec::new(),
         };
 
         instance.render();

@@ -6,7 +6,7 @@ import {
 } from '../utils/selection';
 import { getLineHandles, getRectHandles } from '../utils/handles';
 import { History } from './edits/history';
-import type { Edit, LineData, RectData, LineGeom, RectGeom } from './edits/types';
+import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData } from './edits/types';
 
 // Single source of undo/redo history for the document. Lives at module scope
 // (one canvas per app); every mutating action routes its edits through here so
@@ -33,8 +33,16 @@ function rectGeom(grid: GridCanvasWasm, idx: number): RectGeom {
   return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
 }
 
+function readText(grid: GridCanvasWasm, idx: number): TextData {
+  const a = grid.get_text(idx);
+  return { r: a[0], c: a[1], color: a[2], size: grid.get_text_size(idx), text: grid.get_text_string(idx) };
+}
+
+/** Discrete text-size presets, in grid cells tall. */
+export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
+
 // Types
-export type DrawTool = 'draw' | 'line' | 'rect' | 'select';
+export type DrawTool = 'draw' | 'line' | 'rect' | 'text' | 'select';
 export type SelectMode = 'box' | 'drag' | 'resize' | null;
 
 // Which handle of which single shape is being dragged during a resize.
@@ -48,17 +56,24 @@ export type ResizeTarget = {
 export type SelectedItem =
   | { type: 'cell'; row: number; col: number }
   | { type: 'line'; index: number }
-  | { type: 'rect'; index: number };
+  | { type: 'rect'; index: number }
+  | { type: 'text'; index: number };
+
+// An in-progress text being typed (before it's committed as a shape). `row` is
+// the baseline grid-row the text rests on.
+export type TextEditState = { row: number; col: number; size: number; text: string };
 
 // Clipboard data types
 type ClipboardCell = { relRow: number; relCol: number; color: number };
 type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number };
 type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
+type ClipboardText = { relR: number; relC: number; color: number; size: number; text: string };
 
 export type ClipboardData = {
   cells: ClipboardCell[];
   lines: ClipboardLine[];
   rects: ClipboardRect[];
+  texts: ClipboardText[];
   // Original top-left of the copied selection, so paste can anchor relative to
   // it (with a small offset) instead of the mouse position.
   originRow: number;
@@ -81,6 +96,10 @@ type GridState = {
   drawMode: boolean; // true = drawing, false = erasing
   lineStart: Cell | null;
   rectStart: Cell | null;
+  // In-progress text being typed with the text tool, or null when not editing.
+  textEdit: TextEditState | null;
+  // Active size (cells tall) for new text shapes.
+  textSize: number;
 
   // Selection state - now unified
   selectedItems: SelectedItem[];
@@ -130,6 +149,16 @@ type GridActions = {
   finishLine: () => void;
   startRect: (cell: Cell) => void;
   finishRect: () => void;
+
+  // Text tool actions
+  setTextSize: (size: number) => void;
+  // Set the active size AND resize any selected text shapes (undoable).
+  pickTextSize: (size: number) => void;
+  beginTextEdit: (cell: Cell) => void;
+  typeTextChar: (ch: string) => void;
+  backspaceText: () => void;
+  commitTextEdit: () => void;
+  cancelTextEdit: () => void;
 
   // Selection actions
   setSelectedItems: (items: SelectedItem[]) => void;
@@ -208,6 +237,9 @@ function itemsEqual(a: SelectedItem, b: SelectedItem): boolean {
   if (a.type === 'rect' && b.type === 'rect') {
     return a.index === b.index;
   }
+  if (a.type === 'text' && b.type === 'text') {
+    return a.index === b.index;
+  }
   return false;
 }
 
@@ -258,6 +290,15 @@ export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWas
         maxRow = Math.max(maxRow, rectData[0], rectData[2]);
         maxCol = Math.max(maxCol, rectData[1], rectData[3]);
       }
+    } else if (item.type === 'text') {
+      const t = grid.get_text(item.index); // [r_baseline, c, color, wCells, hCells]
+      if (t.length >= 5) {
+        // Text rests its baseline on row t[0] and rises t[4] cells upward.
+        minRow = Math.min(minRow, t[0] - t[4]);
+        minCol = Math.min(minCol, t[1]);
+        maxRow = Math.max(maxRow, t[0]);
+        maxCol = Math.max(maxCol, t[1] + t[3]);
+      }
     }
   }
 
@@ -282,12 +323,15 @@ export const useGridStore = create<GridStore>((set, get) => ({
     draw: { colorIdx: 0, outlineIdx: 6 },
     line: { colorIdx: 0, outlineIdx: 6 },
     rect: { colorIdx: 6, outlineIdx: 0 }, // default rect: transparent fill, black outline
+    text: { colorIdx: 0, outlineIdx: 6 }, // default text: black
     select: { colorIdx: 0, outlineIdx: 6 },
   },
   isDrawing: false,
   drawMode: false,
   lineStart: null,
   rectStart: null,
+  textEdit: null,
+  textSize: 1,
 
   selectedItems: [],
   clipboard: null,
@@ -311,6 +355,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
   // Drawing actions
   setTool: (tool) => {
+    // Commit any in-progress text before leaving (don't silently lose it).
+    if (get().textEdit) get().commitTextEdit();
     // Restore the color/outline last used in the tool we're switching to.
     const style = get().toolStyles[tool];
     set({ tool, colorIdx: style.colorIdx, outlineIdx: style.outlineIdx });
@@ -340,6 +386,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
         edits.push({ kind: 'recolorLine', idx: item.index, from: grid.get_line(item.index)[4], to: idx });
       } else if (item.type === 'rect') {
         edits.push({ kind: 'recolorRectFill', idx: item.index, from: grid.get_rect(item.index)[4], to: idx });
+      } else if (item.type === 'text') {
+        edits.push({ kind: 'recolorText', idx: item.index, from: grid.get_text(item.index)[2], to: idx });
       }
     }
     get().commitEdits(edits, { coalesceKey: `fill:${selectionSignature(selectedItems)}` });
@@ -371,6 +419,74 @@ export const useGridStore = create<GridStore>((set, get) => ({
   finishLine: () => set({ lineStart: null, isDrawing: false }),
   startRect: (cell) => set({ rectStart: cell, isDrawing: true }),
   finishRect: () => set({ rectStart: null, isDrawing: false }),
+
+  // --- Text tool ------------------------------------------------------------
+  // Live typing draws a preview via render_text_preview; nothing touches the
+  // document until commitTextEdit appends a single undoable text shape.
+  setTextSize: (size) => set({ textSize: size }),
+
+  pickTextSize: (size) => {
+    set({ textSize: size });
+    const { grid, selectedItems } = get();
+    if (!grid || selectedItems.length === 0) return;
+    const edits: Edit[] = [];
+    for (const item of selectedItems) {
+      if (item.type === 'text') {
+        edits.push({ kind: 'resizeText', idx: item.index, from: grid.get_text_size(item.index), to: size });
+      }
+    }
+    if (edits.length === 0) return;
+    get().commitEdits(edits, { coalesceKey: `size:${selectionSignature(selectedItems)}` });
+    get().renderSelection();
+  },
+
+  beginTextEdit: (cell) => {
+    // Starting a new text commits any text already being typed.
+    if (get().textEdit) get().commitTextEdit();
+    const { grid, colorIdx, textSize } = get();
+    // The text rests its baseline on the bottom grid line of the clicked cell,
+    // so a 1-cell text fills exactly that cell.
+    const baseline = cell.row + 1;
+    set({ textEdit: { row: baseline, col: cell.col, size: textSize, text: '' }, selectedItems: [] });
+    if (grid) grid.render_text_preview(baseline, cell.col, colorIdx, textSize, '');
+  },
+
+  typeTextChar: (ch) => {
+    const { grid, textEdit, colorIdx } = get();
+    if (!textEdit) return;
+    const next = { ...textEdit, text: textEdit.text + ch };
+    set({ textEdit: next });
+    if (grid) grid.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+  },
+
+  backspaceText: () => {
+    const { grid, textEdit, colorIdx } = get();
+    if (!textEdit) return;
+    const next = { ...textEdit, text: textEdit.text.slice(0, -1) };
+    set({ textEdit: next });
+    if (grid) grid.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+  },
+
+  commitTextEdit: () => {
+    const { grid, textEdit, colorIdx } = get();
+    set({ textEdit: null });
+    if (!grid || !textEdit || textEdit.text.length === 0) {
+      grid?.render();
+      return;
+    }
+    get().commitEdits([{
+      kind: 'addText',
+      idx: grid.get_text_count(),
+      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, text: textEdit.text },
+    }]);
+    grid.render();
+  },
+
+  cancelTextEdit: () => {
+    const { grid } = get();
+    set({ textEdit: null });
+    grid?.render();
+  },
 
   // Selection actions
   setSelectedItems: (items) => {
@@ -426,6 +542,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
         grid.highlight_rect(item.index);
+      } else if (item.type === 'text') {
+        grid.highlight_text(item.index);
       }
     }
   },
@@ -470,6 +588,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
     for (let i = 0; i < rectCount; i++) {
       if (grid.rect_intersects_box(i, r1, c1, r2, c2)) {
         boxItems.push({ type: 'rect', index: i });
+      }
+    }
+
+    // Get texts that intersect the box
+    const textCount = grid.get_text_count();
+    for (let i = 0; i < textCount; i++) {
+      if (grid.text_intersects_box(i, r1, c1, r2, c2)) {
+        boxItems.push({ type: 'text', index: i });
       }
     }
 
@@ -571,7 +697,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
         newSelected.push({ type: 'rect', index: item.index });
       }
 
-      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits]);
+      const textEdits: Edit[] = [];
+      const textsToMove = selectedItems.filter(i => i.type === 'text') as Array<{ type: 'text'; index: number }>;
+      for (const item of textsToMove) {
+        textEdits.push({ kind: 'moveText', idx: item.index, dRow: deltaRow, dCol: deltaCol });
+        newSelected.push({ type: 'text', index: item.index });
+      }
+
+      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits, ...textEdits]);
 
       set({
         selectedItems: newSelected,
@@ -751,6 +884,12 @@ export const useGridStore = create<GridStore>((set, get) => ({
       return { type: 'line', index: lineIdx };
     }
 
+    // Test texts (before rects: a text label sits on top of any rect it's over)
+    const textIdx = grid.hit_test_text(x, y);
+    if (textIdx >= 0) {
+      return { type: 'text', index: textIdx };
+    }
+
     // Test rects
     const rectIdx = grid.hit_test_rect(x, y);
     if (rectIdx >= 0) {
@@ -781,6 +920,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const cells: ClipboardCell[] = [];
     const lines: ClipboardLine[] = [];
     const rects: ClipboardRect[] = [];
+    const texts: ClipboardText[] = [];
 
     for (const item of selectedItems) {
       if (item.type === 'cell') {
@@ -812,10 +952,21 @@ export const useGridStore = create<GridStore>((set, get) => ({
             outline: rectData[5],
           });
         }
+      } else if (item.type === 'text') {
+        const t = grid.get_text(item.index);
+        if (t.length >= 3) {
+          texts.push({
+            relR: t[0] - origin.minRow,
+            relC: t[1] - origin.minCol,
+            color: t[2],
+            size: grid.get_text_size(item.index),
+            text: grid.get_text_string(item.index),
+          });
+        }
       }
     }
 
-    set({ clipboard: { cells, lines, rects, originRow: origin.minRow, originCol: origin.minCol } });
+    set({ clipboard: { cells, lines, rects, texts, originRow: origin.minRow, originCol: origin.minCol } });
   },
 
   paste: () => {
@@ -840,6 +991,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const edits: Edit[] = [];
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
+    let textIdx = grid.get_text_count();
 
     // Paste cells
     for (const cell of clipboard.cells) {
@@ -885,6 +1037,17 @@ export const useGridStore = create<GridStore>((set, get) => ({
       }
     }
 
+    // Paste texts
+    for (const t of clipboard.texts ?? []) {
+      const r = anchor.row + t.relR;
+      const c = anchor.col + t.relC;
+      if (r >= 0 && c >= 0) {
+        edits.push({ kind: 'addText', idx: textIdx, text: { r, c, color: t.color, size: t.size, text: t.text } });
+        newSelected.push({ type: 'text', index: textIdx });
+        textIdx++;
+      }
+    }
+
     get().commitEdits(edits);
     grid.render();
     set({ selectedItems: newSelected });
@@ -909,6 +1072,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
       .map(i => (i as { type: 'rect'; index: number }).index)
       .sort((a, b) => b - a);
 
+    const textIndices = selectedItems
+      .filter(i => i.type === 'text')
+      .map(i => (i as { type: 'text'; index: number }).index)
+      .sort((a, b) => b - a);
+
     const edits: Edit[] = [];
 
     for (const item of selectedItems) {
@@ -927,6 +1095,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
     }
     for (const idx of rectIndices) {
       edits.push({ kind: 'deleteRect', idx, rect: readRect(grid, idx) });
+    }
+    for (const idx of textIndices) {
+      edits.push({ kind: 'deleteText', idx, text: readText(grid, idx) });
     }
 
     get().commitEdits(edits);
@@ -1126,6 +1297,9 @@ sparse = sparse.coalesce()`;
     // Express clear as one undoable batch: remove every rect/line (high index
     // first) and every filled cell. Undo restores the whole document.
     const edits: Edit[] = [];
+    for (let i = grid.get_text_count() - 1; i >= 0; i--) {
+      edits.push({ kind: 'deleteText', idx: i, text: readText(grid, i) });
+    }
     for (let i = grid.get_rect_count() - 1; i >= 0; i--) {
       edits.push({ kind: 'deleteRect', idx: i, rect: readRect(grid, i) });
     }
@@ -1162,6 +1336,8 @@ sparse = sparse.coalesce()`;
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
         grid.highlight_rect(item.index);
+      } else if (item.type === 'text') {
+        grid.highlight_text(item.index);
       }
     }
 

@@ -9,7 +9,7 @@ export type { GridCanvasWasm, GridWasmState };
  * version (e.g. a stale module survived a hot reload that changed the schema),
  * we reset it instead of rendering garbage from a half-migrated buffer.
  */
-const EXPECTED_SCHEMA_VERSION = 2;
+const EXPECTED_SCHEMA_VERSION = 3;
 
 function guardSchema(grid: GridCanvasWasm) {
   const version = grid.get_schema_version?.();
@@ -57,6 +57,12 @@ export function useGridWasm(
           error: null,
           initialized: true,
         });
+        // The text tool draws BigBlue Terminal on the canvas via fillText, which
+        // needs the @font-face to be loaded. Trigger the load and re-render once
+        // ready so any already-placed text repaints in the correct font.
+        if (typeof document !== 'undefined' && document.fonts?.load) {
+          document.fonts.load("16px 'BigBlue Terminal'").then(() => grid.render()).catch(() => {});
+        }
       } catch (err) {
         initRef.current = false; // Allow retry on error
         setState((prev) => ({

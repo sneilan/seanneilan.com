@@ -4,6 +4,18 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* BigBlue Terminal: oldschool fixed-width font used by the canvas text tool.
+   Font by VileR / int10h.org (freeware, CC BY-SA 4.0; see BigBlueTerminal-LICENSE.txt).
+   Drawn on the <canvas> via ctx.fillText, so it must be a loaded document font
+   before the first text render (see ensureFont in GridCanvas). */
+@font-face {
+  font-family: 'BigBlue Terminal';
+  src: url('./BigBlueTerminal437.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 /* Grid background pattern */
 .grid-background {
   background-image:

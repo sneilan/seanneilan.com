@@ -94,6 +94,18 @@ impl GridCanvas {
             self.ctx.set_line_width(1.0);
             i += 5;
         }
+
+        // Draw committed texts (BigBlue Terminal font). Each text's BASELINE sits
+        // on grid row `r`, so it rests on a grid line. Color index 6 has no
+        // meaning for text, so it falls back to black.
+        self.ctx.set_text_baseline("alphabetic");
+        for t in &self.drawn_texts {
+            let x = t.c as f64 * CELL_SIZE;
+            let y = t.r as f64 * CELL_SIZE;
+            self.ctx.set_font(&crate::text_font(t.size));
+            self.ctx.set_fill_style_str(color_for_idx(if t.color >= 6 { 0 } else { t.color }));
+            let _ = self.ctx.fill_text(&t.text, x, y);
+        }
     }
 
     #[wasm_bindgen]

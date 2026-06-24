@@ -22,6 +22,7 @@ function makeMock(rows = 40, cols = 80) {
     add_rect: (r1, c1, r2, c2, fill, outline) => { rects.push(r1, c1, r2, c2, fill, outline); },
     insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rects.splice(idx * 6, 0, r1, c1, r2, c2, fill, outline); },
     get_line_count: () => 0,
+    get_text_count: () => 0,
     set_draw_color: (c) => { drawColor = c; },
     set_cell: () => {},
     get_cell: () => false,

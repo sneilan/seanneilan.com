@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
+import { useGridStore, getSelectionBoundsAll, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
 import { useTauriEvents } from '../hooks/useTauriEvents';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
@@ -64,6 +64,8 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     isDrawing, drawMode, startDrawing, stopDrawing,
     lineStart, startLine, finishLine,
     rectStart, startRect, finishRect,
+    textSize, pickTextSize,
+    beginTextEdit, typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
     selectedItems, setSelectedItems,
     clipboard, copy, paste, deleteSelected,
     selectMode, isSelecting,
@@ -142,9 +144,13 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     if (isWidgetMode) return; // Skip global shortcuts in widget mode
 
     const onKey = (e: KeyboardEvent) => {
+      // While typing a text shape, the dedicated text handler owns the keyboard;
+      // don't let tool/color shortcuts fire from the letters being typed.
+      if (useGridStore.getState().textEdit) return;
       if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       if (e.key === '\\') setTool(tool === 'line' ? 'draw' : 'line');
       if (e.key === 'm') setTool(tool === 'rect' ? 'draw' : 'rect');
+      if (e.key === 't') setTool(tool === 'text' ? 'draw' : 'text');
       if (e.key === 's') setTool(tool === 'select' ? 'draw' : 'select');
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItems.length > 0) {
         e.preventDefault();
@@ -173,6 +179,25 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, isWidgetMode, toggleFullscreen]);
+
+  // Inline text typing. Active only while a text shape is being edited; captures
+  // printable characters, Backspace to delete, Enter to commit, Esc to cancel.
+  useEffect(() => {
+    if (isWidgetMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!useGridStore.getState().textEdit) return;
+      if (e.key === 'Enter') { e.preventDefault(); commitTextEdit(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); cancelTextEdit(); return; }
+      if (e.key === 'Backspace') { e.preventDefault(); backspaceText(); return; }
+      // Single printable char (ignore modifier combos like Ctrl+C / Cmd+V).
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        typeTextChar(e.key);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isWidgetMode, commitTextEdit, cancelTextEdit, backspaceText, typeTextChar]);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -212,6 +237,9 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       if (s.type === 'rect' && item.type === 'rect') {
         return s.index === item.index;
       }
+      if (s.type === 'text' && item.type === 'text') {
+        return s.index === item.index;
+      }
       return false;
     });
   };
@@ -241,6 +269,12 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         const { col, row } = getIntersectionCoords(event);
         startRect({ row, col });
         grid.render_with_rect(row, col, row, col);
+      } else if (tool === 'text') {
+        // Place the text caret at the clicked cell and start typing. If a text
+        // is already in progress, beginTextEdit commits it first.
+        const { col, row } = getCellCoords(event);
+        if (col >= cols || row >= rows) return;
+        beginTextEdit({ row, col });
       } else if (tool === 'select') {
         const { col, row } = getCellCoords(event);
         const { x, y } = getCanvasXY(event);
@@ -310,7 +344,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt]
+    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt, beginTextEdit]
   );
 
   const handleMouseMove = useCallback(
@@ -406,6 +440,11 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
               const rr = grid.get_rect(item.index);
               if (rr.length >= 6) {
                 grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4], rr[5]);
+              }
+            } else if (item.type === 'text') {
+              const t = grid.get_text(item.index);
+              if (t.length >= 3) {
+                grid.preview_text(t[0] + deltaRow, t[1] + deltaCol, t[2], grid.get_text_size(item.index), grid.get_text_string(item.index));
               }
             }
           }
@@ -536,9 +575,27 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
                 <ToggleGroupItem value="draw" className="text-xs">Draw</ToggleGroupItem>
                 <ToggleGroupItem value="line" className="text-xs">Line</ToggleGroupItem>
                 <ToggleGroupItem value="rect" className="text-xs">Rect</ToggleGroupItem>
+                <ToggleGroupItem value="text" className="text-xs">Text</ToggleGroupItem>
                 <ToggleGroupItem value="select" className="text-xs">Select</ToggleGroupItem>
               </ToggleGroup>
             </div>
+
+            {tool === 'text' && (
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">Text size</label>
+                <ToggleGroup
+                  type="single"
+                  value={String(textSize)}
+                  onValueChange={(val) => val && pickTextSize(Number(val))}
+                  variant="outline"
+                  className="flex-wrap"
+                >
+                  {TEXT_SIZES.map((s) => (
+                    <ToggleGroupItem key={s} value={String(s)} className="text-xs">{s}&times;</ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
@@ -679,9 +736,27 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
               <ToggleGroupItem value="draw" className="text-xs">Draw</ToggleGroupItem>
               <ToggleGroupItem value="line" className="text-xs">Line</ToggleGroupItem>
               <ToggleGroupItem value="rect" className="text-xs">Rect</ToggleGroupItem>
+              <ToggleGroupItem value="text" className="text-xs">Text</ToggleGroupItem>
               <ToggleGroupItem value="select" className="text-xs">Select</ToggleGroupItem>
             </ToggleGroup>
           </div>
+
+          {tool === 'text' && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Text size</label>
+              <ToggleGroup
+                type="single"
+                value={String(textSize)}
+                onValueChange={(val) => val && pickTextSize(Number(val))}
+                variant="outline"
+                className="flex-wrap"
+              >
+                {TEXT_SIZES.map((s) => (
+                  <ToggleGroupItem key={s} value={String(s)} className="text-xs">{s}&times;</ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
@@ -773,7 +848,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           </Button>
 
           <p className="text-xs text-gray-400">
-            \ line, m rect, s select, 1-7 colors, ⌘Z undo
+            \ line, m rect, t text, s select, 1-7 colors, ⌘Z undo
           </p>
         </div>
       </DraggablePanel>

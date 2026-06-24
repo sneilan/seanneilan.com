@@ -70,6 +70,24 @@ export type GridCanvasWasm = {
   set_line(idx: number, r1: number, c1: number, r2: number, c2: number): void;
   set_rect(idx: number, r1: number, c1: number, r2: number, c2: number): void;
 
+  // Text shapes (BigBlue Terminal font on the canvas)
+  get_text_count(): number;
+  get_text(idx: number): Uint32Array; // [r_baseline, c, color, widthCells, heightCells]
+  get_text_string(idx: number): string;
+  get_text_size(idx: number): number;
+  add_text(r: number, c: number, color: number, size: number, text: string): void;
+  insert_text(idx: number, r: number, c: number, color: number, size: number, text: string): void;
+  delete_text(idx: number): void;
+  move_text(idx: number, delta_row: number, delta_col: number): void;
+  set_text_color(idx: number, color: number): void;
+  set_text_size(idx: number, size: number): void;
+  set_text_pos(idx: number, r: number, c: number): void;
+  hit_test_text(x: number, y: number): number;
+  text_intersects_box(idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
+  highlight_text(idx: number): void;
+  preview_text(r: number, c: number, color: number, size: number, text: string): void;
+  render_text_preview(r: number, c: number, color: number, size: number, text: string): void;
+
   // Import/Export
   export_json(): string;
   export_pytorch_tensor(): string;

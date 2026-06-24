@@ -17,6 +17,9 @@ export type LineGeom = { r1: number; c1: number; r2: number; c2: number };
 /** Just the geometry of a rect (no colors), for move/resize edits. */
 export type RectGeom = { r1: number; c1: number; r2: number; c2: number };
 
+/** A text shape: baseline position (r, c), color index, size (cells), string. */
+export type TextData = { r: number; c: number; color: number; size: number; text: string };
+
 /** Full state of a single cell: whether it is filled, and its color index. */
 export type CellState = { filled: boolean; color: number };
 
@@ -38,5 +41,10 @@ export type Edit =
   | { kind: 'addRect'; idx: number; rect: RectData }
   | { kind: 'deleteLine'; idx: number; line: LineData }
   | { kind: 'deleteRect'; idx: number; rect: RectData }
+  | { kind: 'recolorText'; idx: number; from: number; to: number }
+  | { kind: 'resizeText'; idx: number; from: number; to: number }
+  | { kind: 'moveText'; idx: number; dRow: number; dCol: number }
+  | { kind: 'addText'; idx: number; text: TextData }
+  | { kind: 'deleteText'; idx: number; text: TextData }
   // A group of edits that undo/redo as a single step (gestures, multi-select ops).
   | { kind: 'batch'; edits: Edit[] };

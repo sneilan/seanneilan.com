@@ -20,6 +20,7 @@ impl GridCanvas {
         self.grid_colors = vec![vec![0u8; self.cols]; self.rows];
         self.drawn_lines.clear();
         self.drawn_rects.clear();
+        self.drawn_texts.clear();
         self.render();
     }
 
