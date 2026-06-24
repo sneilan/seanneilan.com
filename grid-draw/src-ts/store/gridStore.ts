@@ -74,6 +74,9 @@ type GridState = {
   tool: DrawTool;
   colorIdx: number;
   outlineIdx: number; // outline color for rects; 6 = none
+  // Per-tool memory of the last color/outline so switching tools restores the
+  // style you last used in that tool (e.g. red rect stays red when you return).
+  toolStyles: Record<DrawTool, { colorIdx: number; outlineIdx: number }>;
   isDrawing: boolean;
   drawMode: boolean; // true = drawing, false = erasing
   lineStart: Cell | null;
@@ -275,6 +278,12 @@ export const useGridStore = create<GridStore>((set, get) => ({
   tool: 'draw',
   colorIdx: 0,
   outlineIdx: 6,
+  toolStyles: {
+    draw: { colorIdx: 0, outlineIdx: 6 },
+    line: { colorIdx: 0, outlineIdx: 6 },
+    rect: { colorIdx: 6, outlineIdx: 0 }, // default rect: transparent fill, black outline
+    select: { colorIdx: 0, outlineIdx: 6 },
+  },
   isDrawing: false,
   drawMode: false,
   lineStart: null,
@@ -301,12 +310,25 @@ export const useGridStore = create<GridStore>((set, get) => ({
   setGridSize: (gridSize) => set({ gridSize }),
 
   // Drawing actions
-  setTool: (tool) => set({ tool }),
-  setColorIdx: (idx) => set({ colorIdx: idx }),
-  setOutlineIdx: (idx) => set({ outlineIdx: idx }),
+  setTool: (tool) => {
+    // Restore the color/outline last used in the tool we're switching to.
+    const style = get().toolStyles[tool];
+    set({ tool, colorIdx: style.colorIdx, outlineIdx: style.outlineIdx });
+  },
+  setColorIdx: (idx) => set((s) => ({
+    colorIdx: idx,
+    toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], colorIdx: idx } },
+  })),
+  setOutlineIdx: (idx) => set((s) => ({
+    outlineIdx: idx,
+    toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], outlineIdx: idx } },
+  })),
 
   pickColor: (idx) => {
-    set({ colorIdx: idx });
+    set((s) => ({
+      colorIdx: idx,
+      toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], colorIdx: idx } },
+    }));
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Recolor the fill of every selected cell/rect and the stroke of every line.
@@ -326,7 +348,10 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   pickOutline: (idx) => {
-    set({ outlineIdx: idx });
+    set((s) => ({
+      outlineIdx: idx,
+      toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], outlineIdx: idx } },
+    }));
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Outline only applies to rects.
@@ -1145,10 +1170,10 @@ sparse = sparse.coalesce()`;
       const only = selectedItems[0];
       if (only.type === 'line') {
         const handles = getLineHandles(grid.get_line(only.index));
-        for (const h of handles) grid.draw_handle(Math.round(h.r), Math.round(h.c));
+        for (const h of handles) grid.draw_handle(h.r, h.c);
       } else if (only.type === 'rect') {
         const handles = getRectHandles(grid.get_rect(only.index));
-        for (const h of handles) grid.draw_handle(Math.round(h.r), Math.round(h.c));
+        for (const h of handles) grid.draw_handle(h.r, h.c);
       }
     }
   },

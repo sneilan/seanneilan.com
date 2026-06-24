@@ -238,11 +238,13 @@ impl GridCanvas {
         self.render();
     }
 
-    /// Draw a small square grab-handle centered on a grid intersection (r, c).
+    /// Draw a small square grab-handle centered on a grid coordinate (r, c).
+    /// Coords are fractional grid units (CELL_SIZE per unit): rect edge-midpoint
+    /// handles fall on half-intersections, so this must not truncate to integer.
     #[wasm_bindgen]
-    pub fn draw_handle(&self, r: u32, c: u32) {
-        let y = r as f64 * CELL_SIZE;
-        let x = c as f64 * CELL_SIZE;
+    pub fn draw_handle(&self, r: f64, c: f64) {
+        let y = r * CELL_SIZE;
+        let x = c * CELL_SIZE;
         let size = 13.0;
         let hx = x - size / 2.0;
         let hy = y - size / 2.0;
