@@ -59,6 +59,10 @@ type GridState = {
   selectMode: SelectMode;
   selectBoxStart: Cell | null;
   selectDragStart: Cell | null;
+  // True when a drag was started by pressing on empty space inside the
+  // selection's bounding box (not on an actual shape). Used to deselect on a
+  // zero-movement release.
+  dragStartedOnEmpty: boolean;
   isSelecting: boolean;
   previousSelection: SelectedItem[];
 
@@ -98,7 +102,7 @@ type GridActions = {
   updateBoxSelection: (currentCell: Cell) => void;
   finishBoxSelection: (endCell: Cell) => void;
   cancelBoxSelection: () => void;
-  startDragSelection: (cell: Cell) => void;
+  startDragSelection: (cell: Cell, onEmpty?: boolean) => void;
   finishDragSelection: (endCell: Cell) => void;
   cancelDragSelection: () => void;
   startResize: (target: ResizeTarget) => void;
@@ -223,6 +227,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   selectMode: null,
   selectBoxStart: null,
   selectDragStart: null,
+  dragStartedOnEmpty: false,
   isSelecting: false,
   previousSelection: [],
   resizeTarget: null,
@@ -410,18 +415,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
     get().renderSelection();
   },
 
-  startDragSelection: (cell) => {
+  startDragSelection: (cell, onEmpty = false) => {
     set({
       selectMode: 'drag',
       selectDragStart: cell,
+      dragStartedOnEmpty: onEmpty,
       isSelecting: true,
     });
   },
 
   finishDragSelection: (endCell) => {
-    const { grid, selectDragStart, selectedItems, updateOutputs } = get();
+    const { grid, selectDragStart, selectedItems, dragStartedOnEmpty, updateOutputs } = get();
     if (!grid || !selectDragStart || selectedItems.length === 0) {
-      set({ selectMode: null, selectDragStart: null, isSelecting: false });
+      set({ selectMode: null, selectDragStart: null, dragStartedOnEmpty: false, isSelecting: false });
       return;
     }
 
@@ -476,18 +482,30 @@ export const useGridStore = create<GridStore>((set, get) => ({
         selectedItems: newSelected,
         selectMode: null,
         selectDragStart: null,
+        dragStartedOnEmpty: false,
         isSelecting: false,
       });
       updateOutputs();
       get().renderSelection();
     } else {
-      set({ selectMode: null, selectDragStart: null, isSelecting: false });
-      get().renderSelection();
+      // No movement. If the press landed on empty space inside the selection
+      // bounds (not on a shape), treat it as a click-to-deselect. Pressing on
+      // an actual shape keeps the selection intact.
+      set({
+        selectMode: null,
+        selectDragStart: null,
+        dragStartedOnEmpty: false,
+        isSelecting: false,
+        selectedItems: dragStartedOnEmpty ? [] : selectedItems,
+      });
+      grid.render();
+      if (!dragStartedOnEmpty) get().renderSelection();
+      if (dragStartedOnEmpty) updateOutputs();
     }
   },
 
   cancelDragSelection: () => {
-    set({ selectMode: null, selectDragStart: null, isSelecting: false });
+    set({ selectMode: null, selectDragStart: null, dragStartedOnEmpty: false, isSelecting: false });
     get().renderSelection();
   },
 

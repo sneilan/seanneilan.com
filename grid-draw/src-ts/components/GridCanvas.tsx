@@ -261,8 +261,10 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           startDragSelection({ row, col });
           renderSelection();
         } else if (inBounds && selectedItems.length > 0 && !shiftHeld && !hitItem) {
-          // Click inside selection bounding box (but not on a shape) - start drag
-          startDragSelection({ row, col });
+          // Click inside selection bounding box (but not on a shape) - start
+          // drag. Flag it as an empty-space press so a zero-movement release
+          // deselects instead of keeping the selection.
+          startDragSelection({ row, col }, true);
           renderSelection();
         } else if (hitItem) {
           // Clicked on a shape (cell, line, or rect)
