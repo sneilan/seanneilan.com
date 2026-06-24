@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE, RECT_STRIDE, SCHEMA_VERSION};
+use crate::{GridCanvas, CELL_SIZE, LINE_STRIDE, RECT_STRIDE, SCHEMA_VERSION};
+use crate::buffers::{insert_record, delete_record, set_geom, resize_corners};
 
 #[wasm_bindgen]
 impl GridCanvas {
@@ -153,20 +154,14 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn delete_line(&mut self, idx: usize) {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_lines.len() {
-            self.drawn_lines.drain(start..start + 5);
-            self.render();
-        }
+        delete_record(&mut self.drawn_lines, LINE_STRIDE, idx);
+        self.render();
     }
 
     #[wasm_bindgen]
     pub fn delete_rect(&mut self, idx: usize) {
-        let start = idx * 6;
-        if start + 6 <= self.drawn_rects.len() {
-            self.drawn_rects.drain(start..start + 6);
-            self.render();
-        }
+        delete_record(&mut self.drawn_rects, RECT_STRIDE, idx);
+        self.render();
     }
 
     #[wasm_bindgen]
@@ -234,29 +229,12 @@ impl GridCanvas {
             return;
         }
 
-        let mut min_r = self.drawn_rects[start].min(self.drawn_rects[start + 2]);
-        let mut max_r = self.drawn_rects[start].max(self.drawn_rects[start + 2]);
-        let mut min_c = self.drawn_rects[start + 1].min(self.drawn_rects[start + 3]);
-        let mut max_c = self.drawn_rects[start + 1].max(self.drawn_rects[start + 3]);
-
-        // Top handles move the top edge; bottom handles move the bottom edge.
-        match handle {
-            0 | 1 | 2 => min_r = r,
-            4 | 5 | 6 => max_r = r,
-            _ => {}
-        }
-        // Left handles move the left edge; right handles move the right edge.
-        match handle {
-            0 | 6 | 7 => min_c = c,
-            2 | 3 | 4 => max_c = c,
-            _ => {}
-        }
-
-        // Re-normalize in case an edge was dragged past its opposite.
-        self.drawn_rects[start] = min_r.min(max_r);
-        self.drawn_rects[start + 1] = min_c.min(max_c);
-        self.drawn_rects[start + 2] = min_r.max(max_r);
-        self.drawn_rects[start + 3] = min_c.max(max_c);
+        let (r1, c1, r2, c2) = resize_corners(
+            self.drawn_rects[start], self.drawn_rects[start + 1],
+            self.drawn_rects[start + 2], self.drawn_rects[start + 3],
+            handle, r, c,
+        );
+        set_geom(&mut self.drawn_rects, RECT_STRIDE, idx, r1, c1, r2, c2);
         self.render();
     }
 
@@ -322,6 +300,7 @@ impl GridCanvas {
         let rc1 = self.drawn_rects[start + 1] as usize;
         let rr2 = self.drawn_rects[start + 2] as usize;
         let rc2 = self.drawn_rects[start + 3] as usize;
+        let fill = self.drawn_rects[start + 4];
 
         let min_br = box_r1.min(box_r2);
         let max_br = box_r1.max(box_r2);
@@ -333,8 +312,21 @@ impl GridCanvas {
         let rect_min_c = rc1.min(rc2);
         let rect_max_c = rc1.max(rc2);
 
-        // Check bounding box overlap
-        rect_max_r >= min_br && rect_min_r <= max_br && rect_max_c >= min_bc && rect_min_c <= max_bc
+        // Bounding box overlap
+        let overlap = rect_max_r >= min_br && rect_min_r <= max_br
+            && rect_max_c >= min_bc && rect_min_c <= max_bc;
+
+        if fill != 6 {
+            // Filled rect: any overlap with its solid body counts.
+            return overlap;
+        }
+
+        // Transparent rect: only its frame is "real", so a selection box that
+        // sits entirely inside the interior touches nothing. Require the box to
+        // overlap the bounding box AND not be strictly contained within it.
+        let strictly_inside = min_br > rect_min_r && max_br < rect_max_r
+            && min_bc > rect_min_c && max_bc < rect_max_c;
+        overlap && !strictly_inside
     }
 
     /// Add a line directly (for paste operations)
@@ -347,6 +339,39 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn add_rect(&mut self, r1: u32, c1: u32, r2: u32, c2: u32, fill: u32, outline: u32) {
         self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, fill, outline]);
+    }
+
+    /// Insert a line at a specific index, shifting later lines up. This is the
+    /// index-stable inverse of `delete_line`, used by the undo/redo edit layer.
+    /// `idx` is clamped to the end, so inserting at the count appends.
+    #[wasm_bindgen]
+    pub fn insert_line(&mut self, idx: usize, r1: u32, c1: u32, r2: u32, c2: u32, color: u32) {
+        insert_record(&mut self.drawn_lines, LINE_STRIDE, idx, &[r1, c1, r2, c2, color]);
+        self.render();
+    }
+
+    /// Insert a rect at a specific index, shifting later rects up. The
+    /// index-stable inverse of `delete_rect`. `idx` is clamped to the end.
+    #[wasm_bindgen]
+    pub fn insert_rect(&mut self, idx: usize, r1: u32, c1: u32, r2: u32, c2: u32, fill: u32, outline: u32) {
+        insert_record(&mut self.drawn_rects, RECT_STRIDE, idx, &[r1, c1, r2, c2, fill, outline]);
+        self.render();
+    }
+
+    /// Overwrite a line's geometry in place, leaving its color untouched. The
+    /// inverse-friendly primitive behind move/resize edits.
+    #[wasm_bindgen]
+    pub fn set_line(&mut self, idx: usize, r1: u32, c1: u32, r2: u32, c2: u32) {
+        set_geom(&mut self.drawn_lines, LINE_STRIDE, idx, r1, c1, r2, c2);
+        self.render();
+    }
+
+    /// Overwrite a rect's geometry in place, leaving its fill/outline untouched.
+    /// The inverse-friendly primitive behind move/resize edits.
+    #[wasm_bindgen]
+    pub fn set_rect(&mut self, idx: usize, r1: u32, c1: u32, r2: u32, c2: u32) {
+        set_geom(&mut self.drawn_rects, RECT_STRIDE, idx, r1, c1, r2, c2);
+        self.render();
     }
 
     /// Recolor a line's stroke (for recoloring a selection).

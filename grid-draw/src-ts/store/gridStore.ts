@@ -5,6 +5,33 @@ import {
   type Cell,
 } from '../utils/selection';
 import { getLineHandles, getRectHandles } from '../utils/handles';
+import { History } from './edits/history';
+import type { Edit, LineData, RectData, LineGeom, RectGeom } from './edits/types';
+
+// Single source of undo/redo history for the document. Lives at module scope
+// (one canvas per app); every mutating action routes its edits through here so
+// `applyEdit` stays the only code that touches the WASM mutators.
+const history = new History();
+
+function readLine(grid: GridCanvasWasm, idx: number): LineData {
+  const a = grid.get_line(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4] };
+}
+
+function readRect(grid: GridCanvasWasm, idx: number): RectData {
+  const a = grid.get_rect(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5] };
+}
+
+function lineGeom(grid: GridCanvasWasm, idx: number): LineGeom {
+  const a = grid.get_line(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
+
+function rectGeom(grid: GridCanvasWasm, idx: number): RectGeom {
+  const a = grid.get_rect(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
 
 // Types
 export type DrawTool = 'draw' | 'line' | 'rect' | 'select';
@@ -69,9 +96,17 @@ type GridState = {
   // Resize state - active when dragging a handle of a single line/rect
   resizeTarget: ResizeTarget | null;
 
+  // Geometry of the shape being resized, captured at gesture start so the
+  // whole resize commits as a single from→to edit on release.
+  resizeOrigin: LineGeom | RectGeom | null;
+
   // Output state
   jsonOutput: string;
   tensorOutput: string;
+
+  // Bumped on every commit/undo/redo so selectors (e.g. toolbar buttons) can
+  // react to undo/redo availability changes.
+  historyTick: number;
 };
 
 type GridActions = {
@@ -119,6 +154,21 @@ type GridActions = {
   paste: () => void;
   deleteSelected: () => void;
 
+  // Drawing commits (used by the canvas component; route through history)
+  beginDrawStroke: () => void;
+  drawCellAt: (row: number, col: number, filled: boolean) => void;
+  endDrawStroke: () => void;
+  commitLine: (r1: number, c1: number, r2: number, c2: number) => void;
+  commitRect: (r1: number, c1: number, r2: number, c2: number) => void;
+
+  // Undo/redo
+  commitEdits: (edits: Edit[], opts?: { coalesceKey?: string }) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+  resetHistory: () => void;
+
   // Output actions
   updateOutputs: () => void;
   importJson: (json: string) => void;
@@ -133,6 +183,15 @@ type GridActions = {
 };
 
 export type GridStore = GridState & GridActions;
+
+// Stable signature of a selection, so consecutive recolors of the SAME
+// selection coalesce into one undo step (but a different selection doesn't).
+function selectionSignature(items: SelectedItem[]): string {
+  return items
+    .map(i => (i.type === 'cell' ? `c:${i.row},${i.col}` : `${i.type[0]}:${i.index}`))
+    .sort()
+    .join('|');
+}
 
 // Helper to check if two items are equal
 function itemsEqual(a: SelectedItem, b: SelectedItem): boolean {
@@ -231,9 +290,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
   isSelecting: false,
   previousSelection: [],
   resizeTarget: null,
+  resizeOrigin: null,
 
   jsonOutput: '',
   tensorOutput: '',
+  historyTick: 0,
 
   // Grid actions
   setGrid: (grid) => set({ grid }),
@@ -249,15 +310,17 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Recolor the fill of every selected cell/rect and the stroke of every line.
+    const edits: Edit[] = [];
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        grid.set_cell_color(item.row, item.col, idx);
+        edits.push({ kind: 'setCellColor', row: item.row, col: item.col, from: grid.get_cell_color(item.row, item.col), to: idx });
       } else if (item.type === 'line') {
-        grid.set_line_color(item.index, idx);
+        edits.push({ kind: 'recolorLine', idx: item.index, from: grid.get_line(item.index)[4], to: idx });
       } else if (item.type === 'rect') {
-        grid.set_rect_fill(item.index, idx);
+        edits.push({ kind: 'recolorRectFill', idx: item.index, from: grid.get_rect(item.index)[4], to: idx });
       }
     }
+    get().commitEdits(edits, { coalesceKey: `fill:${selectionSignature(selectedItems)}` });
     get().renderSelection();
     get().updateOutputs();
   },
@@ -267,11 +330,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Outline only applies to rects.
+    const edits: Edit[] = [];
     for (const item of selectedItems) {
       if (item.type === 'rect') {
-        grid.set_rect_outline(item.index, idx);
+        edits.push({ kind: 'recolorRectOutline', idx: item.index, from: grid.get_rect(item.index)[5], to: idx });
       }
     }
+    get().commitEdits(edits, { coalesceKey: `outline:${selectionSignature(selectedItems)}` });
     get().renderSelection();
     get().updateOutputs();
   },
@@ -439,44 +504,49 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const cols = grid.get_cols();
       const newSelected: SelectedItem[] = [];
 
-      // Move cells with snapshot-then-apply to avoid in-place overlap clobber.
-      // Translating a block in-place one cell at a time corrupts cells whose
-      // source/destination footprints overlap (a destination write lands on a
-      // not-yet-moved source). So read every source first, clear all sources,
-      // then write all destinations.
-      const cellMoves: Array<{ toRow: number; toCol: number; color: number }> = [];
+      // Build one batch describing the whole move. For cells we emit all source
+      // clears first, then all destination writes, so overlapping source/dest
+      // footprints never clobber (a dest write can't land on a not-yet-cleared
+      // source). `from` states are captured pre-gesture, so undo restores the
+      // exact original contents of both source and destination cells.
+      const clears: Edit[] = [];
+      const writes: Edit[] = [];
       for (const item of selectedItems) {
         if (item.type === 'cell') {
-          // Only carry cells that are actually filled at their source.
           if (!grid.get_cell(item.row, item.col)) continue;
           const color = grid.get_cell_color(item.row, item.col);
           const newRow = item.row + deltaRow;
           const newCol = item.col + deltaCol;
-          grid.delete_cell(item.row, item.col);
+          clears.push({
+            kind: 'setCellState', row: item.row, col: item.col,
+            from: { filled: true, color }, to: { filled: false, color },
+          });
           if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-            cellMoves.push({ toRow: newRow, toCol: newCol, color });
+            writes.push({
+              kind: 'setCellState', row: newRow, col: newCol,
+              from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
+              to: { filled: true, color },
+            });
             newSelected.push({ type: 'cell', row: newRow, col: newCol });
           }
         }
       }
-      for (const m of cellMoves) {
-        grid.set_draw_color(m.color);
-        grid.set_cell(m.toRow, m.toCol, true);
-      }
 
-      // Move lines (indices may change if we delete, so collect first)
+      const lineEdits: Edit[] = [];
       const linesToMove = selectedItems.filter(i => i.type === 'line') as Array<{ type: 'line'; index: number }>;
       for (const item of linesToMove) {
-        grid.move_line(item.index, deltaRow, deltaCol);
+        lineEdits.push({ kind: 'moveLine', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'line', index: item.index });
       }
 
-      // Move rects
+      const rectEdits: Edit[] = [];
       const rectsToMove = selectedItems.filter(i => i.type === 'rect') as Array<{ type: 'rect'; index: number }>;
       for (const item of rectsToMove) {
-        grid.move_rect(item.index, deltaRow, deltaCol);
+        rectEdits.push({ kind: 'moveRect', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'rect', index: item.index });
       }
+
+      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits]);
 
       set({
         selectedItems: newSelected,
@@ -510,13 +580,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   startResize: (target) => {
-    set({ selectMode: 'resize', resizeTarget: target, isSelecting: true });
+    const { grid } = get();
+    // Capture the pre-resize geometry so finish/cancel can commit/restore it.
+    const resizeOrigin = grid
+      ? (target.shape === 'line' ? lineGeom(grid, target.index) : rectGeom(grid, target.index))
+      : null;
+    set({ selectMode: 'resize', resizeTarget: target, resizeOrigin, isSelecting: true });
   },
 
   updateResize: (cell) => {
     const { grid, resizeTarget } = get();
     if (!grid || !resizeTarget) return;
-    // Live-apply: the WASM setters re-render, so the shape follows the cursor.
+    // Live-apply (preview): the WASM setters re-render so the shape follows the
+    // cursor. This is NOT recorded; finishResize commits the single net edit.
     if (resizeTarget.shape === 'line') {
       grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
     } else {
@@ -526,25 +602,118 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   finishResize: (endCell) => {
-    const { grid, resizeTarget } = get();
+    const { grid, resizeTarget, resizeOrigin } = get();
     if (grid && resizeTarget) {
+      // Apply the final live position, then read the resulting geometry and
+      // record a single from(origin)→to(final) edit for undo.
       if (resizeTarget.shape === 'line') {
         grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+        if (resizeOrigin) {
+          get().commitEdits([{ kind: 'setLineGeom', idx: resizeTarget.index, from: resizeOrigin, to: lineGeom(grid, resizeTarget.index) }]);
+        }
       } else {
         grid.resize_rect(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+        if (resizeOrigin) {
+          get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin, to: rectGeom(grid, resizeTarget.index) }]);
+        }
       }
     }
-    set({ selectMode: null, resizeTarget: null, isSelecting: false });
+    set({ selectMode: null, resizeTarget: null, resizeOrigin: null, isSelecting: false });
     get().renderSelection();
     get().updateOutputs();
   },
 
   cancelResize: () => {
-    set({ selectMode: null, resizeTarget: null, isSelecting: false });
+    const { grid, resizeTarget, resizeOrigin } = get();
+    // The live preview already mutated the shape; restore the captured geometry.
+    if (grid && resizeTarget && resizeOrigin) {
+      if (resizeTarget.shape === 'line') {
+        grid.set_line(resizeTarget.index, resizeOrigin.r1, resizeOrigin.c1, resizeOrigin.r2, resizeOrigin.c2);
+      } else {
+        grid.set_rect(resizeTarget.index, resizeOrigin.r1, resizeOrigin.c1, resizeOrigin.r2, resizeOrigin.c2);
+      }
+    }
+    set({ selectMode: null, resizeTarget: null, resizeOrigin: null, isSelecting: false });
     get().renderSelection();
   },
 
   setMousePos: (cell) => set({ mousePos: cell }),
+
+  // --- Undo/redo plumbing ---------------------------------------------------
+
+  commitEdits: (edits, opts) => {
+    const { grid } = get();
+    if (!grid || edits.length === 0) return;
+    history.commit(grid, edits.length === 1 ? edits[0] : { kind: 'batch', edits }, opts);
+    set({ historyTick: get().historyTick + 1 });
+  },
+
+  undo: () => {
+    const { grid } = get();
+    if (!grid) return;
+    if (history.undoLast(grid)) {
+      // Indices/positions may have shifted; drop selection rather than show stale.
+      set({ selectedItems: [], historyTick: get().historyTick + 1 });
+      get().renderSelection();
+      get().updateOutputs();
+    }
+  },
+
+  redo: () => {
+    const { grid } = get();
+    if (!grid) return;
+    if (history.redoLast(grid)) {
+      set({ selectedItems: [], historyTick: get().historyTick + 1 });
+      get().renderSelection();
+      get().updateOutputs();
+    }
+  },
+
+  canUndo: () => history.canUndo(),
+  canRedo: () => history.canRedo(),
+  resetHistory: () => {
+    history.clear();
+    set({ historyTick: get().historyTick + 1 });
+  },
+
+  // --- Drawing commits (called by the canvas component) ---------------------
+
+  beginDrawStroke: () => {
+    history.beginBatch();
+  },
+
+  drawCellAt: (row, col, filled) => {
+    const { grid, colorIdx } = get();
+    if (!grid) return;
+    // colorIdx 6 (transparent) erases; otherwise place a filled cell of that color.
+    const to = filled && colorIdx < 6
+      ? { filled: true, color: colorIdx }
+      : { filled: false, color: colorIdx < 6 ? colorIdx : grid.get_cell_color(row, col) };
+    const from = { filled: grid.get_cell(row, col), color: grid.get_cell_color(row, col) };
+    // Skip no-op writes so dragging across the same cell doesn't bloat history.
+    if (from.filled === to.filled && (!to.filled || from.color === to.color)) return;
+    get().commitEdits([{ kind: 'setCellState', row, col, from, to }]);
+  },
+
+  endDrawStroke: () => {
+    history.endBatch();
+    set({ historyTick: get().historyTick + 1 });
+    get().updateOutputs();
+  },
+
+  commitLine: (r1, c1, r2, c2) => {
+    const { grid, colorIdx } = get();
+    if (!grid) return;
+    get().commitEdits([{ kind: 'addLine', idx: grid.get_line_count(), line: { r1, c1, r2, c2, color: colorIdx } }]);
+    get().updateOutputs();
+  },
+
+  commitRect: (r1, c1, r2, c2) => {
+    const { grid, colorIdx, outlineIdx } = get();
+    if (!grid) return;
+    get().commitEdits([{ kind: 'addRect', idx: grid.get_rect_count(), rect: { r1, c1, r2, c2, fill: colorIdx, outline: outlineIdx } }]);
+    get().updateOutputs();
+  },
 
   // Hit test for shapes - returns the topmost shape at position
   hitTestShapes: (x, y) => {
@@ -641,14 +810,24 @@ export const useGridStore = create<GridStore>((set, get) => ({
       col: clipboard.originCol + PASTE_OFFSET,
     };
 
+    // Build one batch so a paste is a single undo step. New lines/rects append,
+    // so their index is the current count plus however many we've added so far.
+    const edits: Edit[] = [];
+    let lineIdx = grid.get_line_count();
+    let rectIdx = grid.get_rect_count();
+
     // Paste cells
     for (const cell of clipboard.cells) {
       const newRow = anchor.row + cell.relRow;
       const newCol = anchor.col + cell.relCol;
 
       if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-        grid.set_draw_color(cell.color);
-        grid.set_cell(newRow, newCol, true);
+        edits.push({
+          kind: 'setCellState',
+          row: newRow, col: newCol,
+          from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
+          to: { filled: true, color: cell.color },
+        });
         newSelected.push({ type: 'cell', row: newRow, col: newCol });
       }
     }
@@ -661,9 +840,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const c2 = anchor.col + line.relC2;
 
       if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
-        grid.add_line(r1, c1, r2, c2, line.color);
-        // The new line is at the end
-        newSelected.push({ type: 'line', index: grid.get_line_count() - 1 });
+        edits.push({ kind: 'addLine', idx: lineIdx, line: { r1, c1, r2, c2, color: line.color } });
+        newSelected.push({ type: 'line', index: lineIdx });
+        lineIdx++;
       }
     }
 
@@ -675,12 +854,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const c2 = anchor.col + rect.relC2;
 
       if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
-        grid.add_rect(r1, c1, r2, c2, rect.color, rect.outline);
-        // The new rect is at the end
-        newSelected.push({ type: 'rect', index: grid.get_rect_count() - 1 });
+        edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1, c1, r2, c2, fill: rect.color, outline: rect.outline } });
+        newSelected.push({ type: 'rect', index: rectIdx });
+        rectIdx++;
       }
     }
 
+    get().commitEdits(edits);
     grid.render();
     set({ selectedItems: newSelected });
     get().renderSelection();
@@ -691,35 +871,40 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid, selectedItems, updateOutputs } = get();
     if (!grid || selectedItems.length === 0) return;
 
-    // Delete in reverse order of indices to avoid index shifting issues
-    // First, collect indices
+    // Build one batch. Capture each shape's data BEFORE any deletion so undo can
+    // re-insert it. Lines/rects are deleted high-index-first so earlier indices
+    // stay valid; the batch's reverse-order inverse re-inserts low-index-first.
     const lineIndices = selectedItems
       .filter(i => i.type === 'line')
       .map(i => (i as { type: 'line'; index: number }).index)
-      .sort((a, b) => b - a); // Reverse order
+      .sort((a, b) => b - a);
 
     const rectIndices = selectedItems
       .filter(i => i.type === 'rect')
       .map(i => (i as { type: 'rect'; index: number }).index)
-      .sort((a, b) => b - a); // Reverse order
+      .sort((a, b) => b - a);
 
-    // Delete cells
+    const edits: Edit[] = [];
+
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        grid.delete_cell(item.row, item.col);
+        const color = grid.get_cell_color(item.row, item.col);
+        edits.push({
+          kind: 'setCellState',
+          row: item.row, col: item.col,
+          from: { filled: true, color },
+          to: { filled: false, color },
+        });
       }
     }
-
-    // Delete lines (reverse order)
     for (const idx of lineIndices) {
-      grid.delete_line(idx);
+      edits.push({ kind: 'deleteLine', idx, line: readLine(grid, idx) });
     }
-
-    // Delete rects (reverse order)
     for (const idx of rectIndices) {
-      grid.delete_rect(idx);
+      edits.push({ kind: 'deleteRect', idx, rect: readRect(grid, idx) });
     }
 
+    get().commitEdits(edits);
     set({ selectedItems: [] });
     grid.render();
     updateOutputs();
@@ -911,7 +1096,29 @@ sparse = sparse.coalesce()`;
 
   clear: () => {
     const { grid, updateOutputs } = get();
-    grid?.clear();
+    if (!grid) return;
+
+    // Express clear as one undoable batch: remove every rect/line (high index
+    // first) and every filled cell. Undo restores the whole document.
+    const edits: Edit[] = [];
+    for (let i = grid.get_rect_count() - 1; i >= 0; i--) {
+      edits.push({ kind: 'deleteRect', idx: i, rect: readRect(grid, i) });
+    }
+    for (let i = grid.get_line_count() - 1; i >= 0; i--) {
+      edits.push({ kind: 'deleteLine', idx: i, line: readLine(grid, i) });
+    }
+    const rows = grid.get_rows();
+    const cols = grid.get_cols();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid.get_cell(r, c)) {
+          const color = grid.get_cell_color(r, c);
+          edits.push({ kind: 'setCellState', row: r, col: c, from: { filled: true, color }, to: { filled: false, color } });
+        }
+      }
+    }
+
+    get().commitEdits(edits);
     set({ selectedItems: [] });
     updateOutputs();
   },

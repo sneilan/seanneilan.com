@@ -20,6 +20,8 @@ function makeMock(rows = 40, cols = 80) {
     get_rect_count: () => rects.length / 6,
     get_rect: (idx) => new Uint32Array(rects.slice(idx * 6, idx * 6 + 6)),
     add_rect: (r1, c1, r2, c2, fill, outline) => { rects.push(r1, c1, r2, c2, fill, outline); },
+    insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rects.splice(idx * 6, 0, r1, c1, r2, c2, fill, outline); },
+    get_line_count: () => 0,
     set_draw_color: (c) => { drawColor = c; },
     set_cell: () => {},
     get_cell: () => false,

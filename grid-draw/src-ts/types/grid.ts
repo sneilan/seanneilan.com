@@ -64,6 +64,11 @@ export type GridCanvasWasm = {
   rect_intersects_box(rect_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   add_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
   add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  // Index-stable primitives backing the undo/redo edit layer.
+  insert_line(idx: number, r1: number, c1: number, r2: number, c2: number, color: number): void;
+  insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  set_line(idx: number, r1: number, c1: number, r2: number, c2: number): void;
+  set_rect(idx: number, r1: number, c1: number, r2: number, c2: number): void;
 
   // Import/Export
   export_json(): string;

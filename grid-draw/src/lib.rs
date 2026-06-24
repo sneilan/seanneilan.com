@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
+mod buffers;
 mod cells;
 mod rendering;
 mod shapes;

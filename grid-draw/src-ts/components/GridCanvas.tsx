@@ -3,6 +3,7 @@ import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, type SelectedItem } from '../store/gridStore';
 import { useTauriEvents } from '../hooks/useTauriEvents';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
+import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
@@ -76,7 +77,13 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     importJson, importTensor, clear,
     updateOutputs, renderSelection,
     setGrid,
+    beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
+    undo, redo, canUndo, canRedo,
   } = store;
+
+  // historyTick re-renders the component on any commit/undo/redo so the
+  // undo/redo buttons' enabled state stays in sync with the history stacks.
+  void store.historyTick;
 
   // Helper to get selected cells only
   const selectedCells = getSelectedCells();
@@ -151,12 +158,21 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         e.preventDefault();
         paste();
       }
+      // Undo: Ctrl/Cmd+Z. Redo: Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        redo();
+      }
       const n = parseInt(e.key);
       if (n >= 1 && n <= 7) setColorIdx(n - 1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, isWidgetMode, toggleFullscreen]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, isWidgetMode, toggleFullscreen]);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -213,7 +229,9 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         if (col >= cols || row >= rows) return;
         const mode = colorIdx === 6 ? false : !grid.get_cell(row, col);
         startDrawing(mode);
-        grid.set_cell(row, col, mode);
+        // Open one history batch for the whole stroke (mousedown → mouseup).
+        beginDrawStroke();
+        drawCellAt(row, col, mode);
         updateOutputs();
       } else if (tool === 'line') {
         const { col, row } = getIntersectionCoords(event);
@@ -292,7 +310,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection]
+    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt]
   );
 
   const handleMouseMove = useCallback(
@@ -346,7 +364,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       if (tool === 'draw' && isDrawing) {
         const { col, row } = getCellCoords(event);
         if (col >= cols || row >= rows) return;
-        grid.set_cell(row, col, drawMode);
+        drawCellAt(row, col, drawMode);
         updateOutputs();
       } else if (tool === 'line' && lineStart) {
         const { col, row } = getIntersectionCoords(event);
@@ -394,7 +412,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateOutputs]
+    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateOutputs, drawCellAt]
   );
 
   const handleMouseUp = useCallback(
@@ -402,19 +420,19 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       if (!grid) return;
 
       if (tool === 'draw') {
+        // Close the stroke's history batch (one undo step for the whole stroke).
+        endDrawStroke();
         stopDrawing();
       } else if (tool === 'line') {
         if (lineStart) {
           const { col, row } = getIntersectionCoords(event);
-          grid.draw_line(lineStart.row, lineStart.col, row, col);
-          updateOutputs();
+          commitLine(lineStart.row, lineStart.col, row, col);
         }
         finishLine();
       } else if (tool === 'rect') {
         if (rectStart) {
           const { col, row } = getIntersectionCoords(event);
-          grid.draw_rect(rectStart.row, rectStart.col, row, col);
-          updateOutputs();
+          commitRect(rectStart.row, rectStart.col, row, col);
         }
         finishRect();
       } else if (tool === 'select') {
@@ -430,7 +448,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         }
       }
     },
-    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, updateOutputs]
+    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, updateOutputs, endDrawStroke, commitLine, commitRect]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -578,6 +596,29 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
               </div>
             </div>
 
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                onClick={undo}
+                disabled={loading || !canUndo()}
+                size="sm"
+                className="flex-1"
+                title="Undo (Ctrl/Cmd+Z)"
+              >
+                <Undo2 className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                onClick={redo}
+                disabled={loading || !canRedo()}
+                size="sm"
+                className="flex-1"
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+              >
+                <Redo2 className="w-4 h-4" />
+              </Button>
+            </div>
+
             <Button
               variant="destructive"
               onClick={clear}
@@ -698,6 +739,29 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
             </div>
           </div>
 
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              onClick={undo}
+              disabled={loading || !canUndo()}
+              size="sm"
+              className="flex-1"
+              title="Undo (Ctrl/Cmd+Z)"
+            >
+              <Undo2 className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="outline"
+              onClick={redo}
+              disabled={loading || !canRedo()}
+              size="sm"
+              className="flex-1"
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+            >
+              <Redo2 className="w-4 h-4" />
+            </Button>
+          </div>
+
           <Button
             variant="destructive"
             onClick={clear}
@@ -709,7 +773,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
           </Button>
 
           <p className="text-xs text-gray-400">
-            \ line, m rect, s select, 1-7 colors
+            \ line, m rect, s select, 1-7 colors, ⌘Z undo
           </p>
         </div>
       </DraggablePanel>
