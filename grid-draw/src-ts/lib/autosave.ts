@@ -5,7 +5,7 @@
 // schedules a debounced save. Importing this module once (see main.tsx) installs it.
 
 import { useGridStore } from '../store/gridStore';
-import { saveDesign } from './dataServer';
+import { useServerStore } from '../store/serverStore';
 
 const DEBOUNCE_MS = 600;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -24,7 +24,7 @@ async function flush() {
   if (!design) return;
   s.setSaveState('saving');
   try {
-    await saveDesign(s.currentName, design, s.exportHistory());
+    await useServerStore.getState().saveDrawing(s.currentName, design, s.exportHistory());
     useGridStore.getState().setSaveState('saved');
   } catch (err) {
     useGridStore.getState().setSaveState('error', err instanceof Error ? err.message : String(err));

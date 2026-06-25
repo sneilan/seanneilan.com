@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
 import Gallery from './Gallery';
 import { cn } from '@/lib/utils';
-import { DATA_SERVER, saveDesign, getDesign, getDesignByName, teacherPredict } from '../lib/dataServer';
+import { useServerStore } from '../store/serverStore';
 
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
@@ -23,18 +23,6 @@ const COLORS = [
   { hex: '#22aa22', name: 'Green' },
   { hex: null, name: 'Transparent' },
 ];
-
-// One training run's live progress, as reported by the trainer to the data
-// server's /jobs endpoint and polled by the app.
-type TrainingJob = {
-  id: string;
-  status: string;
-  step: number;
-  total: number;
-  loss: number;
-  message: string;
-  updatedAt: string;
-};
 
 // An 8-char id of lowercase letters + digits, used to auto-name saved drawings.
 function randomName(): string {
@@ -100,6 +88,18 @@ function GridCanvas() {
   // undo/redo buttons' enabled state stays in sync with the history stacks.
   void store.historyTick;
 
+  // Server access goes through the server store (the network lives in .ts; this
+  // component never fetches). Live training jobs come from the store, polled below.
+  const jobs = useServerStore((s) => s.jobs);
+  const loadJobs = useServerStore((s) => s.loadJobs);
+  const saveDrawing = useServerStore((s) => s.saveDrawing);
+  const getDrawing = useServerStore((s) => s.getDrawing);
+  const getDrawingById = useServerStore((s) => s.getDrawingById);
+  const saveExamplePair = useServerStore((s) => s.saveExamplePair);
+  const runPredict = useServerStore((s) => s.runPredict);
+  const runTeacher = useServerStore((s) => s.runTeacher);
+  const runTraining = useServerStore((s) => s.runTraining);
+
   // Helper to get selected cells only
   const selectedCells = getSelectedCells();
 
@@ -148,7 +148,7 @@ function GridCanvas() {
     const name = randomName();
     setTrainStatus('Saving to gallery…');
     try {
-      await saveDesign(name, design, exportHistory());
+      await saveDrawing(name, design, exportHistory());
       // Adopt this name so subsequent edits auto-save to the same drawing (see
       // lib/autosave.ts), and reflect the shareable per-drawing URL.
       setCurrentName(name);
@@ -157,7 +157,7 @@ function GridCanvas() {
     } catch (err) {
       setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [serializeWholeGrid, exportHistory, setCurrentName]);
+  }, [serializeWholeGrid, exportHistory, setCurrentName, saveDrawing]);
 
   // One-shot init once the async WASM grid is ready: resolve a drawing from the
   // URL and load it. The actual work lives in store actions; this thin effect
@@ -172,7 +172,7 @@ function GridCanvas() {
     let cancelled = false;
     const nameMatch = window.location.pathname.match(/\/design\/([A-Za-z0-9_-]+)\/?$/);
     if (nameMatch) {
-      getDesignByName(nameMatch[1])
+      getDrawing(nameMatch[1])
         .then((d) => {
           if (cancelled) return;
           loadDesignWithHistory(d.design, d.history ?? null);
@@ -183,7 +183,7 @@ function GridCanvas() {
     }
     const id = new URLSearchParams(window.location.search).get('load');
     if (!id) return;
-    getDesign(Number(id))
+    getDrawingById(Number(id))
       .then((d) => {
         if (cancelled) return;
         loadDesignWithHistory(d.design, d.history ?? null);
@@ -193,28 +193,17 @@ function GridCanvas() {
       })
       .catch(() => { window.history.replaceState({}, '', BASE); });
     return () => { cancelled = true; };
-  }, [grid, loadDesignWithHistory, setCurrentName]);
+  }, [grid, loadDesignWithHistory, setCurrentName, getDrawing, getDrawingById]);
 
-  // Live training-job progress, polled from the data server.
-  const [jobs, setJobs] = useState<TrainingJob[]>([]);
+  // Live training-job progress, polled from the server store every 2s. The poll
+  // is a timer trigger; the actual network is in the store (loadJobs).
   useEffect(() => {
-    let alive = true;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${DATA_SERVER}/jobs`);
-        if (!res.ok) return;
-        const body = await res.json();
-        if (alive) setJobs(Array.isArray(body.jobs) ? body.jobs : []);
-      } catch {
-        // server not running; just show nothing
-      }
-    };
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => { alive = false; clearInterval(id); };
-  }, []);
+    loadJobs();
+    const id = setInterval(loadJobs, 2000);
+    return () => clearInterval(id);
+  }, [loadJobs]);
 
-  // POST the assembled {input, output} example to the Go data server.
+  // Save the assembled {input, output} example to the data server.
   const saveTrainingExample = useCallback(async () => {
     const example = buildTrainingExample();
     if (!example) {
@@ -223,32 +212,24 @@ function GridCanvas() {
     }
     setTrainStatus('Saving…');
     try {
-      const res = await fetch(`${DATA_SERVER}/examples`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(example),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json().catch(() => ({}));
+      await saveExamplePair(example.input, example.output);
       finishTrainingCapture();
-      setTrainStatus(`Saved${typeof body.count === 'number' ? ` (${body.count} total)` : ''}.`);
+      setTrainStatus('Saved.');
     } catch (err) {
       setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [buildTrainingExample, finishTrainingCapture]);
+  }, [buildTrainingExample, finishTrainingCapture, saveExamplePair]);
 
   // Kick off a training run on the server; progress shows in Training Jobs.
   const startTraining = useCallback(async () => {
     setTrainStatus('Starting training…');
     try {
-      const res = await fetch(`${DATA_SERVER}/train`, { method: 'POST' });
-      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
-      const body = await res.json();
-      setTrainStatus(`Training started (${body.id}). See Training Jobs.`);
+      const id = await runTraining();
+      setTrainStatus(`Training started (${id}). See Training Jobs.`);
     } catch (err) {
       setTrainStatus(`Train failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, []);
+  }, [runTraining]);
 
   // Send the current selection as an input to the trained model and stamp the
   // predicted design onto the grid (just below the input) via importJson-style
@@ -267,14 +248,7 @@ function GridCanvas() {
     const anchorCol = bounds ? bounds.minCol : 0;
     setTrainStatus('Predicting…');
     try {
-      const res = await fetch(`${DATA_SERVER}/predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = await res.json();
-      const out = body.output;
+      const out = await runPredict(input);
       if (!out) throw new Error('no output in response');
       useGridStore.getState().placeDesign(out, anchorRow, anchorCol);
       setTrainStatus(isEmptyDesign(out)
@@ -283,7 +257,7 @@ function GridCanvas() {
     } catch (err) {
       setTrainStatus(`Predict failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, []);
+  }, [runPredict]);
 
   // Ask the teacher model (Qwen3-Coder-480B) to draft the output, learning the
   // transform from the stored examples. Places it below the input to edit; with
@@ -301,7 +275,7 @@ function GridCanvas() {
     const anchorCol = bounds ? bounds.minCol : 0;
     setTrainStatus('Asking teacher (480B)…');
     try {
-      const { output, saved } = await teacherPredict(input, teacherAutoSave);
+      const { output, saved } = await runTeacher(input, teacherAutoSave);
       useGridStore.getState().placeDesign(output, anchorRow, anchorCol);
       setTrainStatus(isEmptyDesign(output)
         ? 'Teacher returned an EMPTY design.'
@@ -311,18 +285,18 @@ function GridCanvas() {
     } catch (err) {
       setTrainStatus(`Teacher failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [teacherAutoSave]);
+  }, [teacherAutoSave, runTeacher]);
 
   // Open a saved drawing in place (from the Gallery modal): fetch it with its
   // history, load it, adopt its name for auto-save, and reflect the URL — no
   // page navigation.
   const openDrawing = useCallback(async (name: string) => {
-    const d = await getDesignByName(name);
+    const d = await getDrawing(name);
     loadDesignWithHistory(d.design, d.history ?? null);
     setCurrentName(d.name);
     window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
     setGalleryOpen(false);
-  }, [loadDesignWithHistory, setCurrentName]);
+  }, [loadDesignWithHistory, setCurrentName, getDrawing]);
 
   // Handle window resize: just resize the visible viewport. The world is
   // infinite, so no content is ever lost — shrinking the window only narrows the

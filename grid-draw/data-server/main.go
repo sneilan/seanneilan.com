@@ -108,19 +108,18 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /examples", handleExamples)
 	mux.HandleFunc("GET /examples", handleExamplesList)
-	mux.HandleFunc("DELETE /examples/{id}", handleExampleDelete)
 	mux.HandleFunc("/count", handleCount)
 	mux.HandleFunc("/examples.jsonl", handleJSONL)
 	mux.HandleFunc("/predict", handlePredict)
 	mux.HandleFunc("/teacher", handleTeacher)
 	mux.HandleFunc("/predictions.jsonl", handlePredictionsJSONL)
+	mux.HandleFunc("GET /predictions", handlePredictionsList)
 	mux.HandleFunc("/jobs", handleJobs)
 	mux.HandleFunc("/train", handleTrain)
 	mux.HandleFunc("POST /designs", handleDesignCreate)
 	mux.HandleFunc("GET /designs", handleDesignList)
 	mux.HandleFunc("GET /designs/by-name/{name}", handleDesignByName)
 	mux.HandleFunc("GET /designs/{id}", handleDesignGet)
-	mux.HandleFunc("DELETE /designs/{id}", handleDesignDelete)
 
 	log.Printf("data-server listening on %s (db=%s)", addr, dbPath)
 	log.Fatal(http.ListenAndServe(addr, cors(mux)))
@@ -130,7 +129,7 @@ func main() {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -189,16 +188,6 @@ func handleExamplesList(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, map[string]any{"examples": out})
-}
-
-// handleExampleDelete removes one training example (to prune bad/auto-accepted
-// pairs from the viewer).
-func handleExampleDelete(w http.ResponseWriter, r *http.Request) {
-	if _, err := db.Exec(`DELETE FROM examples WHERE id = ?`, r.PathValue("id")); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]any{"count": countRows()})
 }
 
 func handleCount(w http.ResponseWriter, r *http.Request) {
@@ -284,6 +273,32 @@ func storePrediction(reqBody, respBody []byte) {
 // handlePredictionsJSONL streams logged predictions as newline-delimited JSON
 // ({"input":..,"output":..}), the same shape as /examples.jsonl so they can be
 // folded into training.
+// handlePredictionsList returns every logged prediction with its id/timestamp,
+// for the predictions view (an audit log + labeling queue — not every prediction
+// becomes a training example). Newest first.
+func handlePredictionsList(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(`SELECT id, created_at, input, output FROM predictions ORDER BY id DESC`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var created, in, outp string
+		if err := rows.Scan(&id, &created, &in, &outp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out = append(out, map[string]any{
+			"id": id, "createdAt": created,
+			"input": json.RawMessage(in), "output": json.RawMessage(outp),
+		})
+	}
+	writeJSON(w, map[string]any{"predictions": out})
+}
+
 func handlePredictionsJSONL(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Query(`SELECT input, output FROM predictions ORDER BY id`)
 	if err != nil {
@@ -478,13 +493,6 @@ func handleDesignByName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, d)
 }
 
-func handleDesignDelete(w http.ResponseWriter, r *http.Request) {
-	if _, err := db.Exec(`DELETE FROM designs WHERE id = ?`, r.PathValue("id")); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
-}
 
 func setJob(j job) {
 	j.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

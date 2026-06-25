@@ -1,5 +1,7 @@
-// Client for the Go data-server (examples, designs, jobs, predict). Centralized
-// so the editor and the gallery share one base URL and request shape.
+// The data layer for the Go data-server. This is the ONLY module allowed to call
+// fetch() (enforced by eslint); components reach the server through these typed
+// functions via TanStack Query (useQuery/useMutation). The store is append-only:
+// there are no delete operations.
 
 import type { DesignJSON } from '../store/gridStore';
 import type { Edit } from '../store/edits/types';
@@ -7,6 +9,18 @@ import type { Edit } from '../store/edits/types';
 export const DATA_SERVER =
   (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_DATA_SERVER ??
   'http://localhost:7843';
+
+// The single fetch wrapper. Returns parsed JSON, throws on a non-2xx status so
+// TanStack Query surfaces it as an error state (no per-call error plumbing).
+async function api<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${DATA_SERVER}${path}`, body === undefined ? undefined : {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${path} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return res.json() as Promise<T>;
+}
 
 /** Serialized undo/redo stacks persisted alongside a saved drawing. */
 export type HistoryStacks = { undo: Edit[]; redo: Edit[] };
@@ -19,88 +33,78 @@ export type SavedDesign = {
   history?: HistoryStacks;
 };
 
-export type TrainingExample = {
-  input: DesignJSON;
-  output: DesignJSON;
+export type TrainingExample = { input: DesignJSON; output: DesignJSON };
+
+// A stored training example / prediction with its id + timestamp.
+export type SavedExample = { id: number; createdAt: string; input: DesignJSON; output: DesignJSON };
+export type SavedPrediction = SavedExample;
+
+// One training run's live progress, as polled from /jobs.
+export type TrainingJob = {
+  id: string;
+  status: string;
+  step: number;
+  total: number;
+  loss: number;
+  message: string;
+  updatedAt: string;
 };
 
-// A stored training example with its id + timestamp, for the training-data viewer.
-export type SavedExample = {
-  id: number;
-  createdAt: string;
-  input: DesignJSON;
-  output: DesignJSON;
-};
+// --- Designs (gallery) ------------------------------------------------------
 
-async function jsonOrThrow(res: Response) {
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+export async function listDesigns(): Promise<SavedDesign[]> {
+  return (await api<{ designs: SavedDesign[] }>('/designs')).designs ?? [];
+}
+
+export function getDesign(id: number): Promise<SavedDesign> {
+  return api<SavedDesign>(`/designs/${id}`);
+}
+
+export function getDesignByName(name: string): Promise<SavedDesign> {
+  return api<SavedDesign>(`/designs/by-name/${encodeURIComponent(name)}`);
+}
+
+export async function saveDesign(name: string, design: DesignJSON, history?: HistoryStacks): Promise<number> {
+  return (await api<{ id: number }>('/designs', { name, design, history })).id;
+}
+
+// --- Training examples ------------------------------------------------------
+
+export async function listExamples(): Promise<SavedExample[]> {
+  return (await api<{ examples: SavedExample[] }>('/examples')).examples ?? [];
+}
+
+export async function saveExample(input: DesignJSON, output: DesignJSON): Promise<number> {
+  return (await api<{ id: number }>('/examples', { input, output })).id;
+}
+
+// --- Prediction + teacher ---------------------------------------------------
+
+export function predict(input: DesignJSON): Promise<{ output: DesignJSON }> {
+  return api<{ output: DesignJSON }>('/predict', { input });
 }
 
 // Ask the teacher model (Qwen3-Coder-480B via OpenRouter, proxied by the Go
 // server) to draft the OUTPUT for an INPUT, learning the transform from the
 // stored examples. With save=true the schema-validated pair is auto-accepted
 // into the training set.
-export async function teacherPredict(
-  input: DesignJSON,
-  save: boolean,
-): Promise<{ output: DesignJSON; saved: boolean }> {
-  return jsonOrThrow(
-    await fetch(`${DATA_SERVER}/teacher`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input, save }),
-    }),
-  );
+export function teacherPredict(input: DesignJSON, save: boolean): Promise<{ output: DesignJSON; saved: boolean }> {
+  return api<{ output: DesignJSON; saved: boolean }>('/teacher', { input, save });
 }
 
-export async function listExamples(): Promise<SavedExample[]> {
-  const body = await jsonOrThrow(await fetch(`${DATA_SERVER}/examples`));
-  return Array.isArray(body.examples) ? body.examples : [];
+// Every /predict and /teacher round-trip is logged (append-only audit log /
+// labeling queue) — including the empty/failed ones. Not every prediction is an
+// example.
+export async function listPredictions(): Promise<SavedPrediction[]> {
+  return (await api<{ predictions: SavedPrediction[] }>('/predictions')).predictions ?? [];
 }
 
-export async function deleteExample(id: number): Promise<void> {
-  await jsonOrThrow(await fetch(`${DATA_SERVER}/examples/${id}`, { method: 'DELETE' }));
+// --- Training jobs ----------------------------------------------------------
+
+export async function listJobs(): Promise<TrainingJob[]> {
+  return (await api<{ jobs: TrainingJob[] }>('/jobs')).jobs ?? [];
 }
 
-export async function listDesigns(): Promise<SavedDesign[]> {
-  const body = await jsonOrThrow(await fetch(`${DATA_SERVER}/designs`));
-  return Array.isArray(body.designs) ? body.designs : [];
-}
-
-export async function getDesign(id: number): Promise<SavedDesign> {
-  return jsonOrThrow(await fetch(`${DATA_SERVER}/designs/${id}`));
-}
-
-export async function getDesignByName(name: string): Promise<SavedDesign> {
-  return jsonOrThrow(await fetch(`${DATA_SERVER}/designs/by-name/${encodeURIComponent(name)}`));
-}
-
-export async function saveDesign(
-  name: string,
-  design: DesignJSON,
-  history?: HistoryStacks,
-): Promise<number> {
-  const body = await jsonOrThrow(
-    await fetch(`${DATA_SERVER}/designs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, design, history }),
-    }),
-  );
-  return body.id as number;
-}
-
-export async function deleteDesign(id: number): Promise<void> {
-  await jsonOrThrow(await fetch(`${DATA_SERVER}/designs/${id}`, { method: 'DELETE' }));
-}
-
-export async function listTrainingExamples(): Promise<TrainingExample[]> {
-  const res = await fetch(`${DATA_SERVER}/examples.jsonl`);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = await res.text();
-  return text
-    .split('\n')
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as TrainingExample);
+export function startTraining(): Promise<{ id: string }> {
+  return api<{ id: string }>('/train', {});
 }
