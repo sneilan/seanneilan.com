@@ -2,16 +2,21 @@
 // so the editor and the gallery share one base URL and request shape.
 
 import type { DesignJSON } from '../store/gridStore';
+import type { Edit } from '../store/edits/types';
 
 export const DATA_SERVER =
   (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_DATA_SERVER ??
   'http://localhost:7843';
+
+/** Serialized undo/redo stacks persisted alongside a saved drawing. */
+export type HistoryStacks = { undo: Edit[]; redo: Edit[] };
 
 export type SavedDesign = {
   id: number;
   createdAt: string;
   name: string;
   design: DesignJSON;
+  history?: HistoryStacks;
 };
 
 export type TrainingExample = {
@@ -37,12 +42,16 @@ export async function getDesignByName(name: string): Promise<SavedDesign> {
   return jsonOrThrow(await fetch(`${DATA_SERVER}/designs/by-name/${encodeURIComponent(name)}`));
 }
 
-export async function saveDesign(name: string, design: DesignJSON): Promise<number> {
+export async function saveDesign(
+  name: string,
+  design: DesignJSON,
+  history?: HistoryStacks,
+): Promise<number> {
   const body = await jsonOrThrow(
     await fetch(`${DATA_SERVER}/designs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, design }),
+      body: JSON.stringify({ name, design, history }),
     }),
   );
   return body.id as number;

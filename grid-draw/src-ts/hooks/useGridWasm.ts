@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, RefObject } from 'react';
 import type { GridCanvasWasm, GridWasmState } from '../types/grid';
+import { useGridStore } from '../store/gridStore';
 
 export type { GridCanvasWasm, GridWasmState };
 
@@ -51,6 +52,9 @@ export function useGridWasm(
         // Use from_canvas to pass element directly (works in shadow DOM)
         const grid = wasm.GridCanvas.from_canvas(canvas, initialRows, initialCols);
         guardSchema(grid);
+        // Publish the grid handle to the store so actions can mutate it directly,
+        // rather than the component bridging it across with a useEffect.
+        useGridStore.getState().setGrid(grid);
         setState({
           grid,
           loading: false,

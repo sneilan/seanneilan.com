@@ -133,14 +133,26 @@ type GridState = {
   tensorOutput: string;
 
   // Bumped on every commit/undo/redo so selectors (e.g. toolbar buttons) can
-  // react to undo/redo availability changes.
+  // react to undo/redo availability changes, and so the autosave subscription
+  // knows the document changed.
   historyTick: number;
+
+  // The drawing currently being edited (from the /design/<name>/ URL or a manual
+  // "Save to Gallery"). When set, edits auto-save to it (see lib/autosave.ts).
+  currentName: string | null;
+  // Auto-save status, surfaced in the UI. 'idle' before any save this session.
+  saveState: 'idle' | 'saving' | 'saved' | 'error';
+  saveMessage: string;
 };
 
 type GridActions = {
   // Grid actions
   setGrid: (grid: GridCanvasWasm | null) => void;
   setGridSize: (size: { rows: number; cols: number }) => void;
+  // Identify the document being edited (enables auto-save to that name).
+  setCurrentName: (name: string | null) => void;
+  // Report auto-save progress for the UI; message is optional context.
+  setSaveState: (state: 'idle' | 'saving' | 'saved' | 'error', message?: string) => void;
 
   // Drawing actions
   setTool: (tool: DrawTool) => void;
@@ -168,6 +180,8 @@ type GridActions = {
 
   // Selection actions
   setSelectedItems: (items: SelectedItem[]) => void;
+  // Select every element on the grid (cells, lines, rects, texts).
+  selectAll: () => void;
   addItemToSelection: (item: SelectedItem) => void;
   removeItemFromSelection: (item: SelectedItem) => void;
   clearSelection: () => void;
@@ -223,6 +237,12 @@ type GridActions = {
   serializeWholeGrid: () => DesignJSON | null;
   // Replace the whole grid with a saved design (clear, then place at origin).
   loadDesign: (design: DesignJSON) => void;
+  // Snapshot the undo/redo stacks for persistence (auto-save).
+  exportHistory: () => { undo: Edit[]; redo: Edit[] };
+  // Replace the grid with a saved design AND restore its undo/redo stacks,
+  // so reopening a drawing continues undo/redo exactly as before. When stacks
+  // are absent, behaves like loadDesign with a clean (single-step) history.
+  loadDesignWithHistory: (design: DesignJSON, stacks: { undo?: Edit[]; redo?: Edit[] } | null) => void;
 
   // Output actions
   updateOutputs: () => void;
@@ -458,10 +478,15 @@ export const useGridStore = create<GridStore>((set, get) => ({
   jsonOutput: '',
   tensorOutput: '',
   historyTick: 0,
+  currentName: null,
+  saveState: 'idle',
+  saveMessage: '',
 
   // Grid actions
   setGrid: (grid) => set({ grid }),
   setGridSize: (gridSize) => set({ gridSize }),
+  setCurrentName: (currentName) => set({ currentName }),
+  setSaveState: (saveState, message = '') => set({ saveState, saveMessage: message }),
 
   // Drawing actions
   setTool: (tool) => {
@@ -604,6 +629,18 @@ export const useGridStore = create<GridStore>((set, get) => ({
     // Repaint so the canvas always matches the selection (no stale boxes/handles).
     get().renderSelection();
     setTimeout(() => get().updateOutputs(), 0);
+  },
+
+  selectAll: () => {
+    const { grid } = get();
+    if (!grid) return;
+    if (get().textEdit) get().commitTextEdit();
+    const items = allItems(grid);
+    if (items.length === 0) return;
+    // Switch to the select tool so handles/box behave as expected post-select.
+    set({ tool: 'select', selectedItems: items });
+    get().renderSelection();
+    get().updateOutputs();
   },
 
   addItemToSelection: (item) => {
@@ -1312,6 +1349,24 @@ export const useGridStore = create<GridStore>((set, get) => ({
     get().clear();                 // undoable: wipes the current grid
     get().placeDesign(design, 0, 0); // undoable: stamps the saved design
     set({ selectedItems: [] });
+    get().renderSelection();
+  },
+
+  exportHistory: () => history.exportStacks(),
+
+  loadDesignWithHistory: (design, stacks) => {
+    const { grid } = get();
+    if (!grid) return;
+    // Bring the grid to the saved final state, then drop the synthetic load
+    // edits and install the persisted stacks so the grid (= top of undo stack)
+    // and history stay consistent. Without stacks, keep a clean single history.
+    get().loadDesign(design);
+    if (stacks && ((stacks.undo?.length ?? 0) > 0 || (stacks.redo?.length ?? 0) > 0)) {
+      history.importStacks(stacks);
+    } else {
+      history.clear();
+    }
+    set({ selectedItems: [], historyTick: get().historyTick + 1 });
     get().renderSelection();
   },
 

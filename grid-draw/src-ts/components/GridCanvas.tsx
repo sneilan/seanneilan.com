@@ -1,28 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
-import { useTauriEvents } from '../hooks/useTauriEvents';
+import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem, type DesignJSON } from '../store/gridStore';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
 import { cn } from '@/lib/utils';
-import type { AnywidgetModel } from '../types/anywidget';
 import { DATA_SERVER, saveDesign, getDesign, getDesignByName } from '../lib/dataServer';
 
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
-
-interface GridCanvasProps {
-  /** Anywidget model for Python communication (widget mode) */
-  anywidgetModel?: AnywidgetModel;
-  /** Widget width in pixels (widget mode only) */
-  widgetWidth?: number;
-  /** Widget height in pixels (widget mode only) */
-  widgetHeight?: number;
-}
 
 const COLORS = [
   { hex: '#000000', name: 'Black' },
@@ -54,28 +43,16 @@ function randomName(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-function calculateGridSize(widgetWidth?: number, widgetHeight?: number) {
-  if (widgetWidth && widgetHeight) {
-    // Widget mode: use provided dimensions
-    const cols = Math.floor(widgetWidth / CELL_SIZE);
-    const rows = Math.floor((widgetHeight - HEADER_HEIGHT) / CELL_SIZE);
-    return { rows: Math.max(10, rows), cols: Math.max(10, cols) };
-  }
-  // Standalone mode: fill viewport
+function calculateGridSize() {
   const cols = Math.floor(window.innerWidth / CELL_SIZE);
   const rows = Math.floor((window.innerHeight - HEADER_HEIGHT) / CELL_SIZE);
   return { rows: Math.max(10, rows), cols: Math.max(10, cols) };
 }
 
-function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasProps = {}) {
-  const isWidgetMode = !!anywidgetModel;
-  const [gridSize, setGridSize] = useState(() => calculateGridSize(widgetWidth, widgetHeight));
-  const [isFullscreen, setIsFullscreen] = useState(false);
+function GridCanvas() {
+  const [gridSize, setGridSize] = useState(() => calculateGridSize());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { grid, loading, error } = useGridWasm(canvasRef, gridSize.rows, gridSize.cols);
-
-  // Listen for tensor data pushed from Python via the Tauri backend
-  useTauriEvents();
 
   // Get state and actions from store
   const store = useGridStore();
@@ -88,7 +65,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     rectStart, startRect, finishRect,
     textSize, pickTextSize,
     beginTextEdit, typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
-    selectedItems, setSelectedItems,
+    selectedItems, setSelectedItems, selectAll,
     clipboard, copy, paste, deleteSelected,
     selectMode, isSelecting,
     selectBoxStart, selectDragStart,
@@ -100,13 +77,13 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     jsonOutput, tensorOutput,
     importJson, importTensor, clear,
     updateOutputs, renderSelection,
-    setGrid,
     beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
     undo, redo, canUndo, canRedo,
     captureMode, captureInput,
     startTrainingCapture, captureSetInput, buildTrainingExample,
     finishTrainingCapture, cancelTrainingCapture,
-    serializeWholeGrid, loadDesign,
+    serializeWholeGrid, exportHistory, loadDesignWithHistory,
+    currentName, setCurrentName, saveState,
   } = store;
 
   // historyTick re-renders the component on any commit/undo/redo so the
@@ -119,6 +96,25 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
   // Training-data capture/predict status shown in the Training Data panel.
   const [trainStatus, setTrainStatus] = useState<string>('');
 
+  // Pan/zoom view applied to the canvas as a CSS transform: screen = base +
+  // (tx,ty) + scale·local, with transform-origin at the canvas top-left. Because
+  // pointer math reads getBoundingClientRect() (which honors the transform),
+  // cell hit-testing stays correct at any zoom without extra bookkeeping.
+  const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 12;
+  // Mirror `view` in a ref so the mouse handlers can read the latest pan/zoom
+  // without listing `view` in their deps (which changes on every pan frame).
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  // Pan: hold Space or use the middle mouse button and drag to move the canvas.
+  // isSpaceDown gates left-drag panning; spaceHeld drives the cursor; panRef
+  // holds the in-progress gesture's start point and the view at gesture start.
+  const isSpaceDown = useRef(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const panRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+
   // Save the whole current drawing to the gallery under an auto-generated
   // 8-char [a-z0-9] name (no prompt).
   const saveToGallery = useCallback(async () => {
@@ -130,41 +126,73 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     const name = randomName();
     setTrainStatus('Saving to gallery…');
     try {
-      await saveDesign(name, design);
-      // Reflect the shareable per-drawing URL in the address bar.
+      await saveDesign(name, design, exportHistory());
+      // Adopt this name so subsequent edits auto-save to the same drawing (see
+      // lib/autosave.ts), and reflect the shareable per-drawing URL.
+      setCurrentName(name);
       window.history.replaceState({}, '', `${BASE}design/${name}/`);
-      setTrainStatus(`Saved as ${name}.`);
+      setTrainStatus(`Saved as ${name}. Auto-saving changes.`);
     } catch (err) {
       setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [serializeWholeGrid]);
+  }, [serializeWholeGrid, exportHistory, setCurrentName]);
 
   // On load, resolve a drawing from the URL and render it:
   //   <base>design/<name>/ shareable per-drawing URL (kept in the address bar)
   //   <base>?load=<id>      legacy id-based open from the gallery (URL cleaned)
+  // Grow the grid so a loaded design fits at origin (0,0). The grid never
+  // shrinks (see the resize handler), so this only ever expands it; without
+  // this, placeDesign would clip cells/shapes that fall outside the current
+  // viewport-sized grid (e.g. a large drawing opened in a small window).
+  const growGridToFit = useCallback((design: DesignJSON) => {
+    if (!grid) return;
+    const cols = Math.max(grid.get_cols(), design.w);
+    const rows = Math.max(grid.get_rows(), design.h);
+    if (cols > grid.get_cols() || rows > grid.get_rows()) {
+      grid.resize(rows, cols);
+      setGridSize({ rows, cols });
+    }
+  }, [grid]);
+
+  // One-shot init once the async WASM grid is ready: resolve a drawing from the
+  // URL and load it. The actual work lives in store actions; this thin effect
+  // only bridges the external readiness signal (grid) into those actions.
+  // Auto-save itself is wired separately as a store subscription (lib/autosave.ts),
+  // NOT here — setting currentName AFTER loadDesignWithHistory's history bump is
+  // what keeps the load from triggering a redundant save.
   useEffect(() => {
-    if (isWidgetMode || !grid) return;
+    if (!grid) return;
     let cancelled = false;
     const nameMatch = window.location.pathname.match(/\/design\/([A-Za-z0-9_-]+)\/?$/);
     if (nameMatch) {
       getDesignByName(nameMatch[1])
-        .then((d) => { if (!cancelled) loadDesign(d.design); })
+        .then((d) => {
+          if (cancelled) return;
+          growGridToFit(d.design);
+          loadDesignWithHistory(d.design, d.history ?? null);
+          setCurrentName(d.name); // edits now auto-save to this drawing
+        })
         .catch(() => setTrainStatus(`No drawing named "${nameMatch[1]}".`));
       return () => { cancelled = true; };
     }
     const id = new URLSearchParams(window.location.search).get('load');
     if (!id) return;
     getDesign(Number(id))
-      .then((d) => { if (!cancelled) loadDesign(d.design); })
-      .catch(() => {})
-      .finally(() => { window.history.replaceState({}, '', BASE); });
+      .then((d) => {
+        if (cancelled) return;
+        growGridToFit(d.design);
+        loadDesignWithHistory(d.design, d.history ?? null);
+        setCurrentName(d.name);
+        // Switch the URL to the shareable per-drawing form so auto-save persists.
+        window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
+      })
+      .catch(() => { window.history.replaceState({}, '', BASE); });
     return () => { cancelled = true; };
-  }, [grid, isWidgetMode, loadDesign]);
+  }, [grid, loadDesignWithHistory, growGridToFit, setCurrentName]);
 
-  // Live training-job progress, polled from the data server (standalone only).
+  // Live training-job progress, polled from the data server.
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   useEffect(() => {
-    if (isWidgetMode) return;
     let alive = true;
     const poll = async () => {
       try {
@@ -179,7 +207,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     poll();
     const id = setInterval(poll, 2000);
     return () => { alive = false; clearInterval(id); };
-  }, [isWidgetMode]);
+  }, []);
 
   // POST the assembled {input, output} example to the Go data server.
   const saveTrainingExample = useCallback(async () => {
@@ -250,64 +278,33 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     }
   }, []);
 
-  // Sync grid reference to store
+  // Handle window resize. The grid only ever GROWS to fit the viewport — it is
+  // never shrunk, because grid.resize() truncates (drops) any cells outside the
+  // new bounds. Shrinking the window would otherwise permanently destroy content
+  // that scrolls off-screen; keeping the larger grid lets it reappear when the
+  // window grows again (and it's reachable meanwhile by zooming out).
   useEffect(() => {
-    setGrid(grid);
-  }, [grid, setGrid]);
-
-  // Handle window resize (only in standalone mode)
-  useEffect(() => {
-    if (isWidgetMode) return; // Widget mode uses fixed dimensions
-
     const handleResize = () => {
-      const newSize = calculateGridSize();
-      setGridSize(newSize);
-      if (grid) {
-        grid.resize(newSize.rows, newSize.cols);
-      }
+      const fit = calculateGridSize();
+      setGridSize((prev) => {
+        const rows = Math.max(prev.rows, fit.rows);
+        const cols = Math.max(prev.cols, fit.cols);
+        if (rows === prev.rows && cols === prev.cols) return prev;
+        grid?.resize(rows, cols);
+        return { rows, cols };
+      });
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [grid, isWidgetMode]);
+  }, [grid]);
 
-  // Send data to Python (widget mode only)
-  const sendToPython = useCallback(() => {
-    if (!anywidgetModel || !grid) return;
-
-    const tensorStr = grid.export_pytorch_tensor();
-    const jsonStr = grid.export_json();
-
-    try {
-      const tensorData = JSON.parse(tensorStr);
-      const jsonData = JSON.parse(jsonStr);
-
-      anywidgetModel.set('tensor_data', tensorData);
-      anywidgetModel.set('json_data', jsonData);
-      anywidgetModel.save_changes();
-    } catch (e) {
-      console.error('Failed to send data to Python:', e);
-    }
-  }, [anywidgetModel, grid]);
-
-  // Fullscreen toggle (Tauri only)
-  const toggleFullscreen = useCallback(async () => {
-    if (!('__TAURI__' in window)) return;
-    const next = !isFullscreen;
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('set_fullscreen', { enabled: next });
-    setIsFullscreen(next);
-  }, [isFullscreen]);
-
-  // Keyboard shortcuts (disabled in widget mode to avoid notebook conflicts)
+  // Keyboard shortcuts
   useEffect(() => {
-    if (isWidgetMode) return; // Skip global shortcuts in widget mode
-
     const onKey = (e: KeyboardEvent) => {
       // While typing a text shape, the dedicated text handler owns the keyboard;
       // don't let tool/color shortcuts fire from the letters being typed.
       if (useGridStore.getState().textEdit) return;
-      if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
       if (e.key === '\\') setTool(tool === 'line' ? 'draw' : 'line');
       if (e.key === 'm') setTool(tool === 'rect' ? 'draw' : 'rect');
       if (e.key === 't') setTool(tool === 'text' ? 'draw' : 'text');
@@ -315,6 +312,10 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItems.length > 0) {
         e.preventDefault();
         deleteSelected();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        selectAll();
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c' && selectedItems.length > 0) {
         e.preventDefault();
@@ -338,12 +339,11 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, isWidgetMode, toggleFullscreen]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, selectAll]);
 
   // Inline text typing. Active only while a text shape is being edited; captures
   // printable characters, Backspace to delete, Enter to commit, Esc to cancel.
   useEffect(() => {
-    if (isWidgetMode) return;
     const onKey = (e: KeyboardEvent) => {
       if (!useGridStore.getState().textEdit) return;
       if (e.key === 'Enter') { e.preventDefault(); commitTextEdit(); return; }
@@ -357,7 +357,56 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isWidgetMode, commitTextEdit, cancelTextEdit, backspaceText, typeTextChar]);
+  }, [commitTextEdit, cancelTextEdit, backspaceText, typeTextChar]);
+
+  // Scroll-to-zoom centered on the cursor. Attached natively (not via React's
+  // onWheel) so we can preventDefault — React's wheel listener is passive and
+  // can't stop the page from scrolling. The canvas's base top-left is fixed at
+  // (0, HEADER_HEIGHT); we solve for the new translation that keeps the grid
+  // point under the cursor stationary as the scale changes.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setView((v) => {
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.scale * factor));
+        if (scale === v.scale) return v;
+        // Grid-local point currently under the cursor (base origin: 0, HEADER).
+        const lx = (e.clientX - v.tx) / v.scale;
+        const ly = (e.clientY - HEADER_HEIGHT - v.ty) / v.scale;
+        // New translation so that same local point stays under the cursor.
+        const tx = e.clientX - scale * lx;
+        const ty = e.clientY - HEADER_HEIGHT - scale * ly;
+        return { scale, tx, ty };
+      });
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Track Spacebar to enable pan-drag. External DOM subscription (keydown/keyup);
+  // ignored while editing text so the space still types. preventDefault stops the
+  // page from scrolling on space.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || useGridStore.getState().textEdit) return;
+      e.preventDefault();
+      isSpaceDown.current = true;
+      setSpaceHeld(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      isSpaceDown.current = false;
+      setSpaceHeld(false);
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
+  }, []);
+
+  const resetView = useCallback(() => setView({ scale: 1, tx: 0, ty: 0 }), []);
 
   // Coordinate helpers
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -407,6 +456,14 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!grid) return;
+      // Pan gesture (middle mouse, or Space-held left drag) takes precedence over
+      // every tool and never mutates the document.
+      if (event.button === 1 || (event.button === 0 && isSpaceDown.current)) {
+        event.preventDefault();
+        panRef.current = { x: event.clientX, y: event.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty };
+        event.currentTarget.style.cursor = 'grabbing';
+        return;
+      }
       grid.set_draw_color(colorIdx);
       grid.set_outline_color(outlineIdx);
       const cols = grid.get_cols();
@@ -510,6 +567,15 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!grid) return;
+
+      // Active pan: translate the view 1:1 with the cursor (tx/ty are screen px).
+      if (panRef.current) {
+        const p = panRef.current;
+        const dx = event.clientX - p.x;
+        const dy = event.clientY - p.y;
+        setView((v) => ({ ...v, tx: p.tx + dx, ty: p.ty + dy }));
+        return;
+      }
 
       const coords = getCellCoords(event);
       setMousePos(coords);
@@ -618,6 +684,13 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!grid) return;
 
+      // End a pan gesture; restore the appropriate idle cursor.
+      if (panRef.current) {
+        panRef.current = null;
+        event.currentTarget.style.cursor = isSpaceDown.current ? 'grab' : 'crosshair';
+        return;
+      }
+
       if (tool === 'draw') {
         // Close the stroke's history batch (one undo step for the whole stroke).
         endDrawStroke();
@@ -651,6 +724,11 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
   );
 
   const handleMouseLeave = useCallback(() => {
+    // Abandon any in-progress pan when the cursor leaves the canvas.
+    if (panRef.current) {
+      panRef.current = null;
+      return;
+    }
     if (tool === 'draw') {
       stopDrawing();
     } else if (tool === 'line') {
@@ -672,10 +750,7 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
 
   if (error) {
     return (
-      <div className={cn(
-        "flex items-center justify-center bg-gray-100",
-        isWidgetMode ? "w-full h-full" : "min-h-screen"
-      )}>
+      <div className="flex items-center justify-center bg-gray-100 min-h-screen">
         <div className="bg-white p-6 rounded-lg shadow-lg">
           <p className="text-red-600">Error loading WASM: {error}</p>
         </div>
@@ -683,187 +758,28 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
     );
   }
 
-  // Widget mode: contained layout
-  if (isWidgetMode) {
-    return (
-      <div
-        className="relative bg-gray-50 border rounded overflow-hidden"
-        style={{ width: widgetWidth, height: widgetHeight }}
-      >
-        <header className="absolute top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
-          <h1 className="text-lg font-bold">Grid Draw</h1>
-          {loading && <span className="ml-4 text-sm text-gray-500">Loading...</span>}
-          <div className="ml-auto">
-            <Button
-              variant="default"
-              onClick={sendToPython}
-              disabled={loading}
-              size="sm"
-            >
-              Send to Python
-            </Button>
-          </div>
-        </header>
-
-        <canvas
-          ref={canvasRef}
-                    className={cn(
-            "absolute left-0 right-0 bottom-0",
-            loading && "opacity-50"
-          )}
-          style={{
-            top: HEADER_HEIGHT,
-            cursor: loading ? 'wait' : 'crosshair',
-          }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseLeave}
-        />
-
-        <DraggablePanel title="Tools" defaultPosition={{ x: 20, y: HEADER_HEIGHT + 20 }}>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Mode</label>
-              <ToggleGroup
-                type="single"
-                value={tool}
-                onValueChange={(val) => val && setTool(val as typeof tool)}
-                variant="outline"
-                className="flex-wrap"
-              >
-                <ToggleGroupItem value="draw" className="text-xs">Draw</ToggleGroupItem>
-                <ToggleGroupItem value="line" className="text-xs">Line</ToggleGroupItem>
-                <ToggleGroupItem value="rect" className="text-xs">Rect</ToggleGroupItem>
-                <ToggleGroupItem value="text" className="text-xs">Text</ToggleGroupItem>
-                <ToggleGroupItem value="select" className="text-xs">Select</ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-
-            {tool === 'text' && (
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">Text size</label>
-                <ToggleGroup
-                  type="single"
-                  value={String(textSize)}
-                  onValueChange={(val) => val && pickTextSize(Number(val))}
-                  variant="outline"
-                  className="flex-wrap"
-                >
-                  {TEXT_SIZES.map((s) => (
-                    <ToggleGroupItem key={s} value={String(s)} className="text-xs">{s}&times;</ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
-              <div className="flex gap-1">
-                {COLORS.map((c, i) => (
-                  <button
-                    key={i}
-                    onClick={() => pickColor(i)}
-                    title={c.name}
-                    className={cn(
-                      "w-6 h-6 rounded border-2 transition-all",
-                      colorIdx === i
-                        ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
-                        : "border-gray-300 hover:border-gray-400",
-                      c.hex === '#ffffff' && "shadow-sm"
-                    )}
-                    style={{
-                      backgroundColor: c.hex ?? 'transparent',
-                      backgroundImage: c.hex === null
-                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
-                        : undefined,
-                      backgroundSize: c.hex === null ? '6px 6px' : undefined,
-                      backgroundPosition: c.hex === null ? '0 0, 0 3px, 3px -3px, -3px 0px' : undefined,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
-              <div className="flex gap-1">
-                {COLORS.map((c, i) => (
-                  <button
-                    key={i}
-                    onClick={() => pickOutline(i)}
-                    title={i === 6 ? 'No outline' : c.name}
-                    className={cn(
-                      "w-6 h-6 rounded border-2 transition-all",
-                      outlineIdx === i
-                        ? "ring-2 ring-orange-500 ring-offset-1 border-orange-500"
-                        : "border-gray-300 hover:border-gray-400",
-                      c.hex === '#ffffff' && "shadow-sm"
-                    )}
-                    style={{
-                      backgroundColor: c.hex ?? 'transparent',
-                      backgroundImage: c.hex === null
-                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
-                        : undefined,
-                      backgroundSize: c.hex === null ? '6px 6px' : undefined,
-                      backgroundPosition: c.hex === null ? '0 0, 0 3px, 3px -3px, -3px 0px' : undefined,
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-1">
-              <Button
-                variant="outline"
-                onClick={undo}
-                disabled={loading || !canUndo()}
-                size="sm"
-                className="flex-1"
-                title="Undo (Ctrl/Cmd+Z)"
-              >
-                <Undo2 className="w-4 h-4" />
-              </Button>
-              <Button
-                variant="outline"
-                onClick={redo}
-                disabled={loading || !canRedo()}
-                size="sm"
-                className="flex-1"
-                title="Redo (Ctrl/Cmd+Shift+Z)"
-              >
-                <Redo2 className="w-4 h-4" />
-              </Button>
-            </div>
-
-            <Button
-              variant="destructive"
-              onClick={clear}
-              disabled={loading}
-              size="sm"
-              className="w-full"
-            >
-              Clear Grid
-            </Button>
-          </div>
-        </DraggablePanel>
-      </div>
-    );
-  }
-
-  // Standalone mode: full-screen layout
+  // Full-screen layout
   return (
     <>
       <header className="fixed top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
         <h1 className="text-xl font-bold">Grid Draw</h1>
         {loading && <span className="ml-4 text-sm text-gray-500">Loading...</span>}
-        {'__TAURI__' in window && (
-          <div className="ml-auto">
-            <Button variant="outline" size="sm" onClick={toggleFullscreen}>
-              {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'} (F11)
-            </Button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {currentName && (
+            <span className="text-sm text-gray-500">
+              {currentName}
+              {saveState === 'saving' && ' · saving…'}
+              {saveState === 'saved' && ' · saved'}
+              {saveState === 'error' && ' · save failed'}
+            </span>
+          )}
+          {view.scale !== 1 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 tabular-nums">{Math.round(view.scale * 100)}%</span>
+              <Button variant="outline" size="sm" onClick={resetView}>Reset zoom</Button>
+            </div>
+          )}
+        </div>
       </header>
 
       <canvas
@@ -874,7 +790,9 @@ function GridCanvas({ anywidgetModel, widgetWidth, widgetHeight }: GridCanvasPro
         )}
         style={{
           top: HEADER_HEIGHT,
-          cursor: loading ? 'wait' : 'crosshair',
+          cursor: loading ? 'wait' : spaceHeld ? 'grab' : 'crosshair',
+          transformOrigin: '0 0',
+          transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

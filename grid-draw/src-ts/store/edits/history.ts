@@ -137,4 +137,27 @@ export class History {
     this.pending = null;
     this.lastCoalesceKey = null;
   }
+
+  /**
+   * Snapshot the undo/redo stacks as plain JSON-serializable data, so a drawing's
+   * edit history can be persisted and restored across sessions. Edits are already
+   * pure data; copies guard against later in-place mutation.
+   */
+  exportStacks(): { undo: Edit[]; redo: Edit[] } {
+    return {
+      undo: this.undoStack.slice(),
+      redo: this.redoStack.slice(),
+    };
+  }
+
+  /**
+   * Replace the stacks with previously-exported ones (e.g. on reopening a saved
+   * drawing). Resets coalescing/batch bookkeeping so the next edit starts fresh.
+   */
+  importStacks(stacks: { undo?: Edit[]; redo?: Edit[] } | null | undefined): void {
+    this.undoStack = (stacks?.undo ?? []).slice();
+    this.redoStack = (stacks?.redo ?? []).slice();
+    this.pending = null;
+    this.lastCoalesceKey = null;
+  }
 }
