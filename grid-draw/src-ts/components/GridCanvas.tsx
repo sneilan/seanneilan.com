@@ -6,8 +6,9 @@ import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
+import Gallery from './Gallery';
 import { cn } from '@/lib/utils';
-import { DATA_SERVER, saveDesign, getDesign, getDesignByName } from '../lib/dataServer';
+import { DATA_SERVER, saveDesign, getDesign, getDesignByName, teacherPredict } from '../lib/dataServer';
 
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
@@ -41,6 +42,12 @@ function randomName(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
+// A design with no drawable content — used to flag an empty prediction (the
+// untrained local model often returns this) so the status isn't misleading.
+function isEmptyDesign(d: { cells?: unknown[]; lines?: unknown[]; rects?: unknown[]; texts?: unknown[] }): boolean {
+  return (d.cells?.length ?? 0) + (d.lines?.length ?? 0) + (d.rects?.length ?? 0) + (d.texts?.length ?? 0) === 0;
 }
 
 // Visible canvas size in CSS pixels (the viewport below the header). The world
@@ -98,6 +105,11 @@ function GridCanvas() {
 
   // Training-data capture/predict status shown in the Training Data panel.
   const [trainStatus, setTrainStatus] = useState<string>('');
+  // When on, a teacher (480B) output is auto-accepted into the training set
+  // (gated on server-side schema validation).
+  const [teacherAutoSave, setTeacherAutoSave] = useState<boolean>(false);
+  // Gallery shown as a modal overlay over the editor (no page navigation).
+  const [galleryOpen, setGalleryOpen] = useState<boolean>(false);
 
   // Camera over the infinite world: (x, y) is the world-pixel coordinate shown
   // at the canvas top-left; zoom is the scale. The WASM grid renders through it
@@ -265,11 +277,52 @@ function GridCanvas() {
       const out = body.output;
       if (!out) throw new Error('no output in response');
       useGridStore.getState().placeDesign(out, anchorRow, anchorCol);
-      setTrainStatus('Prediction placed below the input.');
+      setTrainStatus(isEmptyDesign(out)
+        ? 'Model returned an EMPTY design (the local model is untrained — try Teacher 480B).'
+        : 'Prediction placed below the input.');
     } catch (err) {
       setTrainStatus(`Predict failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, []);
+
+  // Ask the teacher model (Qwen3-Coder-480B) to draft the output, learning the
+  // transform from the stored examples. Places it below the input to edit; with
+  // auto-save on, the schema-validated pair also lands in the training set.
+  const teacherFromSelection = useCallback(async () => {
+    const { grid: g, selectedItems: items } = useGridStore.getState();
+    if (!g) return;
+    const input = serializeSelection(g, items);
+    if (!input) {
+      setTrainStatus('Select an input region for the teacher.');
+      return;
+    }
+    const bounds = getSelectionBoundsAll(items, g);
+    const anchorRow = bounds ? bounds.maxRow + 2 : 0;
+    const anchorCol = bounds ? bounds.minCol : 0;
+    setTrainStatus('Asking teacher (480B)…');
+    try {
+      const { output, saved } = await teacherPredict(input, teacherAutoSave);
+      useGridStore.getState().placeDesign(output, anchorRow, anchorCol);
+      setTrainStatus(isEmptyDesign(output)
+        ? 'Teacher returned an EMPTY design.'
+        : saved
+          ? 'Teacher output placed & saved to training data.'
+          : 'Teacher output placed below the input — fix it, then Make Training Data.');
+    } catch (err) {
+      setTrainStatus(`Teacher failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [teacherAutoSave]);
+
+  // Open a saved drawing in place (from the Gallery modal): fetch it with its
+  // history, load it, adopt its name for auto-save, and reflect the URL — no
+  // page navigation.
+  const openDrawing = useCallback(async (name: string) => {
+    const d = await getDesignByName(name);
+    loadDesignWithHistory(d.design, d.history ?? null);
+    setCurrentName(d.name);
+    window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
+    setGalleryOpen(false);
+  }, [loadDesignWithHistory, setCurrentName]);
 
   // Handle window resize: just resize the visible viewport. The world is
   // infinite, so no content is ever lost — shrinking the window only narrows the
@@ -900,7 +953,7 @@ function GridCanvas() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => { window.location.href = `${BASE}gallery/`; }}
+              onClick={() => setGalleryOpen(true)}
               size="sm"
               className="flex-1"
             >
@@ -988,10 +1041,36 @@ function GridCanvas() {
                 size="sm"
                 variant="outline"
                 className="w-full"
+                onClick={teacherFromSelection}
+                disabled={loading || selectedItems.length === 0}
+                title="Draft the output with Qwen3-Coder-480B (OpenRouter)"
+              >
+                Teacher (480B)
+              </Button>
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={teacherAutoSave}
+                  onChange={(e) => setTeacherAutoSave(e.target.checked)}
+                />
+                Auto-save teacher output to training data
+              </label>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
                 onClick={startTraining}
                 disabled={loading}
               >
                 Start Training Run
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => { window.location.href = `${BASE}training/`; }}
+              >
+                View Training Data
               </Button>
             </>
           )}
@@ -1069,6 +1148,10 @@ function GridCanvas() {
             })}
           </div>
         </DraggablePanel>
+      )}
+
+      {galleryOpen && (
+        <Gallery asModal onClose={() => setGalleryOpen(false)} onOpenDesign={openDrawing} />
       )}
     </>
   );

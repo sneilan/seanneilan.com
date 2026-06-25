@@ -24,9 +24,43 @@ export type TrainingExample = {
   output: DesignJSON;
 };
 
+// A stored training example with its id + timestamp, for the training-data viewer.
+export type SavedExample = {
+  id: number;
+  createdAt: string;
+  input: DesignJSON;
+  output: DesignJSON;
+};
+
 async function jsonOrThrow(res: Response) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+// Ask the teacher model (Qwen3-Coder-480B via OpenRouter, proxied by the Go
+// server) to draft the OUTPUT for an INPUT, learning the transform from the
+// stored examples. With save=true the schema-validated pair is auto-accepted
+// into the training set.
+export async function teacherPredict(
+  input: DesignJSON,
+  save: boolean,
+): Promise<{ output: DesignJSON; saved: boolean }> {
+  return jsonOrThrow(
+    await fetch(`${DATA_SERVER}/teacher`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input, save }),
+    }),
+  );
+}
+
+export async function listExamples(): Promise<SavedExample[]> {
+  const body = await jsonOrThrow(await fetch(`${DATA_SERVER}/examples`));
+  return Array.isArray(body.examples) ? body.examples : [];
+}
+
+export async function deleteExample(id: number): Promise<void> {
+  await jsonOrThrow(await fetch(`${DATA_SERVER}/examples/${id}`, { method: 'DELETE' }));
 }
 
 export async function listDesigns(): Promise<SavedDesign[]> {

@@ -17,12 +17,21 @@ function backToEditor() {
   window.location.href = BASE;
 }
 
+type GalleryProps = {
+  // When provided, Gallery renders as a modal overlay (close button instead of
+  // an "← Editor" link) and "Open" loads the drawing in place via onOpenDesign
+  // rather than navigating to its page.
+  asModal?: boolean;
+  onClose?: () => void;
+  onOpenDesign?: (name: string) => void;
+};
+
 /**
- * The drawing gallery (route: <base>gallery/). Shows saved whole-grid designs
- * with thumbnails, plus captured training examples as input→output preview
- * pairs. Both thumbnails are rendered from the stored DesignJSON.
+ * The drawing gallery. Shows saved whole-grid designs with thumbnails, plus
+ * captured training examples as input→output preview pairs. Rendered either as a
+ * full page (route: <base>gallery/) or as a modal overlay over the editor.
  */
-export default function Gallery() {
+export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps = {}) {
   const [designs, setDesigns] = useState<SavedDesign[]>([]);
   const [examples, setExamples] = useState<TrainingExample[]>([]);
   const [error, setError] = useState<string>('');
@@ -49,11 +58,19 @@ export default function Gallery() {
     refresh();
   }, [refresh]);
 
-  return (
-    <div className="min-h-screen w-full bg-gray-50 p-6">
+  // "Open" loads in place when used as a modal, otherwise navigates to the page.
+  const open = useCallback((name: string) => {
+    if (onOpenDesign) onOpenDesign(name);
+    else openInEditor(name);
+  }, [onOpenDesign]);
+
+  const body = (
+    <>
       <header className="flex items-center gap-3 mb-6">
         <h1 className="text-xl font-semibold">Gallery</h1>
-        <Button variant="outline" size="sm" onClick={backToEditor}>← Editor</Button>
+        {asModal
+          ? <Button variant="outline" size="sm" onClick={onClose}>✕ Close</Button>
+          : <Button variant="outline" size="sm" onClick={backToEditor}>← Editor</Button>}
         <Button variant="outline" size="sm" onClick={refresh}>Refresh</Button>
         {error && <span className="text-sm text-red-500">Data server: {error}</span>}
       </header>
@@ -73,7 +90,7 @@ export default function Gallery() {
               </div>
               <div className="text-xs font-medium truncate" title={d.name}>{d.name}</div>
               <div className="flex gap-1">
-                <Button size="sm" className="flex-1 text-xs" onClick={() => openInEditor(d.name)}>Open</Button>
+                <Button size="sm" className="flex-1 text-xs" onClick={() => open(d.name)}>Open</Button>
                 <Button size="sm" variant="outline" className="text-xs" onClick={() => onDelete(d.id)}>✕</Button>
               </div>
             </div>
@@ -104,6 +121,24 @@ export default function Gallery() {
           ))}
         </div>
       </section>
-    </div>
+    </>
   );
+
+  // Modal: a fixed, scrollable overlay panel over the editor. Page: full screen.
+  if (asModal) {
+    return (
+      <div
+        className="fixed inset-0 z-[100] bg-black/40 flex items-start justify-center p-6 overflow-auto"
+        onClick={onClose}
+      >
+        <div
+          className="bg-gray-50 rounded-lg shadow-xl w-full max-w-5xl p-6"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {body}
+        </div>
+      </div>
+    );
+  }
+  return <div className="min-h-screen w-full bg-gray-50 p-6">{body}</div>;
 }

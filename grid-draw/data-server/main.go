@@ -106,10 +106,13 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/examples", handleExamples)
+	mux.HandleFunc("POST /examples", handleExamples)
+	mux.HandleFunc("GET /examples", handleExamplesList)
+	mux.HandleFunc("DELETE /examples/{id}", handleExampleDelete)
 	mux.HandleFunc("/count", handleCount)
 	mux.HandleFunc("/examples.jsonl", handleJSONL)
 	mux.HandleFunc("/predict", handlePredict)
+	mux.HandleFunc("/teacher", handleTeacher)
 	mux.HandleFunc("/predictions.jsonl", handlePredictionsJSONL)
 	mux.HandleFunc("/jobs", handleJobs)
 	mux.HandleFunc("/train", handleTrain)
@@ -161,6 +164,41 @@ func handleExamples(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := res.LastInsertId()
 	writeJSON(w, map[string]any{"id": id, "count": countRows()})
+}
+
+// handleExamplesList returns every stored training example with its id, for the
+// training-data viewer (browse/inspect/delete). Newest first.
+func handleExamplesList(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(`SELECT id, created_at, input, output FROM examples ORDER BY id DESC`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var created, in, outp string
+		if err := rows.Scan(&id, &created, &in, &outp); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out = append(out, map[string]any{
+			"id": id, "createdAt": created,
+			"input": json.RawMessage(in), "output": json.RawMessage(outp),
+		})
+	}
+	writeJSON(w, map[string]any{"examples": out})
+}
+
+// handleExampleDelete removes one training example (to prune bad/auto-accepted
+// pairs from the viewer).
+func handleExampleDelete(w http.ResponseWriter, r *http.Request) {
+	if _, err := db.Exec(`DELETE FROM examples WHERE id = ?`, r.PathValue("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"count": countRows()})
 }
 
 func handleCount(w http.ResponseWriter, r *http.Request) {

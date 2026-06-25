@@ -1,17 +1,23 @@
 import GridCanvas from './components/GridCanvas';
 import Gallery from './components/Gallery';
+import TrainingData from './components/TrainingData';
 import './styles/grid-draw.css';
 
 // Minimal path-based routing (no router dependency): the gallery lives at
-// <base>gallery/, everything else is the editor.
-function isGalleryRoute(): boolean {
-  return /\/gallery\/?$/.test(window.location.pathname);
+// <base>gallery/, the training-data console at <base>training/, everything else
+// is the editor.
+function route(): 'gallery' | 'training' | 'editor' {
+  const p = window.location.pathname;
+  if (/\/gallery\/?$/.test(p)) return 'gallery';
+  if (/\/training\/?$/.test(p)) return 'training';
+  return 'editor';
 }
 
 function App() {
+  const r = route();
   return (
     <div className="grid-draw-app">
-      {isGalleryRoute() ? <Gallery /> : <GridCanvas />}
+      {r === 'gallery' ? <Gallery /> : r === 'training' ? <TrainingData /> : <GridCanvas />}
     </div>
   );
 }
