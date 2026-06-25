@@ -16,16 +16,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 
 import requests
+import torch
 from datasets import Dataset
+from peft import LoraConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from trl import SFTConfig, SFTTrainer
 
 from augment import augment_pair
 from prompts import SYSTEM, make_prompt, to_json
 from report import ProgressCallback
 
 DATA_SERVER = os.getenv("DATA_SERVER", "http://localhost:7843")
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("train")
 
 
 def fetch_examples() -> list[dict]:
@@ -48,7 +56,7 @@ def build_dataset(rows: list[dict], *, augment: bool) -> Dataset:
             completions.append(" " + to_json(out))
     if not prompts:
         raise SystemExit("no training data — capture some examples in the app first")
-    print(f"[train] {len(rows)} captured pairs -> {len(prompts)} training rows")
+    log.info("%d captured pairs -> %d training rows", len(rows), len(prompts))
     return Dataset.from_dict({"prompt": prompts, "completion": completions})
 
 
@@ -63,12 +71,6 @@ def main():
     ap.add_argument("--out", default=None, help="output dir (default outputs/<job-id>)")
     args = ap.parse_args()
     out_dir = args.out or os.path.join("outputs", args.job_id)
-
-    # Heavy imports deferred so --help / data prep don't need torch installed.
-    import torch
-    from peft import LoraConfig
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from trl import SFTConfig, SFTTrainer
 
     rows = fetch_examples()
     ds = build_dataset(rows, augment=not args.no_augment)
@@ -116,16 +118,11 @@ def main():
         callbacks=[ProgressCallback(args.job_id)] if ProgressCallback else [],
     )
 
-    print(f"[train] system prompt:\n{SYSTEM}\n[train] training -> {out_dir}")
-    try:
-        trainer.train()
-        trainer.save_model(out_dir)
-        tokenizer.save_pretrained(out_dir)
-        print(f"[train] done. adapter saved to {out_dir}")
-    except Exception as e:
-        from report import post_progress
-        post_progress(args.job_id, status="error", message=str(e)[:200])
-        raise
+    log.info("system prompt:\n%s\ntraining -> %s", SYSTEM, out_dir)
+    trainer.train()
+    trainer.save_model(out_dir)
+    tokenizer.save_pretrained(out_dir)
+    log.info("done. adapter saved to %s", out_dir)
 
 
 if __name__ == "__main__":

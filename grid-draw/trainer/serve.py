@@ -20,15 +20,20 @@ Env:
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 import requests
 import outlines
 from fastapi import FastAPI
 from pydantic import BaseModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from schema import Design
 from prompts import make_prompt
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("serve")
 
 MODEL = os.getenv("MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
 # Optional path to a LoRA adapter from train.py (e.g. outputs/qlora-1).
@@ -41,8 +46,7 @@ MAX_TOKENS = int(os.getenv("MAX_TOKENS", "1024"))
 # logits processor from the Design schema, so generation is grammar-constrained.
 # When ADAPTER is set we merge the fine-tuned LoRA weights to serve the trained
 # model; the adapter dir also carries the matching tokenizer.
-print(f"[serve] loading {MODEL}{f' + adapter {ADAPTER}' if ADAPTER else ''} ...")
-from transformers import AutoModelForCausalLM, AutoTokenizer
+log.info("loading %s%s ...", MODEL, f" + adapter {ADAPTER}" if ADAPTER else "")
 
 hf_model = AutoModelForCausalLM.from_pretrained(MODEL, device_map="auto")
 if ADAPTER:
@@ -54,19 +58,15 @@ else:
 
 model = outlines.from_transformers(hf_model, tokenizer)
 generator = outlines.Generator(model, Design)
-print("[serve] ready.")
+log.info("ready.")
 
 
 def few_shot_demos() -> list[dict]:
     """Pull a few captured examples from the data server for in-prompt shots."""
-    try:
-        r = requests.get(f"{DATA_SERVER}/examples.jsonl", timeout=5)
-        r.raise_for_status()
-        rows = [json.loads(line) for line in r.text.splitlines() if line.strip()]
-        return rows[:NUM_SHOTS]
-    except Exception as e:  # demos are optional; degrade to zero-shot
-        print(f"[serve] no demos ({e}); running zero-shot")
-        return []
+    r = requests.get(f"{DATA_SERVER}/examples.jsonl", timeout=5)
+    r.raise_for_status()
+    rows = [json.loads(line) for line in r.text.splitlines() if line.strip()]
+    return rows[:NUM_SHOTS]
 
 
 app = FastAPI()
