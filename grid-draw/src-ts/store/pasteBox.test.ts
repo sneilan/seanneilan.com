@@ -9,16 +9,14 @@ import type { GridCanvasWasm } from '../types/grid';
  * final paint looks like after copy()+paste(). The selection bounding box
  * (draw_selection_box) must only ever surround the actually-selected items.
  */
-function makeMock(rows = 40, cols = 80) {
+function makeMock() {
   // flat [r1,c1,r2,c2,fill,outline] per rect
   const rects: number[] = [];
   const draws: Array<[string, ...number[]]> = [];
   let drawColor = 0;
   const g: Partial<GridCanvasWasm> = {
-    get_rows: () => rows,
-    get_cols: () => cols,
     get_rect_count: () => rects.length / 6,
-    get_rect: (idx) => new Uint32Array(rects.slice(idx * 6, idx * 6 + 6)),
+    get_rect: (idx) => new Int32Array(rects.slice(idx * 6, idx * 6 + 6)),
     add_rect: (r1, c1, r2, c2, fill, outline) => { rects.push(r1, c1, r2, c2, fill, outline); },
     insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rects.splice(idx * 6, 0, r1, c1, r2, c2, fill, outline); },
     get_line_count: () => 0,
@@ -33,7 +31,7 @@ function makeMock(rows = 40, cols = 80) {
     highlight_line: () => {},
     draw_handle: (r, c) => draws.push(['draw_handle', r, c]),
     draw_selection_box: (r1, c1, r2, c2) => draws.push(['draw_selection_box', r1, c1, r2, c2]),
-    get_line: () => new Uint32Array([]),
+    get_line: () => new Int32Array([]),
   };
   return { grid: g as GridCanvasWasm, rects, draws };
 }

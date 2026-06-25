@@ -425,12 +425,11 @@ export type CaptureMode = 'idle' | 'input' | 'output';
 /** Every drawable item currently on the grid, as a selection list. */
 function allItems(grid: GridCanvasWasm): SelectedItem[] {
   const items: SelectedItem[] = [];
-  const rows = grid.get_rows();
-  const cols = grid.get_cols();
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (grid.get_cell(r, c)) items.push({ type: 'cell', row: r, col: c });
-    }
+  // The grid is infinite/sparse, so enumerate filled cells via the WASM buffer
+  // ([row, col, color, ...]) rather than scanning a bounded row×col range.
+  const cells = grid.get_filled_cells();
+  for (let i = 0; i + 2 < cells.length; i += 3) {
+    items.push({ type: 'cell', row: cells[i], col: cells[i + 1] });
   }
   for (let i = 0; i < grid.get_line_count(); i++) items.push({ type: 'line', index: i });
   for (let i = 0; i < grid.get_rect_count(); i++) items.push({ type: 'rect', index: i });
@@ -707,15 +706,12 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const c1 = Math.min(selectBoxStart.col, endCell.col);
     const c2 = Math.max(selectBoxStart.col, endCell.col);
 
-    const rows = grid.get_rows();
-    const cols = grid.get_cols();
-
     // Collect all items in the box
     const boxItems: SelectedItem[] = [];
 
-    // Get filled cells in box
-    for (let r = r1; r <= r2 && r < rows; r++) {
-      for (let c = c1; c <= c2 && c < cols; c++) {
+    // Get filled cells in box (the box is finite; coords may be negative).
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
         if (grid.get_cell(r, c)) {
           boxItems.push({ type: 'cell', row: r, col: c });
         }
@@ -798,8 +794,6 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const deltaCol = endCell.col - selectDragStart.col;
 
     if (deltaRow !== 0 || deltaCol !== 0) {
-      const rows = grid.get_rows();
-      const cols = grid.get_cols();
       const newSelected: SelectedItem[] = [];
 
       // Build one batch describing the whole move. For cells we emit all source
@@ -819,14 +813,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
             kind: 'setCellState', row: item.row, col: item.col,
             from: { filled: true, color }, to: { filled: false, color },
           });
-          if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-            writes.push({
-              kind: 'setCellState', row: newRow, col: newCol,
-              from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
-              to: { filled: true, color },
-            });
-            newSelected.push({ type: 'cell', row: newRow, col: newCol });
-          }
+          // Infinite canvas: any destination cell is valid (incl. negative).
+          writes.push({
+            kind: 'setCellState', row: newRow, col: newCol,
+            from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
+            to: { filled: true, color },
+          });
+          newSelected.push({ type: 'cell', row: newRow, col: newCol });
         }
       }
 
@@ -1047,10 +1040,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const cellSize = grid.get_cell_size();
     const col = Math.floor(x / cellSize);
     const row = Math.floor(y / cellSize);
-    if (row >= 0 && row < grid.get_rows() && col >= 0 && col < grid.get_cols()) {
-      if (grid.get_cell(row, col)) {
-        return { type: 'cell', row, col };
-      }
+    if (grid.get_cell(row, col)) {
+      return { type: 'cell', row, col };
     }
 
     return null;
@@ -1120,8 +1111,6 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid, clipboard, updateOutputs } = get();
     if (!grid || !clipboard) return;
 
-    const rows = grid.get_rows();
-    const cols = grid.get_cols();
     const newSelected: SelectedItem[] = [];
 
     // Anchor the paste at the original copied location plus a small offset, so
@@ -1140,20 +1129,17 @@ export const useGridStore = create<GridStore>((set, get) => ({
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
 
-    // Paste cells
+    // Paste cells. Infinite canvas: any coordinate is valid (incl. negative).
     for (const cell of clipboard.cells) {
       const newRow = anchor.row + cell.relRow;
       const newCol = anchor.col + cell.relCol;
-
-      if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-        edits.push({
-          kind: 'setCellState',
-          row: newRow, col: newCol,
-          from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
-          to: { filled: true, color: cell.color },
-        });
-        newSelected.push({ type: 'cell', row: newRow, col: newCol });
-      }
+      edits.push({
+        kind: 'setCellState',
+        row: newRow, col: newCol,
+        from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
+        to: { filled: true, color: cell.color },
+      });
+      newSelected.push({ type: 'cell', row: newRow, col: newCol });
     }
 
     // Paste lines
@@ -1162,12 +1148,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const c1 = anchor.col + line.relC1;
       const r2 = anchor.row + line.relR2;
       const c2 = anchor.col + line.relC2;
-
-      if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
-        edits.push({ kind: 'addLine', idx: lineIdx, line: { r1, c1, r2, c2, color: line.color } });
-        newSelected.push({ type: 'line', index: lineIdx });
-        lineIdx++;
-      }
+      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1, c1, r2, c2, color: line.color } });
+      newSelected.push({ type: 'line', index: lineIdx });
+      lineIdx++;
     }
 
     // Paste rects
@@ -1176,23 +1159,18 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const c1 = anchor.col + rect.relC1;
       const r2 = anchor.row + rect.relR2;
       const c2 = anchor.col + rect.relC2;
-
-      if (r1 >= 0 && c1 >= 0 && r2 >= 0 && c2 >= 0) {
-        edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1, c1, r2, c2, fill: rect.color, outline: rect.outline } });
-        newSelected.push({ type: 'rect', index: rectIdx });
-        rectIdx++;
-      }
+      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1, c1, r2, c2, fill: rect.color, outline: rect.outline } });
+      newSelected.push({ type: 'rect', index: rectIdx });
+      rectIdx++;
     }
 
     // Paste texts
     for (const t of clipboard.texts ?? []) {
       const r = anchor.row + t.relR;
       const c = anchor.col + t.relC;
-      if (r >= 0 && c >= 0) {
-        edits.push({ kind: 'addText', idx: textIdx, text: { r, c, color: t.color, size: t.size, text: t.text } });
-        newSelected.push({ type: 'text', index: textIdx });
-        textIdx++;
-      }
+      edits.push({ kind: 'addText', idx: textIdx, text: { r, c, color: t.color, size: t.size, text: t.text } });
+      newSelected.push({ type: 'text', index: textIdx });
+      textIdx++;
     }
 
     get().commitEdits(edits);
@@ -1293,18 +1271,17 @@ export const useGridStore = create<GridStore>((set, get) => ({
   placeDesign: (design, anchorRow, anchorCol) => {
     const { grid } = get();
     if (!grid) return;
-    const rows = grid.get_rows();
-    const cols = grid.get_cols();
     const edits: Edit[] = [];
     const newSelected: SelectedItem[] = [];
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
 
+    // Infinite canvas: place every cell, no bounds clipping (a large design
+    // opened in a small window no longer loses cells).
     for (const [r, c, color] of design.cells ?? []) {
       const gr = anchorRow + r;
       const gc = anchorCol + c;
-      if (gr < 0 || gr >= rows || gc < 0 || gc >= cols) continue;
       edits.push({
         kind: 'setCellState', row: gr, col: gc,
         from: { filled: grid.get_cell(gr, gc), color: grid.get_cell_color(gr, gc) },
@@ -1450,15 +1427,13 @@ sparse = sparse.coalesce()`;
       const parsed = JSON.parse(json);
       if (!Array.isArray(parsed)) return;
 
-      const rows = grid.get_rows();
-      const cols = grid.get_cols();
       const newSelected: SelectedItem[] = [];
 
       // Check if it's sparse format (array of {row, col, color} objects)
       const isSparse = parsed.length > 0 && typeof parsed[0] === 'object' && 'row' in parsed[0] && 'col' in parsed[0];
 
       if (isSparse) {
-        // Sparse format: [{row, col, color}, ...]
+        // Sparse format: [{row, col, color}, ...]. Infinite canvas: no bounds.
         for (const cell of parsed) {
           if (typeof cell !== 'object' || cell === null) continue;
           const r = cell.row;
@@ -1468,12 +1443,10 @@ sparse = sparse.coalesce()`;
 
           const gridRow = mousePos.row + r;
           const gridCol = mousePos.col + c;
-          if (gridRow >= 0 && gridRow < rows && gridCol >= 0 && gridCol < cols) {
-            const colorIdx = colorMap[color] ?? 0;
-            grid.set_draw_color(colorIdx);
-            grid.set_cell(gridRow, gridCol, true);
-            newSelected.push({ type: 'cell', row: gridRow, col: gridCol });
-          }
+          const colorIdx = colorMap[color] ?? 0;
+          grid.set_draw_color(colorIdx);
+          grid.set_cell(gridRow, gridCol, true);
+          newSelected.push({ type: 'cell', row: gridRow, col: gridCol });
         }
       } else {
         // Legacy 2D grid format: [[{color}, null, ...], ...]
@@ -1483,8 +1456,6 @@ sparse = sparse.coalesce()`;
           for (let c = 0; c < row.length; c++) {
             const gridRow = mousePos.row + r;
             const gridCol = mousePos.col + c;
-            if (gridRow >= rows || gridCol >= cols) continue;
-
             const cell = row[c];
             if (cell && typeof cell === 'object' && cell.color) {
               const colorIdx = colorMap[cell.color] ?? 0;
@@ -1522,8 +1493,6 @@ sparse = sparse.coalesce()`;
       const parsed = JSON.parse(cleaned);
       if (!Array.isArray(parsed)) return;
 
-      const rows = grid.get_rows();
-      const cols = grid.get_cols();
       const newSelected: SelectedItem[] = [];
 
       grid.set_draw_color(0); // Black for tensor import
@@ -1534,8 +1503,6 @@ sparse = sparse.coalesce()`;
         for (let c = 0; c < row.length; c++) {
           const gridRow = mousePos.row + r;
           const gridCol = mousePos.col + c;
-          if (gridRow >= rows || gridCol >= cols) continue;
-
           const val = Number(row[c]);
           if (val > 0.5) {
             grid.set_cell(gridRow, gridCol, true);
@@ -1570,15 +1537,11 @@ sparse = sparse.coalesce()`;
     for (let i = grid.get_line_count() - 1; i >= 0; i--) {
       edits.push({ kind: 'deleteLine', idx: i, line: readLine(grid, i) });
     }
-    const rows = grid.get_rows();
-    const cols = grid.get_cols();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (grid.get_cell(r, c)) {
-          const color = grid.get_cell_color(r, c);
-          edits.push({ kind: 'setCellState', row: r, col: c, from: { filled: true, color }, to: { filled: false, color } });
-        }
-      }
+    // Enumerate filled cells from the sparse buffer ([row, col, color, ...]).
+    const cells = grid.get_filled_cells();
+    for (let i = 0; i + 2 < cells.length; i += 3) {
+      const r = cells[i], c = cells[i + 1], color = cells[i + 2];
+      edits.push({ kind: 'setCellState', row: r, col: c, from: { filled: true, color }, to: { filled: false, color } });
     }
 
     get().commitEdits(edits);

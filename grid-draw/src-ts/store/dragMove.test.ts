@@ -19,8 +19,6 @@ function makeMockGrid(rows: number, cols: number): GridCanvasWasm {
 
   let drawColor = 0;
   const g: Partial<GridCanvasWasm> = {
-    get_rows: () => rows,
-    get_cols: () => cols,
     get_cell: (r, c) => (r < rows && c < cols ? filled[r][c] : false),
     get_cell_color: (r, c) => (r < rows && c < cols && filled[r][c] ? colors[r][c] : 0),
     set_draw_color: (idx) => { drawColor = idx; },

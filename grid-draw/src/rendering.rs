@@ -1,75 +1,86 @@
 use wasm_bindgen::prelude::*;
 use crate::{GridCanvas, CELL_SIZE, color_for_idx};
 
+// Everything draws through the camera: world-pixel coords are mapped to screen
+// via self.sx()/self.sy() and scaled by self.cell_px(). Only the visible window
+// is drawn (the grid is infinite), and grid lines + filled cells are culled to
+// that window. Stroke widths and handles stay in screen pixels for crispness.
 #[wasm_bindgen]
 impl GridCanvas {
+    /// Inclusive world-cell column range currently visible (with a 1-cell margin).
+    fn visible_cols(&self) -> (i32, i32) {
+        let c0 = (self.cam_x / CELL_SIZE).floor() as i32 - 1;
+        let c1 = ((self.cam_x + self.view_w / self.zoom) / CELL_SIZE).ceil() as i32 + 1;
+        (c0, c1)
+    }
+    fn visible_rows(&self) -> (i32, i32) {
+        let r0 = (self.cam_y / CELL_SIZE).floor() as i32 - 1;
+        let r1 = ((self.cam_y + self.view_h / self.zoom) / CELL_SIZE).ceil() as i32 + 1;
+        (r0, r1)
+    }
+
     #[wasm_bindgen]
     pub fn render(&self) {
-        let canvas_width = (self.cols as f64) * CELL_SIZE;
-        let canvas_height = (self.rows as f64) * CELL_SIZE;
+        let (c0, c1) = self.visible_cols();
+        let (r0, r1) = self.visible_rows();
+        let cp = self.cell_px();
 
-        // Clear canvas with empty color
+        // Clear viewport with the empty (background) color.
         self.ctx.set_fill_style_str(&self.empty_color);
-        self.ctx.fill_rect(0.0, 0.0, canvas_width, canvas_height);
+        self.ctx.fill_rect(0.0, 0.0, self.view_w, self.view_h);
 
-        // Draw filled cells first
-        for row in 0..self.rows {
-            for col in 0..self.cols {
-                if self.grid[row][col] {
-                    self.ctx.set_fill_style_str(color_for_idx(self.grid_colors[row][col]));
-                    let x = (col as f64) * CELL_SIZE;
-                    let y = (row as f64) * CELL_SIZE;
-                    self.ctx.fill_rect(x, y, CELL_SIZE, CELL_SIZE);
-                }
+        // Filled cells (sparse; cull to the visible window).
+        for ((row, col), color) in &self.cells {
+            if *col < c0 || *col > c1 || *row < r0 || *row > r1 {
+                continue;
             }
+            self.ctx.set_fill_style_str(color_for_idx(*color));
+            let x = self.sx(*col as f64 * CELL_SIZE);
+            let y = self.sy(*row as f64 * CELL_SIZE);
+            self.ctx.fill_rect(x, y, cp, cp);
         }
 
-        // Draw grid lines
+        // Grid lines across the visible window. Every 10th world line is darker;
+        // rem_euclid keeps the decade markers aligned across the origin (negatives).
         self.ctx.set_line_width(1.0);
-
-        // Vertical lines
-        for i in 0..=self.cols {
-            let pos = (i as f64) * CELL_SIZE + 0.5;
-            let is_tenth = i % 10 == 0;
-            let color = if is_tenth { "#888888" } else { &self.line_color };
+        for col in c0..=c1 {
+            let x = self.sx(col as f64 * CELL_SIZE) + 0.5;
+            let color = if col.rem_euclid(10) == 0 { "#888888" } else { &self.line_color };
             self.ctx.set_stroke_style_str(color);
             self.ctx.begin_path();
-            self.ctx.move_to(pos, 0.0);
-            self.ctx.line_to(pos, canvas_height);
+            self.ctx.move_to(x, 0.0);
+            self.ctx.line_to(x, self.view_h);
+            self.ctx.stroke();
+        }
+        for row in r0..=r1 {
+            let y = self.sy(row as f64 * CELL_SIZE) + 0.5;
+            let color = if row.rem_euclid(10) == 0 { "#888888" } else { &self.line_color };
+            self.ctx.set_stroke_style_str(color);
+            self.ctx.begin_path();
+            self.ctx.move_to(0.0, y);
+            self.ctx.line_to(self.view_w, y);
             self.ctx.stroke();
         }
 
-        // Horizontal lines
-        for i in 0..=self.rows {
-            let pos = (i as f64) * CELL_SIZE + 0.5;
-            let is_tenth = i % 10 == 0;
-            let color = if is_tenth { "#888888" } else { &self.line_color };
-            self.ctx.set_stroke_style_str(color);
-            self.ctx.begin_path();
-            self.ctx.move_to(0.0, pos);
-            self.ctx.line_to(canvas_width, pos);
-            self.ctx.stroke();
-        }
-
-        // Draw committed rects (independent fill + outline; index 6 = none)
+        // Committed rects (independent fill + outline; index 6 = none).
         let mut i = 0;
         while i + 5 < self.drawn_rects.len() {
-            let r1 = self.drawn_rects[i]     as f64 * CELL_SIZE;
-            let c1 = self.drawn_rects[i + 1] as f64 * CELL_SIZE;
-            let r2 = self.drawn_rects[i + 2] as f64 * CELL_SIZE;
-            let c2 = self.drawn_rects[i + 3] as f64 * CELL_SIZE;
-            let fill = self.drawn_rects[i + 4] as u8;
-            let outline = self.drawn_rects[i + 5] as u8;
-            let x = c1.min(c2);
-            let y = r1.min(r2);
-            let w = (c1 - c2).abs();
-            let h = (r1 - r2).abs();
+            let r1c = self.drawn_rects[i] as f64;
+            let c1c = self.drawn_rects[i + 1] as f64;
+            let r2c = self.drawn_rects[i + 2] as f64;
+            let c2c = self.drawn_rects[i + 3] as f64;
+            let fill = self.drawn_rects[i + 4];
+            let outline = self.drawn_rects[i + 5];
+            let x = self.sx(c1c.min(c2c) * CELL_SIZE);
+            let y = self.sy(r1c.min(r2c) * CELL_SIZE);
+            let w = (c1c - c2c).abs() * cp;
+            let h = (r1c - r2c).abs() * cp;
             if fill != 6 {
-                self.ctx.set_fill_style_str(color_for_idx(fill));
+                self.ctx.set_fill_style_str(color_for_idx(fill as u8));
                 self.ctx.fill_rect(x, y, w, h);
             }
             if outline != 6 {
-                self.ctx.set_stroke_style_str(color_for_idx(outline));
+                self.ctx.set_stroke_style_str(color_for_idx(outline as u8));
                 self.ctx.set_line_width(2.0);
                 self.ctx.stroke_rect(x, y, w, h);
                 self.ctx.set_line_width(1.0);
@@ -77,108 +88,98 @@ impl GridCanvas {
             i += 6;
         }
 
-        // Draw committed lines
+        // Committed lines.
         let mut i = 0;
         while i + 4 < self.drawn_lines.len() {
-            let r1 = self.drawn_lines[i] as f64 * CELL_SIZE;
-            let c1 = self.drawn_lines[i + 1] as f64 * CELL_SIZE;
-            let r2 = self.drawn_lines[i + 2] as f64 * CELL_SIZE;
-            let c2 = self.drawn_lines[i + 3] as f64 * CELL_SIZE;
+            let x1 = self.sx(self.drawn_lines[i + 1] as f64 * CELL_SIZE);
+            let y1 = self.sy(self.drawn_lines[i] as f64 * CELL_SIZE);
+            let x2 = self.sx(self.drawn_lines[i + 3] as f64 * CELL_SIZE);
+            let y2 = self.sy(self.drawn_lines[i + 2] as f64 * CELL_SIZE);
             let color_idx = self.drawn_lines[i + 4] as u8;
             self.ctx.set_stroke_style_str(color_for_idx(color_idx));
             self.ctx.set_line_width(2.0);
             self.ctx.begin_path();
-            self.ctx.move_to(c1, r1);
-            self.ctx.line_to(c2, r2);
+            self.ctx.move_to(x1, y1);
+            self.ctx.line_to(x2, y2);
             self.ctx.stroke();
             self.ctx.set_line_width(1.0);
             i += 5;
         }
 
-        // Draw committed texts (BigBlue Terminal font). Each text's BASELINE sits
-        // on grid row `r`, so it rests on a grid line. Color index 6 has no
-        // meaning for text, so it falls back to black.
+        // Committed texts (BigBlue Terminal). Baseline sits on grid row `r`.
         self.ctx.set_text_baseline("alphabetic");
         for t in &self.drawn_texts {
-            let x = t.c as f64 * CELL_SIZE;
-            let y = t.r as f64 * CELL_SIZE;
-            self.ctx.set_font(&crate::text_font(t.size));
+            let x = self.sx(t.c as f64 * CELL_SIZE);
+            let y = self.sy(t.r as f64 * CELL_SIZE);
+            self.ctx.set_font(&crate::text_font(t.size * self.zoom));
             self.ctx.set_fill_style_str(color_for_idx(if t.color >= 6 { 0 } else { t.color }));
             let _ = self.ctx.fill_text(&t.text, x, y);
         }
     }
 
     #[wasm_bindgen]
-    pub fn render_with_line(&self, r1: u32, c1: u32, r2: u32, c2: u32) {
+    pub fn render_with_line(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.render();
-        let x1 = c1 as f64 * CELL_SIZE;
-        let y1 = r1 as f64 * CELL_SIZE;
-        let x2 = c2 as f64 * CELL_SIZE;
-        let y2 = r2 as f64 * CELL_SIZE;
         self.ctx.set_stroke_style_str("#4488ff");
         self.ctx.set_line_width(2.0);
         self.ctx.begin_path();
-        self.ctx.move_to(x1, y1);
-        self.ctx.line_to(x2, y2);
+        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE), self.sy(r1 as f64 * CELL_SIZE));
+        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE), self.sy(r2 as f64 * CELL_SIZE));
         self.ctx.stroke();
         self.ctx.set_line_width(1.0);
     }
 
     #[wasm_bindgen]
-    pub fn render_with_rect(&self, r1: u32, c1: u32, r2: u32, c2: u32) {
+    pub fn render_with_rect(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.render();
-        let x = (c1 as f64).min(c2 as f64) * CELL_SIZE;
-        let y = (r1 as f64).min(r2 as f64) * CELL_SIZE;
-        let w = (c1 as f64 - c2 as f64).abs() * CELL_SIZE;
-        let h = (r1 as f64 - r2 as f64).abs() * CELL_SIZE;
+        let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
+        let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
+        let w = (c1 - c2).abs() as f64 * self.cell_px();
+        let h = (r1 - r2).abs() as f64 * self.cell_px();
         self.ctx.set_stroke_style_str("#4488ff");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(x, y, w, h);
         self.ctx.set_line_width(1.0);
     }
 
-    /// Draw a moving "ghost" of a cell at (row, col) in its color, with an
-    /// orange selected outline. Does NOT clear the canvas, so callers render()
-    /// once and then layer previews for every dragged shape on top.
+    /// Moving "ghost" of a cell, in its color, with an orange selected outline.
+    /// Does NOT clear the canvas, so callers render() once then layer previews.
     #[wasm_bindgen]
-    pub fn preview_cell(&self, row: u32, col: u32, color: u8) {
-        let x = col as f64 * CELL_SIZE;
-        let y = row as f64 * CELL_SIZE;
+    pub fn preview_cell(&self, row: i32, col: i32, color: u8) {
+        let cp = self.cell_px();
+        let x = self.sx(col as f64 * CELL_SIZE);
+        let y = self.sy(row as f64 * CELL_SIZE);
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_fill_style_str(color_for_idx(color));
-        self.ctx.fill_rect(x, y, CELL_SIZE, CELL_SIZE);
+        self.ctx.fill_rect(x, y, cp, cp);
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(2.0);
-        self.ctx.stroke_rect(x + 1.0, y + 1.0, CELL_SIZE - 2.0, CELL_SIZE - 2.0);
+        self.ctx.stroke_rect(x + 1.0, y + 1.0, cp - 2.0, cp - 2.0);
         self.ctx.set_line_width(1.0);
     }
 
-    /// Draw a moving "ghost" of a line at the given coords. Does NOT clear.
+    /// Moving "ghost" of a line. Does NOT clear.
     #[wasm_bindgen]
-    pub fn preview_line(&self, r1: u32, c1: u32, r2: u32, c2: u32, color: u8) {
-        let x1 = c1 as f64 * CELL_SIZE;
-        let y1 = r1 as f64 * CELL_SIZE;
-        let x2 = c2 as f64 * CELL_SIZE;
-        let y2 = r2 as f64 * CELL_SIZE;
+    pub fn preview_line(&self, r1: i32, c1: i32, r2: i32, c2: i32, color: u8) {
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_stroke_style_str(color_for_idx(color));
         self.ctx.set_line_width(2.0);
         self.ctx.begin_path();
-        self.ctx.move_to(x1, y1);
-        self.ctx.line_to(x2, y2);
+        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE), self.sy(r1 as f64 * CELL_SIZE));
+        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE), self.sy(r2 as f64 * CELL_SIZE));
         self.ctx.stroke();
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_line_width(1.0);
     }
 
-    /// Draw a moving "ghost" of a rect at the given coords. Does NOT clear.
+    /// Moving "ghost" of a rect. Does NOT clear.
     #[wasm_bindgen]
-    pub fn preview_rect(&self, r1: u32, c1: u32, r2: u32, c2: u32, fill: u8, outline: u8) {
-        let x = (c1 as f64).min(c2 as f64) * CELL_SIZE;
-        let y = (r1 as f64).min(r2 as f64) * CELL_SIZE;
-        let w = (c1 as f64 - c2 as f64).abs() * CELL_SIZE;
-        let h = (r1 as f64 - r2 as f64).abs() * CELL_SIZE;
+    pub fn preview_rect(&self, r1: i32, c1: i32, r2: i32, c2: i32, fill: u8, outline: u8) {
+        let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
+        let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
+        let w = (c1 - c2).abs() as f64 * self.cell_px();
+        let h = (r1 - r2).abs() as f64 * self.cell_px();
         self.ctx.set_global_alpha(0.7);
         if fill != 6 {
             self.ctx.set_fill_style_str(color_for_idx(fill));
@@ -189,7 +190,6 @@ impl GridCanvas {
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(x, y, w, h);
         } else if fill == 6 {
-            // Nothing visible otherwise; show a faint border so the ghost reads.
             self.ctx.set_stroke_style_str("#888888");
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(x, y, w, h);
@@ -199,52 +199,20 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
-    pub fn render_with_selection(&self, row: usize, col: usize) {
+    pub fn render_with_selection(&self, row: i32, col: i32) {
         self.render();
-        if row < self.rows && col < self.cols && self.grid[row][col] {
-            let x = (col as f64) * CELL_SIZE;
-            let y = (row as f64) * CELL_SIZE;
-            self.ctx.set_stroke_style_str("#ff8800");
-            self.ctx.set_line_width(3.0);
-            self.ctx.stroke_rect(x + 1.5, y + 1.5, CELL_SIZE - 3.0, CELL_SIZE - 3.0);
-            self.ctx.set_line_width(1.0);
+        if self.cells.contains_key(&(row, col)) {
+            self.highlight_cell(row, col);
         }
     }
 
     #[wasm_bindgen]
-    pub fn render_with_drag_preview(&self, sel_row: usize, sel_col: usize, preview_row: usize, preview_col: usize) {
+    pub fn render_with_selection_box(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.render();
-        // Draw selection highlight on original cell
-        if sel_row < self.rows && sel_col < self.cols && self.grid[sel_row][sel_col] {
-            let x = (sel_col as f64) * CELL_SIZE;
-            let y = (sel_row as f64) * CELL_SIZE;
-            self.ctx.set_stroke_style_str("#ff8800");
-            self.ctx.set_line_width(3.0);
-            self.ctx.stroke_rect(x + 1.5, y + 1.5, CELL_SIZE - 3.0, CELL_SIZE - 3.0);
-            self.ctx.set_line_width(1.0);
-        }
-        // Draw ghost preview at target position
-        if preview_row < self.rows && preview_col < self.cols {
-            let x = (preview_col as f64) * CELL_SIZE;
-            let y = (preview_row as f64) * CELL_SIZE;
-            self.ctx.set_global_alpha(0.5);
-            self.ctx.set_fill_style_str(color_for_idx(self.grid_colors[sel_row][sel_col]));
-            self.ctx.fill_rect(x, y, CELL_SIZE, CELL_SIZE);
-            self.ctx.set_global_alpha(1.0);
-            self.ctx.set_stroke_style_str("#4488ff");
-            self.ctx.set_line_width(2.0);
-            self.ctx.stroke_rect(x + 1.0, y + 1.0, CELL_SIZE - 2.0, CELL_SIZE - 2.0);
-            self.ctx.set_line_width(1.0);
-        }
-    }
-
-    #[wasm_bindgen]
-    pub fn render_with_selection_box(&self, r1: usize, c1: usize, r2: usize, c2: usize) {
-        self.render();
-        let x = (c1.min(c2) as f64) * CELL_SIZE;
-        let y = (r1.min(r2) as f64) * CELL_SIZE;
-        let w = ((c1 as i32 - c2 as i32).abs() as f64 + 1.0) * CELL_SIZE;
-        let h = ((r1 as i32 - r2 as i32).abs() as f64 + 1.0) * CELL_SIZE;
+        let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
+        let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
+        let w = ((c1 - c2).abs() as f64 + 1.0) * self.cell_px();
+        let h = ((r1 - r2).abs() as f64 + 1.0) * self.cell_px();
         self.ctx.set_stroke_style_str("#4488ff");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(x, y, w, h);
@@ -252,32 +220,25 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
-    pub fn highlight_cell(&self, row: usize, col: usize) {
-        if row < self.rows && col < self.cols {
-            let x = (col as f64) * CELL_SIZE;
-            let y = (row as f64) * CELL_SIZE;
-            self.ctx.set_stroke_style_str("#ff8800");
-            self.ctx.set_line_width(3.0);
-            self.ctx.stroke_rect(x + 1.5, y + 1.5, CELL_SIZE - 3.0, CELL_SIZE - 3.0);
-            self.ctx.set_line_width(1.0);
-        }
+    pub fn highlight_cell(&self, row: i32, col: i32) {
+        let cp = self.cell_px();
+        let x = self.sx(col as f64 * CELL_SIZE);
+        let y = self.sy(row as f64 * CELL_SIZE);
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(3.0);
+        self.ctx.stroke_rect(x + 1.5, y + 1.5, cp - 3.0, cp - 3.0);
+        self.ctx.set_line_width(1.0);
     }
 
     #[wasm_bindgen]
     pub fn highlight_line(&self, idx: usize) {
         let start = idx * 5;
         if start + 5 <= self.drawn_lines.len() {
-            let r1 = self.drawn_lines[start] as f64 * CELL_SIZE;
-            let c1 = self.drawn_lines[start + 1] as f64 * CELL_SIZE;
-            let r2 = self.drawn_lines[start + 2] as f64 * CELL_SIZE;
-            let c2 = self.drawn_lines[start + 3] as f64 * CELL_SIZE;
-
-            // Draw highlight
             self.ctx.set_stroke_style_str("#ff8800");
             self.ctx.set_line_width(5.0);
             self.ctx.begin_path();
-            self.ctx.move_to(c1, r1);
-            self.ctx.line_to(c2, r2);
+            self.ctx.move_to(self.sx(self.drawn_lines[start + 1] as f64 * CELL_SIZE), self.sy(self.drawn_lines[start] as f64 * CELL_SIZE));
+            self.ctx.line_to(self.sx(self.drawn_lines[start + 3] as f64 * CELL_SIZE), self.sy(self.drawn_lines[start + 2] as f64 * CELL_SIZE));
             self.ctx.stroke();
             self.ctx.set_line_width(1.0);
         }
@@ -287,17 +248,14 @@ impl GridCanvas {
     pub fn highlight_rect(&self, idx: usize) {
         let start = idx * 6;
         if start + 6 <= self.drawn_rects.len() {
-            let r1 = self.drawn_rects[start] as f64 * CELL_SIZE;
-            let c1 = self.drawn_rects[start + 1] as f64 * CELL_SIZE;
-            let r2 = self.drawn_rects[start + 2] as f64 * CELL_SIZE;
-            let c2 = self.drawn_rects[start + 3] as f64 * CELL_SIZE;
-
-            let x = c1.min(c2);
-            let y = r1.min(r2);
-            let w = (c1 - c2).abs();
-            let h = (r1 - r2).abs();
-
-            // Draw highlight
+            let r1 = self.drawn_rects[start] as f64;
+            let c1 = self.drawn_rects[start + 1] as f64;
+            let r2 = self.drawn_rects[start + 2] as f64;
+            let c2 = self.drawn_rects[start + 3] as f64;
+            let x = self.sx(c1.min(c2) * CELL_SIZE);
+            let y = self.sy(r1.min(r2) * CELL_SIZE);
+            let w = (c1 - c2).abs() * self.cell_px();
+            let h = (r1 - r2).abs() * self.cell_px();
             self.ctx.set_stroke_style_str("#ff8800");
             self.ctx.set_line_width(4.0);
             self.ctx.stroke_rect(x - 2.0, y - 2.0, w + 4.0, h + 4.0);
@@ -306,11 +264,11 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
-    pub fn draw_selection_box(&self, r1: usize, c1: usize, r2: usize, c2: usize) {
-        let x = (c1.min(c2) as f64) * CELL_SIZE;
-        let y = (r1.min(r2) as f64) * CELL_SIZE;
-        let w = ((c1 as i32 - c2 as i32).abs() as f64) * CELL_SIZE;
-        let h = ((r1 as i32 - r2 as i32).abs() as f64) * CELL_SIZE;
+    pub fn draw_selection_box(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
+        let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
+        let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
+        let w = (c1 - c2).abs() as f64 * self.cell_px();
+        let h = (r1 - r2).abs() as f64 * self.cell_px();
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(x, y, w, h);

@@ -21,12 +21,10 @@ function makeRecordingGrid() {
     highlight_rect: () => {},
     draw_handle: () => {},
     draw_selection_box: () => {},
-    get_line: () => new Uint32Array([0, 0, 1, 1, 0]),
-    get_rect: () => new Uint32Array([0, 0, 2, 2, 0, 6]),
+    get_line: () => new Int32Array([0, 0, 1, 1, 0]),
+    get_rect: () => new Int32Array([0, 0, 2, 2, 0, 6]),
     get_cell: () => false,
     get_cell_color: () => 0,
-    get_rows: () => 10,
-    get_cols: () => 10,
   };
   return { grid: g as GridCanvasWasm, calls };
 }

@@ -7,7 +7,7 @@
 /// Insert `record` at shape index `idx`, shifting later records up. `idx` is
 /// clamped to the count, so inserting at the count appends. Mirrors the
 /// index-stable inverse of `delete_record`.
-pub(crate) fn insert_record(buf: &mut Vec<u32>, stride: usize, idx: usize, record: &[u32]) {
+pub(crate) fn insert_record(buf: &mut Vec<i32>, stride: usize, idx: usize, record: &[i32]) {
     debug_assert_eq!(record.len(), stride);
     let count = buf.len() / stride;
     let at = idx.min(count) * stride;
@@ -16,7 +16,7 @@ pub(crate) fn insert_record(buf: &mut Vec<u32>, stride: usize, idx: usize, recor
 
 /// Remove the record at shape index `idx`, shifting later records down. A no-op
 /// if `idx` is out of range.
-pub(crate) fn delete_record(buf: &mut Vec<u32>, stride: usize, idx: usize) {
+pub(crate) fn delete_record(buf: &mut Vec<i32>, stride: usize, idx: usize) {
     let start = idx * stride;
     if start + stride <= buf.len() {
         buf.drain(start..start + stride);
@@ -25,7 +25,7 @@ pub(crate) fn delete_record(buf: &mut Vec<u32>, stride: usize, idx: usize) {
 
 /// Overwrite the first four coords (geometry) of the record at `idx`, leaving
 /// any trailing fields (color/fill/outline) untouched. No-op if out of range.
-pub(crate) fn set_geom(buf: &mut [u32], stride: usize, idx: usize, r1: u32, c1: u32, r2: u32, c2: u32) {
+pub(crate) fn set_geom(buf: &mut [i32], stride: usize, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32) {
     let start = idx * stride;
     if start + stride <= buf.len() {
         buf[start] = r1;
@@ -39,9 +39,9 @@ pub(crate) fn set_geom(buf: &mut [u32], stride: usize, idx: usize, r1: u32, c1: 
 /// (r, c). Handle indices (clockwise from top-left): 0=TL,1=top,2=TR,3=right,
 /// 4=BR,5=bottom,6=BL,7=left. Returns (min_r, min_c, max_r, max_c).
 pub(crate) fn resize_corners(
-    cur_r1: u32, cur_c1: u32, cur_r2: u32, cur_c2: u32,
-    handle: u32, r: u32, c: u32,
-) -> (u32, u32, u32, u32) {
+    cur_r1: i32, cur_c1: i32, cur_r2: i32, cur_c2: i32,
+    handle: u32, r: i32, c: i32,
+) -> (i32, i32, i32, i32) {
     let mut min_r = cur_r1.min(cur_r2);
     let mut max_r = cur_r1.max(cur_r2);
     let mut min_c = cur_c1.min(cur_c2);
@@ -94,7 +94,7 @@ mod tests {
     fn delete_then_insert_is_identity() {
         let original = vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2];
         let mut buf = original.clone();
-        let removed: Vec<u32> = buf[L..2 * L].to_vec();
+        let removed: Vec<i32> = buf[L..2 * L].to_vec();
         delete_record(&mut buf, L, 1);
         assert_eq!(buf.len(), 10);
         insert_record(&mut buf, L, 1, &removed);

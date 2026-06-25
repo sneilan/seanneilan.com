@@ -58,20 +58,31 @@ export function makeGrid(opts?: {
     move_text: (idx, dr, dc) => calls.push(['move_text', idx, dr, dc]),
     set_text_color: (idx, color) => calls.push(['set_text_color', idx, color]),
     get_text_count: () => textCount,
-    get_text: () => new Uint32Array([1, 0, 0, 1, 1]),
+    get_text: () => new Int32Array([1, 0, 0, 1, 1]),
     get_text_string: () => '',
     get_text_size: () => 1,
     delete_cell: (r, c) => { calls.push(['delete_cell', r, c]); filled.delete(key(r, c)); },
-    get_line: (idx) => new Uint32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
-    get_rect: (idx) => new Uint32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
+    get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
+    get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
     get_line_count: () => lineCount,
     get_rect_count: () => rectCount,
     get_cell: (r, c) => filled.has(key(r, c)),
     get_cell_color: (r, c) => filled.get(key(r, c)) ?? 0,
-    get_rows: () => rows,
-    get_cols: () => cols,
+    get_cell_count: () => filled.size,
+    get_filled_cells: () => {
+      const out: number[] = [];
+      for (const [k, color] of filled) {
+        const [r, c] = k.split(',').map(Number);
+        out.push(r, c, color);
+      }
+      return new Int32Array(out);
+    },
     get_cell_size: () => 16,
-    resize: () => {},
+    set_viewport: () => {},
+    set_camera: () => {},
+    get_cam_x: () => 0,
+    get_cam_y: () => 0,
+    get_zoom: () => 1,
     clear: () => { filled.clear(); lineCount = 0; rectCount = 0; textCount = 0; },
     render: () => {},
     highlight_cell: () => {},

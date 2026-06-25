@@ -10,7 +10,7 @@ export type { GridCanvasWasm, GridWasmState };
  * version (e.g. a stale module survived a hot reload that changed the schema),
  * we reset it instead of rendering garbage from a half-migrated buffer.
  */
-const EXPECTED_SCHEMA_VERSION = 3;
+const EXPECTED_SCHEMA_VERSION = 4;
 
 function guardSchema(grid: GridCanvasWasm) {
   const version = grid.get_schema_version?.();
@@ -25,8 +25,8 @@ function guardSchema(grid: GridCanvasWasm) {
 
 export function useGridWasm(
   canvasRef: RefObject<HTMLCanvasElement | null>,
-  initialRows: number,
-  initialCols: number
+  initialViewW: number,
+  initialViewH: number
 ): GridWasmState {
   const [state, setState] = useState<GridWasmState>({
     grid: null,
@@ -50,11 +50,15 @@ export function useGridWasm(
         const wasm = await import('../../pkg/grid_draw_wasm');
         await wasm.default();
         // Use from_canvas to pass element directly (works in shadow DOM)
-        const grid = wasm.GridCanvas.from_canvas(canvas, initialRows, initialCols);
+        const grid = wasm.GridCanvas.from_canvas(canvas, initialViewW, initialViewH);
         guardSchema(grid);
         // Publish the grid handle to the store so actions can mutate it directly,
         // rather than the component bridging it across with a useEffect.
         useGridStore.getState().setGrid(grid);
+        // Dev-only handle for e2e/manual debugging (e.g. inspecting filled cells).
+        if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
+          (window as unknown as { __gridForTest?: unknown }).__gridForTest = grid;
+        }
         setState({
           grid,
           loading: false,
@@ -76,7 +80,7 @@ export function useGridWasm(
         }));
       }
     })();
-  }, [canvasRef.current, initialRows, initialCols]);
+  }, [canvasRef.current, initialViewW, initialViewH]);
 
   return state;
 }

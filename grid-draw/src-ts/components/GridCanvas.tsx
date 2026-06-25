@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem, type DesignJSON } from '../store/gridStore';
+import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
 import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,16 +43,19 @@ function randomName(): string {
   return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
 }
 
-function calculateGridSize() {
-  const cols = Math.floor(window.innerWidth / CELL_SIZE);
-  const rows = Math.floor((window.innerHeight - HEADER_HEIGHT) / CELL_SIZE);
-  return { rows: Math.max(10, rows), cols: Math.max(10, cols) };
+// Visible canvas size in CSS pixels (the viewport below the header). The world
+// behind it is infinite; only this window is ever drawn.
+function calculateViewport() {
+  return {
+    w: Math.max(1, window.innerWidth),
+    h: Math.max(1, window.innerHeight - HEADER_HEIGHT),
+  };
 }
 
 function GridCanvas() {
-  const [gridSize, setGridSize] = useState(() => calculateGridSize());
+  const [viewport, setViewport] = useState(() => calculateViewport());
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const { grid, loading, error } = useGridWasm(canvasRef, gridSize.rows, gridSize.cols);
+  const { grid, loading, error } = useGridWasm(canvasRef, viewport.w, viewport.h);
 
   // Get state and actions from store
   const store = useGridStore();
@@ -96,24 +99,31 @@ function GridCanvas() {
   // Training-data capture/predict status shown in the Training Data panel.
   const [trainStatus, setTrainStatus] = useState<string>('');
 
-  // Pan/zoom view applied to the canvas as a CSS transform: screen = base +
-  // (tx,ty) + scale·local, with transform-origin at the canvas top-left. Because
-  // pointer math reads getBoundingClientRect() (which honors the transform),
-  // cell hit-testing stays correct at any zoom without extra bookkeeping.
-  const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
+  // Camera over the infinite world: (x, y) is the world-pixel coordinate shown
+  // at the canvas top-left; zoom is the scale. The WASM grid renders through it
+  // (screen = (world - cam)·zoom). Pushed to WASM via applyCamera on every change
+  // — no CSS transform; the canvas is a fixed viewport-sized window.
+  const [cam, setCam] = useState({ x: 0, y: 0, zoom: 1 });
   const ZOOM_MIN = 0.25;
   const ZOOM_MAX = 12;
-  // Mirror `view` in a ref so the mouse handlers can read the latest pan/zoom
-  // without listing `view` in their deps (which changes on every pan frame).
-  const viewRef = useRef(view);
-  viewRef.current = view;
+  // Mirror `cam` in a ref so the mouse handlers can read the latest pan/zoom
+  // without listing `cam` in their deps (which changes on every pan frame).
+  const camRef = useRef(cam);
+  camRef.current = cam;
+
+  // Set the camera in both React state (for the % indicator) and the WASM grid
+  // (which re-renders). The single chokepoint for moving/zooming the view.
+  const applyCamera = useCallback((next: { x: number; y: number; zoom: number }) => {
+    setCam(next);
+    grid?.set_camera(next.x, next.y, next.zoom);
+  }, [grid]);
 
   // Pan: hold Space or use the middle mouse button and drag to move the canvas.
   // isSpaceDown gates left-drag panning; spaceHeld drives the cursor; panRef
-  // holds the in-progress gesture's start point and the view at gesture start.
+  // holds the gesture's start screen point and the camera at gesture start.
   const isSpaceDown = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
-  const panRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const panRef = useRef<{ x: number; y: number; camX: number; camY: number } | null>(null);
 
   // Save the whole current drawing to the gallery under an auto-generated
   // 8-char [a-z0-9] name (no prompt).
@@ -137,29 +147,14 @@ function GridCanvas() {
     }
   }, [serializeWholeGrid, exportHistory, setCurrentName]);
 
-  // On load, resolve a drawing from the URL and render it:
-  //   <base>design/<name>/ shareable per-drawing URL (kept in the address bar)
-  //   <base>?load=<id>      legacy id-based open from the gallery (URL cleaned)
-  // Grow the grid so a loaded design fits at origin (0,0). The grid never
-  // shrinks (see the resize handler), so this only ever expands it; without
-  // this, placeDesign would clip cells/shapes that fall outside the current
-  // viewport-sized grid (e.g. a large drawing opened in a small window).
-  const growGridToFit = useCallback((design: DesignJSON) => {
-    if (!grid) return;
-    const cols = Math.max(grid.get_cols(), design.w);
-    const rows = Math.max(grid.get_rows(), design.h);
-    if (cols > grid.get_cols() || rows > grid.get_rows()) {
-      grid.resize(rows, cols);
-      setGridSize({ rows, cols });
-    }
-  }, [grid]);
-
   // One-shot init once the async WASM grid is ready: resolve a drawing from the
   // URL and load it. The actual work lives in store actions; this thin effect
-  // only bridges the external readiness signal (grid) into those actions.
-  // Auto-save itself is wired separately as a store subscription (lib/autosave.ts),
-  // NOT here — setting currentName AFTER loadDesignWithHistory's history bump is
-  // what keeps the load from triggering a redundant save.
+  // only bridges the external readiness signal (grid) into those actions. The
+  // grid is infinite, so a loaded design is never clipped to fit — it places at
+  // its absolute coordinates regardless of viewport/zoom.
+  // Auto-save is wired separately as a store subscription (lib/autosave.ts), NOT
+  // here — setting currentName AFTER loadDesignWithHistory's history bump is what
+  // keeps the load from triggering a redundant save.
   useEffect(() => {
     if (!grid) return;
     let cancelled = false;
@@ -168,7 +163,6 @@ function GridCanvas() {
       getDesignByName(nameMatch[1])
         .then((d) => {
           if (cancelled) return;
-          growGridToFit(d.design);
           loadDesignWithHistory(d.design, d.history ?? null);
           setCurrentName(d.name); // edits now auto-save to this drawing
         })
@@ -180,7 +174,6 @@ function GridCanvas() {
     getDesign(Number(id))
       .then((d) => {
         if (cancelled) return;
-        growGridToFit(d.design);
         loadDesignWithHistory(d.design, d.history ?? null);
         setCurrentName(d.name);
         // Switch the URL to the shareable per-drawing form so auto-save persists.
@@ -188,7 +181,7 @@ function GridCanvas() {
       })
       .catch(() => { window.history.replaceState({}, '', BASE); });
     return () => { cancelled = true; };
-  }, [grid, loadDesignWithHistory, growGridToFit, setCurrentName]);
+  }, [grid, loadDesignWithHistory, setCurrentName]);
 
   // Live training-job progress, polled from the data server.
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
@@ -278,23 +271,15 @@ function GridCanvas() {
     }
   }, []);
 
-  // Handle window resize. The grid only ever GROWS to fit the viewport — it is
-  // never shrunk, because grid.resize() truncates (drops) any cells outside the
-  // new bounds. Shrinking the window would otherwise permanently destroy content
-  // that scrolls off-screen; keeping the larger grid lets it reappear when the
-  // window grows again (and it's reachable meanwhile by zooming out).
+  // Handle window resize: just resize the visible viewport. The world is
+  // infinite, so no content is ever lost — shrinking the window only narrows the
+  // window onto the same unbounded grid.
   useEffect(() => {
     const handleResize = () => {
-      const fit = calculateGridSize();
-      setGridSize((prev) => {
-        const rows = Math.max(prev.rows, fit.rows);
-        const cols = Math.max(prev.cols, fit.cols);
-        if (rows === prev.rows && cols === prev.cols) return prev;
-        grid?.resize(rows, cols);
-        return { rows, cols };
-      });
+      const v = calculateViewport();
+      setViewport(v);
+      grid?.set_viewport(v.w, v.h);
     };
-
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [grid]);
@@ -361,30 +346,29 @@ function GridCanvas() {
 
   // Scroll-to-zoom centered on the cursor. Attached natively (not via React's
   // onWheel) so we can preventDefault — React's wheel listener is passive and
-  // can't stop the page from scrolling. The canvas's base top-left is fixed at
-  // (0, HEADER_HEIGHT); we solve for the new translation that keeps the grid
-  // point under the cursor stationary as the scale changes.
+  // can't stop the page from scrolling. The canvas top-left is fixed at
+  // (0, HEADER_HEIGHT); we keep the WORLD point under the cursor stationary by
+  // solving for the camera offset at the new zoom.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      setView((v) => {
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-        const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.scale * factor));
-        if (scale === v.scale) return v;
-        // Grid-local point currently under the cursor (base origin: 0, HEADER).
-        const lx = (e.clientX - v.tx) / v.scale;
-        const ly = (e.clientY - HEADER_HEIGHT - v.ty) / v.scale;
-        // New translation so that same local point stays under the cursor.
-        const tx = e.clientX - scale * lx;
-        const ty = e.clientY - HEADER_HEIGHT - scale * ly;
-        return { scale, tx, ty };
-      });
+      const v = camRef.current;
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      const zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.zoom * factor));
+      if (zoom === v.zoom) return;
+      // Cursor position in canvas/screen pixels (canvas top-left = 0, HEADER).
+      const sx = e.clientX;
+      const sy = e.clientY - HEADER_HEIGHT;
+      // Keep the world point under the cursor fixed: cam' = cam + s*(1/z - 1/z').
+      const x = v.x + sx * (1 / v.zoom - 1 / zoom);
+      const y = v.y + sy * (1 / v.zoom - 1 / zoom);
+      applyCamera({ x, y, zoom });
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, []);
+  }, [applyCamera]);
 
   // Track Spacebar to enable pan-drag. External DOM subscription (keydown/keyup);
   // ignored while editing text so the space still types. preventDefault stops the
@@ -406,18 +390,18 @@ function GridCanvas() {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
-  const resetView = useCallback(() => setView({ scale: 1, tx: 0, ty: 0 }), []);
+  const resetView = useCallback(() => applyCamera({ x: 0, y: 0, zoom: 1 }), [applyCamera]);
 
-  // Coordinate helpers
+  // Coordinate helpers. getCanvasXY returns WORLD pixels (screen → world through
+  // the camera): world = screen/zoom + cam. Everything downstream (cell coords,
+  // hit tests) works in world space; only WASM render applies the camera.
   const getCanvasXY = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: (event.clientX - rect.left) * scaleX,
-      y: (event.clientY - rect.top) * scaleY,
-    };
+    const screenX = (event.clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (event.clientY - rect.top) * (canvas.height / rect.height);
+    const c = camRef.current;
+    return { x: screenX / c.zoom + c.x, y: screenY / c.zoom + c.y };
   };
 
   const getCellCoords = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -425,13 +409,10 @@ function GridCanvas() {
     return { col: Math.floor(x / CELL_SIZE), row: Math.floor(y / CELL_SIZE) };
   };
 
+  // Nearest grid intersection (for line/rect endpoints). Infinite grid: no clamp.
   const getIntersectionCoords = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasXY(event);
-    const cols = grid?.get_cols() ?? gridSize.cols;
-    const rows = grid?.get_rows() ?? gridSize.rows;
-    const col = Math.max(0, Math.min(cols, Math.round(x / CELL_SIZE)));
-    const row = Math.max(0, Math.min(rows, Math.round(y / CELL_SIZE)));
-    return { col, row };
+    return { col: Math.round(x / CELL_SIZE), row: Math.round(y / CELL_SIZE) };
   };
 
   const isItemSelected = (item: SelectedItem) => {
@@ -460,18 +441,15 @@ function GridCanvas() {
       // every tool and never mutates the document.
       if (event.button === 1 || (event.button === 0 && isSpaceDown.current)) {
         event.preventDefault();
-        panRef.current = { x: event.clientX, y: event.clientY, tx: viewRef.current.tx, ty: viewRef.current.ty };
+        panRef.current = { x: event.clientX, y: event.clientY, camX: camRef.current.x, camY: camRef.current.y };
         event.currentTarget.style.cursor = 'grabbing';
         return;
       }
       grid.set_draw_color(colorIdx);
       grid.set_outline_color(outlineIdx);
-      const cols = grid.get_cols();
-      const rows = grid.get_rows();
 
       if (tool === 'draw') {
         const { col, row } = getCellCoords(event);
-        if (col >= cols || row >= rows) return;
         const mode = colorIdx === 6 ? false : !grid.get_cell(row, col);
         startDrawing(mode);
         // Open one history batch for the whole stroke (mousedown → mouseup).
@@ -490,12 +468,10 @@ function GridCanvas() {
         // Place the text caret at the clicked cell and start typing. If a text
         // is already in progress, beginTextEdit commits it first.
         const { col, row } = getCellCoords(event);
-        if (col >= cols || row >= rows) return;
         beginTextEdit({ row, col });
       } else if (tool === 'select') {
         const { col, row } = getCellCoords(event);
         const { x, y } = getCanvasXY(event);
-        if (col >= cols || row >= rows) return;
 
         const shiftHeld = event.shiftKey;
 
@@ -568,12 +544,16 @@ function GridCanvas() {
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!grid) return;
 
-      // Active pan: translate the view 1:1 with the cursor (tx/ty are screen px).
+      // Active pan: move the camera opposite the cursor so the grabbed world
+      // point follows the cursor. Screen delta maps to world delta via 1/zoom.
       if (panRef.current) {
         const p = panRef.current;
-        const dx = event.clientX - p.x;
-        const dy = event.clientY - p.y;
-        setView((v) => ({ ...v, tx: p.tx + dx, ty: p.ty + dy }));
+        const z = camRef.current.zoom;
+        applyCamera({
+          x: p.camX - (event.clientX - p.x) / z,
+          y: p.camY - (event.clientY - p.y) / z,
+          zoom: z,
+        });
         return;
       }
 
@@ -618,12 +598,9 @@ function GridCanvas() {
       }
 
       if (!isDrawing && !isSelecting) return;
-      const cols = grid.get_cols();
-      const rows = grid.get_rows();
 
       if (tool === 'draw' && isDrawing) {
         const { col, row } = getCellCoords(event);
-        if (col >= cols || row >= rows) return;
         drawCellAt(row, col, drawMode);
         updateOutputs();
       } else if (tool === 'line' && lineStart) {
@@ -637,9 +614,8 @@ function GridCanvas() {
         const { col, row } = getIntersectionCoords(event);
         updateResize({ row, col });
       } else if (tool === 'select' && isSelecting) {
-        const { col: rawCol, row: rawRow } = getCellCoords(event);
-        const col = Math.max(0, Math.min(cols - 1, rawCol));
-        const row = Math.max(0, Math.min(rows - 1, rawRow));
+        // Infinite grid: no clamping — selection works in negative space too.
+        const { col, row } = getCellCoords(event);
 
         if (selectMode === 'box' && selectBoxStart) {
           updateBoxSelection({ row, col });
@@ -654,9 +630,7 @@ function GridCanvas() {
             if (item.type === 'cell') {
               const newRow = item.row + deltaRow;
               const newCol = item.col + deltaCol;
-              if (newRow >= 0 && newRow < rows && newCol >= 0 && newCol < cols) {
-                grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
-              }
+              grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
             } else if (item.type === 'line') {
               const l = grid.get_line(item.index);
               if (l.length >= 5) {
@@ -773,10 +747,10 @@ function GridCanvas() {
               {saveState === 'error' && ' · save failed'}
             </span>
           )}
-          {view.scale !== 1 && (
+          {(cam.zoom !== 1 || cam.x !== 0 || cam.y !== 0) && (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500 tabular-nums">{Math.round(view.scale * 100)}%</span>
-              <Button variant="outline" size="sm" onClick={resetView}>Reset zoom</Button>
+              <span className="text-sm text-gray-500 tabular-nums">{Math.round(cam.zoom * 100)}%</span>
+              <Button variant="outline" size="sm" onClick={resetView}>Reset view</Button>
             </div>
           )}
         </div>
@@ -791,8 +765,6 @@ function GridCanvas() {
         style={{
           top: HEADER_HEIGHT,
           cursor: loading ? 'wait' : spaceHeld ? 'grab' : 'crosshair',
-          transformOrigin: '0 0',
-          transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`,
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

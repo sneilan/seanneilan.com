@@ -1,19 +1,23 @@
+// Coordinates are signed world cells (the canvas is infinite). Shape buffers are
+// Int32Array (they can hold negative coordinates). Only render uses the camera;
+// every other coordinate here is in WORLD space (cells, or world pixels for hit
+// tests) — the host converts screen↔world via the camera.
 export type GridCanvasWasm = {
   // Core
-  handle_click(x: number, y: number): void;
   render(): void;
   clear(): void;
-  resize(rows: number, cols: number): void;
+
+  // Camera / viewport (the grid is unbounded; only this window is drawn)
+  set_viewport(view_w: number, view_h: number): void;
+  set_camera(cam_x: number, cam_y: number, zoom: number): void;
+  get_cam_x(): number;
+  get_cam_y(): number;
+  get_zoom(): number;
 
   // Grid info
-  get_rows(): number;
-  get_cols(): number;
   get_schema_version(): number;
   rects_consistent(): boolean;
   get_cell_size(): number;
-  get_data_zone_start_row(): number;
-  get_data_zone_start_col(): number;
-  get_data_zone_size(): number;
 
   // Cell operations
   get_cell(row: number, col: number): boolean;
@@ -24,6 +28,8 @@ export type GridCanvasWasm = {
   set_outline_color(idx: number): void;
   move_cell(from_row: number, from_col: number, to_row: number, to_col: number): void;
   delete_cell(row: number, col: number): void;
+  get_cell_count(): number;
+  get_filled_cells(): Int32Array; // flat [row, col, color, ...] of all filled cells
 
   // Drawing tools
   render_with_line(r1: number, c1: number, r2: number, c2: number): void;
@@ -33,7 +39,6 @@ export type GridCanvasWasm = {
 
   // Selection
   render_with_selection(row: number, col: number): void;
-  render_with_drag_preview(sel_row: number, sel_col: number, preview_row: number, preview_col: number): void;
   render_with_selection_box(r1: number, c1: number, r2: number, c2: number): void;
   highlight_cell(row: number, col: number): void;
   draw_selection_box(r1: number, c1: number, r2: number, c2: number): void;
@@ -41,8 +46,8 @@ export type GridCanvasWasm = {
   // Shape selection (lines and rects)
   get_line_count(): number;
   get_rect_count(): number;
-  get_line(idx: number): Uint32Array;
-  get_rect(idx: number): Uint32Array;
+  get_line(idx: number): Int32Array;
+  get_rect(idx: number): Int32Array;
   hit_test_line(x: number, y: number, tolerance: number): number;
   hit_test_rect(x: number, y: number): number;
   delete_line(idx: number): void;
@@ -72,7 +77,7 @@ export type GridCanvasWasm = {
 
   // Text shapes (BigBlue Terminal font on the canvas)
   get_text_count(): number;
-  get_text(idx: number): Uint32Array; // [r_baseline, c, color, widthCells, heightCells]
+  get_text(idx: number): Int32Array; // [r_baseline, c, color, widthCells, heightCells]
   get_text_string(idx: number): string;
   get_text_size(idx: number): number;
   add_text(r: number, c: number, color: number, size: number, text: string): void;
@@ -87,12 +92,6 @@ export type GridCanvasWasm = {
   highlight_text(idx: number): void;
   preview_text(r: number, c: number, color: number, size: number, text: string): void;
   render_text_preview(r: number, c: number, color: number, size: number, text: string): void;
-
-  // Import/Export
-  export_json(): string;
-  export_pytorch_tensor(): string;
-  import_json(json_str: string): void;
-  import_tensor(tensor_str: string): void;
 };
 
 export type GridWasmState = {
