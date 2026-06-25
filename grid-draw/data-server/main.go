@@ -76,14 +76,23 @@ func main() {
 	)`); err != nil {
 		log.Fatalf("create table: %v", err)
 	}
-	// Saved whole-grid drawings for the in-app gallery.
+	// Saved whole-grid drawings for the in-app gallery. `history` holds the
+	// serialized undo/redo stacks so reopening a drawing restores its edit
+	// history. `name` is unique: saving the same name upserts (auto-save).
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS designs (
 		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		created_at TEXT NOT NULL,
 		name       TEXT NOT NULL,
-		design     TEXT NOT NULL
+		design     TEXT NOT NULL,
+		history    TEXT
 	)`); err != nil {
 		log.Fatalf("create designs table: %v", err)
+	}
+	// Migration for DBs created before the history column existed.
+	if !columnExists(db, "designs", "history") {
+		if _, err := db.Exec(`ALTER TABLE designs ADD COLUMN history TEXT`); err != nil {
+			log.Fatalf("add designs.history column: %v", err)
+		}
 	}
 	// Every model prediction (the input sent and the output returned) is logged
 	// here — an audit trail and a source of extra training data.
@@ -288,18 +297,42 @@ func handleJobs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// A saved gallery drawing. `design` is the whole-grid DesignJSON the app emits.
+// columnExists reports whether table has a column of the given name.
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false
+		}
+		if name == column {
+			return true
+		}
+	}
+	return false
+}
+
+// A saved gallery drawing. `design` is the whole-grid DesignJSON the app emits;
+// `history` is the serialized {undo, redo} edit stacks (may be null/omitted).
 type design struct {
 	ID        int64           `json:"id"`
 	CreatedAt string          `json:"createdAt"`
 	Name      string          `json:"name"`
 	Design    json.RawMessage `json:"design"`
+	History   json.RawMessage `json:"history,omitempty"`
 }
 
+// handleDesignCreate upserts by name: saving an existing name updates that
+// drawing in place (auto-save), so a design has a single stable row and URL.
 func handleDesignCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Name   string          `json:"name"`
-		Design json.RawMessage `json:"design"`
+		Name    string          `json:"name"`
+		Design  json.RawMessage `json:"design"`
+		History json.RawMessage `json:"history"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || len(in.Design) == 0 {
 		http.Error(w, "name and design required", http.StatusBadRequest)
@@ -308,9 +341,31 @@ func handleDesignCreate(w http.ResponseWriter, r *http.Request) {
 	if in.Name == "" {
 		in.Name = "Untitled"
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	var history any
+	if len(in.History) > 0 {
+		history = string(in.History)
+	}
+
+	// Update the newest row of this name if one exists; otherwise insert.
 	res, err := db.Exec(
-		`INSERT INTO designs (created_at, name, design) VALUES (?, ?, ?)`,
-		time.Now().UTC().Format(time.RFC3339), in.Name, string(in.Design),
+		`UPDATE designs SET design = ?, history = ?, created_at = ?
+		 WHERE id = (SELECT id FROM designs WHERE name = ? ORDER BY id DESC LIMIT 1)`,
+		string(in.Design), history, now, in.Name,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		var id int64
+		db.QueryRow(`SELECT id FROM designs WHERE name = ? ORDER BY id DESC LIMIT 1`, in.Name).Scan(&id)
+		writeJSON(w, map[string]any{"id": id})
+		return
+	}
+	res, err = db.Exec(
+		`INSERT INTO designs (created_at, name, design, history) VALUES (?, ?, ?, ?)`,
+		now, in.Name, string(in.Design), history,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -344,8 +399,9 @@ func handleDesignList(w http.ResponseWriter, r *http.Request) {
 func handleDesignGet(w http.ResponseWriter, r *http.Request) {
 	var d design
 	var raw string
-	err := db.QueryRow(`SELECT id, created_at, name, design FROM designs WHERE id = ?`, r.PathValue("id")).
-		Scan(&d.ID, &d.CreatedAt, &d.Name, &raw)
+	var hist sql.NullString
+	err := db.QueryRow(`SELECT id, created_at, name, design, history FROM designs WHERE id = ?`, r.PathValue("id")).
+		Scan(&d.ID, &d.CreatedAt, &d.Name, &raw, &hist)
 	if err == sql.ErrNoRows {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -354,6 +410,9 @@ func handleDesignGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.Design = json.RawMessage(raw)
+	if hist.Valid {
+		d.History = json.RawMessage(hist.String)
+	}
 	writeJSON(w, d)
 }
 
@@ -362,10 +421,11 @@ func handleDesignGet(w http.ResponseWriter, r *http.Request) {
 func handleDesignByName(w http.ResponseWriter, r *http.Request) {
 	var d design
 	var raw string
+	var hist sql.NullString
 	err := db.QueryRow(
-		`SELECT id, created_at, name, design FROM designs WHERE name = ? ORDER BY id DESC LIMIT 1`,
+		`SELECT id, created_at, name, design, history FROM designs WHERE name = ? ORDER BY id DESC LIMIT 1`,
 		r.PathValue("name"),
-	).Scan(&d.ID, &d.CreatedAt, &d.Name, &raw)
+	).Scan(&d.ID, &d.CreatedAt, &d.Name, &raw, &hist)
 	if err == sql.ErrNoRows {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -374,6 +434,9 @@ func handleDesignByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.Design = json.RawMessage(raw)
+	if hist.Valid {
+		d.History = json.RawMessage(hist.String)
+	}
 	writeJSON(w, d)
 }
 
