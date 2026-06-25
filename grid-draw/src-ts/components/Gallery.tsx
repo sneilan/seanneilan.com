@@ -1,6 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { DesignThumbnail } from './DesignThumbnail';
+import { DraggablePanel } from './DraggablePanel';
 import { useServerStore } from '../store/serverStore';
 
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
@@ -44,17 +45,8 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
     else openInEditor(name);
   }, [onOpenDesign]);
 
-  const body = (
+  const content = (
     <>
-      <header className="flex items-center gap-3 mb-6">
-        <h1 className="text-xl font-semibold">Gallery</h1>
-        {asModal
-          ? <Button variant="outline" size="sm" onClick={onClose}>✕ Close</Button>
-          : <Button variant="outline" size="sm" onClick={backToEditor}>← Editor</Button>}
-        <Button variant="outline" size="sm" onClick={refresh}>Refresh</Button>
-        {error && <span className="text-sm text-red-500">Data server: {String(error)}</span>}
-      </header>
-
       {loading && <p className="text-sm text-gray-400">Loading…</p>}
 
       <section className="mb-10">
@@ -101,21 +93,33 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
     </>
   );
 
-  // Modal: a fixed, scrollable overlay panel over the editor. Page: full screen.
+  // Modal: a draggable panel over the editor (no backdrop dimming) — reuses the
+  // same DraggablePanel as the editor's Tools/Training panels. Page: full screen.
   if (asModal) {
     return (
-      <div
-        className="fixed inset-0 z-[100] bg-black/40 flex items-start justify-center p-6 overflow-auto"
-        onClick={onClose}
+      <DraggablePanel
+        title="Gallery"
+        onClose={onClose}
+        defaultPosition={{ x: Math.max(20, (window.innerWidth - 880) / 2), y: 64 }}
+        className="w-[880px] max-w-[95vw] z-30"
       >
-        <div
-          className="bg-gray-50 rounded-lg shadow-xl w-full max-w-5xl p-6"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {body}
+        <div className="mb-3 flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={refresh}>Refresh</Button>
+          {error && <span className="text-sm text-red-500">Data server: {String(error)}</span>}
         </div>
-      </div>
+        <div className="max-h-[70vh] overflow-auto pr-1">{content}</div>
+      </DraggablePanel>
     );
   }
-  return <div className="min-h-screen w-full bg-gray-50 p-6">{body}</div>;
+  return (
+    <div className="min-h-screen w-full bg-gray-50 p-6">
+      <header className="flex items-center gap-3 mb-6">
+        <h1 className="text-xl font-semibold">Gallery</h1>
+        <Button variant="outline" size="sm" onClick={backToEditor}>← Editor</Button>
+        <Button variant="outline" size="sm" onClick={refresh}>Refresh</Button>
+        {error && <span className="text-sm text-red-500">Data server: {String(error)}</span>}
+      </header>
+      {content}
+    </div>
+  );
 }

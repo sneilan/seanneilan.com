@@ -6,13 +6,16 @@ interface DraggablePanelProps {
   defaultPosition: { x: number; y: number };
   children: React.ReactNode;
   className?: string;
+  // When provided, an ✕ button appears in the title bar to dismiss the panel.
+  onClose?: () => void;
 }
 
 export function DraggablePanel({
   title,
   defaultPosition,
   children,
-  className
+  className,
+  onClose
 }: DraggablePanelProps) {
   const [position, setPosition] = useState(defaultPosition);
   const isDragging = useRef(false);
@@ -56,10 +59,21 @@ export function DraggablePanel({
       }}
     >
       <div
-        className="px-3 py-2 border-b border-gray-200 cursor-move font-medium text-sm select-none bg-gray-50/50 rounded-t-lg"
+        className="px-3 py-2 border-b border-gray-200 cursor-move font-medium text-sm select-none bg-gray-50/50 rounded-t-lg flex items-center justify-between gap-2"
         onMouseDown={handleMouseDown}
       >
-        {title}
+        <span>{title}</span>
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close"
+            className="text-gray-400 hover:text-gray-700 cursor-pointer leading-none px-1"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        )}
       </div>
       <div className="p-3">
         {children}
