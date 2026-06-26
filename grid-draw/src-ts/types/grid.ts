@@ -61,6 +61,8 @@ export type GridCanvasWasm = {
   set_line_endpoint(idx: number, which: number, r: number, c: number): void;
   resize_rect(idx: number, handle: number, r: number, c: number): void;
   draw_handle(r: number, c: number): void;
+  // Rotate affordance: round handle on a stalk above the selection's top edge.
+  draw_rotate_handle(handle_r: number, handle_c: number, stalk_r: number, stalk_c: number): void;
   preview_cell(row: number, col: number, color: number): void;
   preview_line(r1: number, c1: number, r2: number, c2: number, color: number): void;
   preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;

@@ -15,6 +15,25 @@ export type HandlePoint = {
   c: number;
 };
 
+/**
+ * How far above the selection's top edge the rotate handle floats, in grid
+ * cells. Used both to draw the handle and to hit-test it, so they stay in sync.
+ */
+export const ROTATE_HANDLE_GAP = 1.75;
+
+/**
+ * The rotate handle's grid position (round grab-point above the selection's
+ * top-center) for a selection bounding box. Returned in grid-cell units.
+ */
+export function rotateHandlePoint(bounds: {
+  minRow: number;
+  maxRow: number;
+  minCol: number;
+  maxCol: number;
+}): { r: number; c: number } {
+  return { r: bounds.minRow - ROTATE_HANDLE_GAP, c: (bounds.minCol + bounds.maxCol) / 2 };
+}
+
 /** Two endpoint handles for a line: [r1, c1, r2, c2]. */
 export function getLineHandles(coords: ArrayLike<number>): HandlePoint[] {
   if (coords.length < 4) return [];

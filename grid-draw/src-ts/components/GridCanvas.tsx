@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
-import { getLineHandles, getRectHandles, hitTestHandle } from '../utils/handles';
+import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -71,6 +71,7 @@ function GridCanvas() {
     startBoxSelection, updateBoxSelection, finishBoxSelection, cancelBoxSelection,
     startDragSelection, finishDragSelection, cancelDragSelection,
     startResize, updateResize, finishResize, cancelResize,
+    startRotate, updateRotate, finishRotate, cancelRotate,
     setMousePos, addItemToSelection, removeItemFromSelection,
     hitTestShapes, getSelectedCells,
     jsonOutput, tensorOutput,
@@ -517,6 +518,20 @@ function GridCanvas() {
 
         const shiftHeld = event.shiftKey;
 
+        // Rotate: grabbing the round handle above the selection starts a rotate
+        // (works for any selection). Checked first so it wins over drag/box.
+        if (selectedItems.length > 0 && !shiftHeld) {
+          const rb = getSelectionBoundsAll(selectedItems, grid);
+          if (rb) {
+            const h = rotateHandlePoint(rb);
+            const tol = 10 / camRef.current.zoom; // ~10 screen px regardless of zoom
+            if (Math.hypot(x - h.c * CELL_SIZE, y - h.r * CELL_SIZE) <= tol) {
+              startRotate(x, y);
+              return;
+            }
+          }
+        }
+
         // Resize: if a single line/rect is selected and we grabbed one of its
         // handles, start a resize instead of a move. Checked before everything
         // else so handles take priority over the drag/hit-test branches.
@@ -579,7 +594,7 @@ function GridCanvas() {
         }
       }
     },
-    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt, beginTextEdit]
+    [grid, tool, colorIdx, outlineIdx, selectedItems, selectedCells, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, startRotate, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt, beginTextEdit]
   );
 
   const handleMouseMove = useCallback(
@@ -607,15 +622,25 @@ function GridCanvas() {
       // selection's interior, crosshair otherwise.
       if (tool === 'select') {
         const canvas = event.currentTarget;
-        if (isSelecting && selectMode === 'resize') {
+        if (isSelecting && (selectMode === 'resize' || selectMode === 'rotate')) {
           canvas.style.cursor = 'grabbing';
         } else if (isSelecting && selectMode === 'drag') {
           canvas.style.cursor = 'move';
         } else {
           const { x, y } = getCanvasXY(event);
           let cursor = 'crosshair';
+          // Rotate-handle hover (any selection) -> grab.
+          if (selectedItems.length > 0) {
+            const rb = getSelectionBoundsAll(selectedItems, grid);
+            if (rb) {
+              const h = rotateHandlePoint(rb);
+              if (Math.hypot(x - h.c * CELL_SIZE, y - h.r * CELL_SIZE) <= 10 / camRef.current.zoom) {
+                cursor = 'grab';
+              }
+            }
+          }
           // Handle hover (single line/rect selected) -> grab (resize affordance).
-          if (selectedItems.length === 1) {
+          if (cursor === 'crosshair' && selectedItems.length === 1) {
             const only = selectedItems[0];
             if (only.type === 'line' || only.type === 'rect') {
               const handles = only.type === 'line'
@@ -655,6 +680,9 @@ function GridCanvas() {
         // Resize uses intersection coords (corners), like line/rect drawing.
         const { col, row } = getIntersectionCoords(event);
         updateResize({ row, col });
+      } else if (tool === 'select' && isSelecting && selectMode === 'rotate') {
+        const { x, y } = getCanvasXY(event);
+        updateRotate(x, y);
       } else if (tool === 'select' && isSelecting) {
         // Infinite grid: no clamping — selection works in negative space too.
         const { col, row } = getCellCoords(event);
@@ -693,7 +721,7 @@ function GridCanvas() {
         }
       }
     },
-    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateOutputs, drawCellAt]
+    [grid, tool, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateRotate, updateOutputs, drawCellAt]
   );
 
   const handleMouseUp = useCallback(
@@ -726,7 +754,10 @@ function GridCanvas() {
       } else if (tool === 'select') {
         const { col, row } = getCellCoords(event);
 
-        if (selectMode === 'resize') {
+        if (selectMode === 'rotate') {
+          const { x, y } = getCanvasXY(event);
+          finishRotate(x, y);
+        } else if (selectMode === 'resize') {
           const { col: icol, row: irow } = getIntersectionCoords(event);
           finishResize({ row: irow, col: icol });
         } else if (selectMode === 'box') {
@@ -736,7 +767,7 @@ function GridCanvas() {
         }
       }
     },
-    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, updateOutputs, endDrawStroke, commitLine, commitRect]
+    [grid, tool, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, finishRotate, updateOutputs, endDrawStroke, commitLine, commitRect]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -760,9 +791,11 @@ function GridCanvas() {
         cancelDragSelection();
       } else if (selectMode === 'resize') {
         cancelResize();
+      } else if (selectMode === 'rotate') {
+        cancelRotate();
       }
     }
-  }, [grid, tool, selectMode, stopDrawing, finishLine, finishRect, cancelBoxSelection, cancelDragSelection, cancelResize]);
+  }, [grid, tool, selectMode, stopDrawing, finishLine, finishRect, cancelBoxSelection, cancelDragSelection, cancelResize, cancelRotate]);
 
   if (error) {
     return (

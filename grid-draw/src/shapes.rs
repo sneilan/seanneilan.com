@@ -240,6 +240,36 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
+    /// Draw the rotate affordance: a short "stalk" line from the top-center of
+    /// the selection (stalk_r, stalk_c) up to a round grab-handle at
+    /// (handle_r, handle_c). Coords are fractional WORLD grid units; the circle
+    /// is a fixed screen size.
+    #[wasm_bindgen]
+    pub fn draw_rotate_handle(&self, handle_r: f64, handle_c: f64, stalk_r: f64, stalk_c: f64) {
+        let hx = self.sx(handle_c * CELL_SIZE);
+        let hy = self.sy(handle_r * CELL_SIZE);
+        let bx = self.sx(stalk_c * CELL_SIZE);
+        let by = self.sy(stalk_r * CELL_SIZE);
+        // Stalk from the selection's top edge to the handle.
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(2.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(bx, by);
+        self.ctx.line_to(hx, hy);
+        self.ctx.stroke();
+        // Round handle (white fill, orange ring).
+        let radius = 6.0;
+        let tau = std::f64::consts::PI * 2.0;
+        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.begin_path();
+        let _ = self.ctx.arc(hx, hy, radius, 0.0, tau);
+        self.ctx.fill();
+        self.ctx.begin_path();
+        let _ = self.ctx.arc(hx, hy, radius, 0.0, tau);
+        self.ctx.stroke();
+        self.ctx.set_line_width(1.0);
+    }
+
     /// Check if a line intersects a box (for box selection). Box in world cells.
     #[wasm_bindgen]
     pub fn line_intersects_box(&self, line_idx: usize, box_r1: i32, box_c1: i32, box_r2: i32, box_c2: i32) -> bool {

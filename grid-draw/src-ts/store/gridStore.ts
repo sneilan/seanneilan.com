@@ -4,7 +4,7 @@ import {
   getSelectionBounds,
   type Cell,
 } from '../utils/selection';
-import { getLineHandles, getRectHandles } from '../utils/handles';
+import { getLineHandles, getRectHandles, rotateHandlePoint } from '../utils/handles';
 import { History } from './edits/history';
 import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData } from './edits/types';
 
@@ -43,7 +43,7 @@ export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
 
 // Types
 export type DrawTool = 'draw' | 'line' | 'rect' | 'text' | 'select';
-export type SelectMode = 'box' | 'drag' | 'resize' | null;
+export type SelectMode = 'box' | 'drag' | 'resize' | 'rotate' | null;
 
 // Which handle of which single shape is being dragged during a resize.
 export type ResizeTarget = {
@@ -122,6 +122,11 @@ type GridState = {
   // whole resize commits as a single from→to edit on release.
   resizeOrigin: LineGeom | RectGeom | null;
 
+  // Active during a rotate gesture: the selection's center in WORLD pixels and
+  // the pointer angle (radians) at gesture start. The live drag rotates freely
+  // around the center; the release snaps to the nearest quarter-turn.
+  rotateOrigin: { cx: number; cy: number; startAngle: number } | null;
+
   // Training-data capture state. 'idle' = off; 'input' = waiting for the user to
   // box-select the example's input; 'output' = input captured, waiting for the
   // target output selection. captureInput holds the serialized input half.
@@ -196,6 +201,13 @@ type GridActions = {
   updateResize: (cell: Cell) => void;
   finishResize: (endCell: Cell) => void;
   cancelResize: () => void;
+  // Rotate the whole selection. Coordinates are WORLD pixels (the pointer).
+  // start captures the center + start angle; update previews a free-angle
+  // rotation; finish snaps to the nearest 90° and commits it as one undo step.
+  startRotate: (x: number, y: number) => void;
+  updateRotate: (x: number, y: number) => void;
+  finishRotate: (x: number, y: number) => void;
+  cancelRotate: () => void;
   setMousePos: (cell: Cell) => void;
 
   // Hit testing for shapes
@@ -422,6 +434,31 @@ export function serializeSelection(
 
 export type CaptureMode = 'idle' | 'input' | 'output';
 
+/**
+ * Number of clockwise quarter-turns (0..3) a free pointer rotation snaps to.
+ * `theta` is the signed angle dragged from the gesture's start direction.
+ */
+function snapQuarterTurns(theta: number): number {
+  return ((Math.round(theta / (Math.PI / 2)) % 4) + 4) % 4;
+}
+
+/**
+ * Apply `k` clockwise quarter-turns to a grid coordinate about an integer cell
+ * center (icr, icc). One turn: (r,c) → (icr+(c-icc), icc-(r-icr)). Integer in,
+ * integer out, so 90° steps map cells→cells exactly (lossless).
+ */
+function rotateQuarter(r: number, c: number, k: number, icr: number, icc: number): { r: number; c: number } {
+  let rr = r;
+  let cc = c;
+  for (let n = 0; n < k; n++) {
+    const nr = icr + (cc - icc);
+    const nc = icc - (rr - icr);
+    rr = nr;
+    cc = nc;
+  }
+  return { r: rr, c: cc };
+}
+
 /** Every drawable item currently on the grid, as a selection list. */
 function allItems(grid: GridCanvasWasm): SelectedItem[] {
   const items: SelectedItem[] = [];
@@ -470,6 +507,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   previousSelection: [],
   resizeTarget: null,
   resizeOrigin: null,
+  rotateOrigin: null,
 
   captureMode: 'idle',
   captureInput: null,
@@ -932,6 +970,157 @@ export const useGridStore = create<GridStore>((set, get) => ({
       }
     }
     set({ selectMode: null, resizeTarget: null, resizeOrigin: null, isSelecting: false });
+    get().renderSelection();
+  },
+
+  // --- Rotate (free drag, snaps to 90° on release) --------------------------
+
+  startRotate: (x, y) => {
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    const bounds = getSelectionBoundsAll(selectedItems, grid);
+    if (!bounds) return;
+    const cs = grid.get_cell_size();
+    const cx = ((bounds.minCol + bounds.maxCol) / 2) * cs;
+    const cy = ((bounds.minRow + bounds.maxRow) / 2) * cs;
+    set({
+      selectMode: 'rotate',
+      isSelecting: true,
+      rotateOrigin: { cx, cy, startAngle: Math.atan2(y - cy, x - cx) },
+    });
+  },
+
+  updateRotate: (x, y) => {
+    const { grid, selectedItems, rotateOrigin } = get();
+    if (!grid || !rotateOrigin) return;
+    const { cx, cy, startAngle } = rotateOrigin;
+    // Snap the preview to the nearest quarter-turn — never show an in-between
+    // tilt — so the ghost is exactly what the release will commit.
+    const k = snapQuarterTurns(Math.atan2(y - cy, x - cx) - startAngle);
+    grid.render();
+    if (k === 0) {
+      // Back at 0°: show the selection in place (with its highlights/handles).
+      get().renderSelection();
+      return;
+    }
+    const bounds = getSelectionBoundsAll(selectedItems, grid);
+    if (!bounds) return;
+    const icr = Math.round((bounds.minRow + bounds.maxRow) / 2);
+    const icc = Math.round((bounds.minCol + bounds.maxCol) / 2);
+    for (const item of selectedItems) {
+      if (item.type === 'cell') {
+        const p = rotateQuarter(item.row, item.col, k, icr, icc);
+        grid.preview_cell(p.r, p.c, grid.get_cell_color(item.row, item.col));
+      } else if (item.type === 'line') {
+        const l = grid.get_line(item.index);
+        if (l.length >= 5) {
+          const a = rotateQuarter(l[0], l[1], k, icr, icc);
+          const b = rotateQuarter(l[2], l[3], k, icr, icc);
+          grid.preview_line(a.r, a.c, b.r, b.c, l[4]);
+        }
+      } else if (item.type === 'rect') {
+        const r = grid.get_rect(item.index);
+        if (r.length >= 6) {
+          const a = rotateQuarter(r[0], r[1], k, icr, icc);
+          const b = rotateQuarter(r[2], r[3], k, icr, icc);
+          grid.preview_rect(a.r, a.c, b.r, b.c, r[4], r[5]);
+        }
+      } else if (item.type === 'text') {
+        const t = grid.get_text(item.index);
+        if (t.length >= 3) {
+          const p = rotateQuarter(t[0], t[1], k, icr, icc);
+          grid.preview_text(p.r, p.c, t[2], grid.get_text_size(item.index), grid.get_text_string(item.index));
+        }
+      }
+    }
+  },
+
+  finishRotate: (x, y) => {
+    const { grid, selectedItems, rotateOrigin } = get();
+    if (!grid || !rotateOrigin) {
+      set({ selectMode: null, rotateOrigin: null, isSelecting: false });
+      return;
+    }
+    const { cx, cy, startAngle } = rotateOrigin;
+    // Snap to the nearest quarter-turn (0..3 clockwise). 0 = no change.
+    const k = snapQuarterTurns(Math.atan2(y - cy, x - cx) - startAngle);
+    const bounds = getSelectionBoundsAll(selectedItems, grid);
+    if (k === 0 || !bounds) {
+      set({ selectMode: null, rotateOrigin: null, isSelecting: false });
+      get().renderSelection();
+      return;
+    }
+
+    // Rotate about an INTEGER cell center so 90° steps map cells→cells exactly
+    // (lossless, and four turns return to the original).
+    const icr = Math.round((bounds.minRow + bounds.maxRow) / 2);
+    const icc = Math.round((bounds.minCol + bounds.maxCol) / 2);
+    const quarter = (r: number, c: number) => rotateQuarter(r, c, k, icr, icc);
+
+    // Cells: clear every source first, then write every destination, so an
+    // overlapping source/dest footprint never clobbers (mirrors the drag move).
+    const clears: Edit[] = [];
+    const writes: Edit[] = [];
+    const geomEdits: Edit[] = [];
+    const newSelected: SelectedItem[] = [];
+
+    for (const item of selectedItems) {
+      if (item.type === 'cell') {
+        if (!grid.get_cell(item.row, item.col)) continue;
+        const color = grid.get_cell_color(item.row, item.col);
+        const np = quarter(item.row, item.col);
+        clears.push({
+          kind: 'setCellState', row: item.row, col: item.col,
+          from: { filled: true, color }, to: { filled: false, color },
+        });
+        writes.push({
+          kind: 'setCellState', row: np.r, col: np.c,
+          from: { filled: grid.get_cell(np.r, np.c), color: grid.get_cell_color(np.r, np.c) },
+          to: { filled: true, color },
+        });
+        newSelected.push({ type: 'cell', row: np.r, col: np.c });
+      } else if (item.type === 'line') {
+        const l = grid.get_line(item.index);
+        if (l.length < 5) continue;
+        const a = quarter(l[0], l[1]);
+        const b = quarter(l[2], l[3]);
+        geomEdits.push({
+          kind: 'setLineGeom', idx: item.index,
+          from: { r1: l[0], c1: l[1], r2: l[2], c2: l[3] },
+          to: { r1: a.r, c1: a.c, r2: b.r, c2: b.c },
+        });
+        newSelected.push({ type: 'line', index: item.index });
+      } else if (item.type === 'rect') {
+        const r = grid.get_rect(item.index);
+        if (r.length < 6) continue;
+        const a = quarter(r[0], r[1]);
+        const b = quarter(r[2], r[3]);
+        geomEdits.push({
+          kind: 'setRectGeom', idx: item.index,
+          from: { r1: r[0], c1: r[1], r2: r[2], c2: r[3] },
+          to: { r1: a.r, c1: a.c, r2: b.r, c2: b.c },
+        });
+        newSelected.push({ type: 'rect', index: item.index });
+      } else if (item.type === 'text') {
+        const t = grid.get_text(item.index);
+        if (t.length < 3) continue;
+        // Text can't render rotated glyphs, so rotate its anchor and keep it
+        // upright (the position follows the group; the glyphs stay horizontal).
+        const np = quarter(t[0], t[1]);
+        geomEdits.push({ kind: 'moveText', idx: item.index, dRow: np.r - t[0], dCol: np.c - t[1] });
+        newSelected.push({ type: 'text', index: item.index });
+      }
+    }
+
+    set({ selectMode: null, rotateOrigin: null, isSelecting: false });
+    get().commitEdits([...clears, ...writes, ...geomEdits]);
+    set({ selectedItems: newSelected });
+    get().renderSelection();
+    get().updateOutputs();
+  },
+
+  cancelRotate: () => {
+    set({ selectMode: null, rotateOrigin: null, isSelecting: false });
     get().renderSelection();
   },
 
@@ -1588,6 +1777,15 @@ sparse = sparse.coalesce()`;
       } else if (only.type === 'rect') {
         const handles = getRectHandles(grid.get_rect(only.index));
         for (const h of handles) grid.draw_handle(h.r, h.c);
+      }
+    }
+
+    // Rotate handle floats above the whole selection (any number of items).
+    if (selectedItems.length > 0 && typeof grid.draw_rotate_handle === 'function') {
+      const bounds = getSelectionBoundsAll(selectedItems, grid);
+      if (bounds) {
+        const h = rotateHandlePoint(bounds);
+        grid.draw_rotate_handle(h.r, h.c, bounds.minRow, h.c);
       }
     }
   },
