@@ -66,7 +66,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn add_text(&mut self, r: i32, c: i32, color: u8, size: f64, text: &str) {
         self.drawn_texts.push(TextItem { r, c, color, size, text: text.to_string() });
-        self.render();
+        self.maybe_render();
     }
 
     /// Insert a text at `idx`, shifting later texts up (index-stable inverse of
@@ -75,14 +75,14 @@ impl GridCanvas {
     pub fn insert_text(&mut self, idx: usize, r: i32, c: i32, color: u8, size: f64, text: &str) {
         let at = idx.min(self.drawn_texts.len());
         self.drawn_texts.insert(at, TextItem { r, c, color, size, text: text.to_string() });
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
     pub fn delete_text(&mut self, idx: usize) {
         if idx < self.drawn_texts.len() {
             self.drawn_texts.remove(idx);
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -91,7 +91,7 @@ impl GridCanvas {
         if let Some(t) = self.drawn_texts.get_mut(idx) {
             t.r += delta_row;
             t.c += delta_col;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -99,7 +99,7 @@ impl GridCanvas {
     pub fn set_text_color(&mut self, idx: usize, color: u8) {
         if let Some(t) = self.drawn_texts.get_mut(idx) {
             t.color = color;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -107,7 +107,7 @@ impl GridCanvas {
     pub fn set_text_size(&mut self, idx: usize, size: f64) {
         if let Some(t) = self.drawn_texts.get_mut(idx) {
             t.size = size;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -117,7 +117,7 @@ impl GridCanvas {
         if let Some(t) = self.drawn_texts.get_mut(idx) {
             t.r = r;
             t.c = c;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -192,7 +192,7 @@ impl GridCanvas {
     /// caret after the text, so the in-progress text appears as you type.
     #[wasm_bindgen]
     pub fn render_text_preview(&self, r: i32, c: i32, color: u8, size: f64, text: &str) {
-        self.render();
+        self.maybe_render();
         // World-px width first (sets unscaled font), then scale to screen.
         let w = self.measure_text_px(text, size) * self.zoom;
         let x = self.sx(c as f64 * CELL_SIZE);

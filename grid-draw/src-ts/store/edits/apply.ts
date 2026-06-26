@@ -124,7 +124,15 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
       grid.delete_text(e.idx);
       break;
     case 'batch':
-      for (const child of e.edits) applyEdit(grid, child);
+      // Apply the whole batch with rendering paused so the canvas paints ONCE at
+      // the end, not once per child edit — the difference between a snappy and a
+      // janky drag when moving many shapes. (Guarded for minimal test mocks.)
+      grid.set_render_paused?.(true);
+      try {
+        for (const child of e.edits) applyEdit(grid, child);
+      } finally {
+        grid.set_render_paused?.(false);
+      }
       break;
   }
 }

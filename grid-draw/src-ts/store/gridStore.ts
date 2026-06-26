@@ -1299,8 +1299,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
       newSelected.push({ type: 'rect', index: rectIdx });
       rectIdx++;
     }
-    for (const [r, c, color, size, text] of design.texts ?? []) {
-      edits.push({ kind: 'addText', idx: textIdx, text: { r: anchorRow + r, c: anchorCol + c, color, size, text } });
+    // Texts may arrive as tuples [r,c,color,size,text] (our serialize format) or
+    // as objects {r,c,color,size,text} (what a model's JSON-schema decoder emits).
+    // Normalize and skip anything malformed so a stray prediction can't crash the
+    // editor (this was the "[Symbol.iterator] is not iterable" Predict failure).
+    for (const t of design.texts ?? []) {
+      const o = Array.isArray(t)
+        ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] }
+        : (t as { r: number; c: number; color: number; size: number; text: string });
+      if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
+      edits.push({
+        kind: 'addText', idx: textIdx,
+        text: { r: anchorRow + o.r, c: anchorCol + o.c, color: o.color ?? 0, size: o.size ?? 1, text: String(o.text ?? '') },
+      });
       newSelected.push({ type: 'text', index: textIdx });
       textIdx++;
     }

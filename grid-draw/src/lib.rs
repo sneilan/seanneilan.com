@@ -75,6 +75,10 @@ pub struct GridCanvas {
     pub(crate) cam_x: f64,
     pub(crate) cam_y: f64,
     pub(crate) zoom: f64,
+    /// When false, mutators skip their internal re-render (see maybe_render).
+    /// Lets the host apply a whole batch of edits and paint once at the end —
+    /// e.g. dragging many shapes is one render instead of one per shape.
+    pub(crate) render_enabled: bool,
     /// Filled cells, sparse: (row, col) -> color index (0..=5). Absence = empty.
     /// Sparse + signed keys is what makes the canvas infinite in all directions.
     pub(crate) cells: HashMap<(i32, i32), u8>,
@@ -124,6 +128,7 @@ impl GridCanvas {
             cam_x: 0.0,
             cam_y: 0.0,
             zoom: 1.0,
+            render_enabled: true,
             cells: HashMap::new(),
             draw_color: 0,
             outline_color: 6, // default: no outline
@@ -148,6 +153,24 @@ impl GridCanvas {
     /// On-screen size of one grid cell at the current zoom.
     pub(crate) fn cell_px(&self) -> f64 {
         CELL_SIZE * self.zoom
+    }
+
+    /// Render unless paused — mutators call this instead of render() directly so
+    /// a batch can suppress intermediate paints.
+    pub(crate) fn maybe_render(&self) {
+        if self.render_enabled {
+            self.render();
+        }
+    }
+
+    /// Pause/resume the mutators' auto-render. Resuming paints once, so the host
+    /// wraps a batch of edits in set_render_paused(true)…(false) for one repaint.
+    #[wasm_bindgen]
+    pub fn set_render_paused(&mut self, paused: bool) {
+        self.render_enabled = !paused;
+        if !paused {
+            self.render();
+        }
     }
 
     /// Resize the visible canvas (viewport) in pixels. Does not touch the world.

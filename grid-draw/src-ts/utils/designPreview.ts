@@ -87,12 +87,17 @@ export function renderDesignToCanvas(
   }
 
   // Texts: baseline on row r, rising `size` cells (matches the WASM renderer).
+  // Accept both tuple [r,c,color,size,text] (our serialize format) and object
+  // {r,c,color,size,text} (what a model's JSON-schema decoder emits); skip junk.
   ctx.textBaseline = 'alphabetic';
-  for (const [r, c, color, size, str] of design.texts ?? []) {
-    const fill = hex(color) ?? '#000000';
-    ctx.fillStyle = fill;
-    ctx.font = `${Math.max(6, size * cs)}px 'BigBlue Terminal', monospace`;
-    ctx.fillText(str, c * cs, r * cs);
+  for (const t of design.texts ?? []) {
+    const o = Array.isArray(t)
+      ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] }
+      : (t as { r: number; c: number; color: number; size: number; text: string });
+    if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
+    ctx.fillStyle = hex(o.color) ?? '#000000';
+    ctx.font = `${Math.max(6, (o.size ?? 1) * cs)}px 'BigBlue Terminal', monospace`;
+    ctx.fillText(String(o.text ?? ''), o.c * cs, o.r * cs);
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);

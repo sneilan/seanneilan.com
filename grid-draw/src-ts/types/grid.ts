@@ -6,6 +6,8 @@ export type GridCanvasWasm = {
   // Core
   render(): void;
   clear(): void;
+  // Pause/resume mutators' auto-render so a batch of edits paints once.
+  set_render_paused(paused: boolean): void;
 
   // Camera / viewport (the grid is unbounded; only this window is drawn)
   set_viewport(view_w: number, view_h: number): void;

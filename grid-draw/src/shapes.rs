@@ -10,7 +10,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.drawn_lines.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as i32]);
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
@@ -18,7 +18,7 @@ impl GridCanvas {
         // Rects carry an independent fill and outline color: [r1,c1,r2,c2,fill,outline].
         // Index 6 ("transparent") means "no fill" / "no outline".
         self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as i32, self.outline_color as i32]);
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
@@ -154,13 +154,13 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn delete_line(&mut self, idx: usize) {
         delete_record(&mut self.drawn_lines, LINE_STRIDE, idx);
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
     pub fn delete_rect(&mut self, idx: usize) {
         delete_record(&mut self.drawn_rects, RECT_STRIDE, idx);
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
@@ -171,7 +171,7 @@ impl GridCanvas {
             self.drawn_lines[start + 1] += delta_col;
             self.drawn_lines[start + 2] += delta_row;
             self.drawn_lines[start + 3] += delta_col;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -183,7 +183,7 @@ impl GridCanvas {
             self.drawn_rects[start + 1] += delta_col;
             self.drawn_rects[start + 2] += delta_row;
             self.drawn_rects[start + 3] += delta_col;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -199,7 +199,7 @@ impl GridCanvas {
                 self.drawn_lines[start + 2] = r;
                 self.drawn_lines[start + 3] = c;
             }
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -220,7 +220,7 @@ impl GridCanvas {
             handle, r, c,
         );
         set_geom(&mut self.drawn_rects, RECT_STRIDE, idx, r1, c1, r2, c2);
-        self.render();
+        self.maybe_render();
     }
 
     /// Draw a small square grab-handle centered on a grid coordinate (r, c).
@@ -328,7 +328,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn insert_line(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, color: i32) {
         insert_record(&mut self.drawn_lines, LINE_STRIDE, idx, &[r1, c1, r2, c2, color]);
-        self.render();
+        self.maybe_render();
     }
 
     /// Insert a rect at a specific index, shifting later rects up. The
@@ -336,7 +336,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn insert_rect(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, fill: i32, outline: i32) {
         insert_record(&mut self.drawn_rects, RECT_STRIDE, idx, &[r1, c1, r2, c2, fill, outline]);
-        self.render();
+        self.maybe_render();
     }
 
     /// Overwrite a line's geometry in place, leaving its color untouched. The
@@ -344,7 +344,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn set_line(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32) {
         set_geom(&mut self.drawn_lines, LINE_STRIDE, idx, r1, c1, r2, c2);
-        self.render();
+        self.maybe_render();
     }
 
     /// Overwrite a rect's geometry in place, leaving its fill/outline untouched.
@@ -352,7 +352,7 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn set_rect(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32) {
         set_geom(&mut self.drawn_rects, RECT_STRIDE, idx, r1, c1, r2, c2);
-        self.render();
+        self.maybe_render();
     }
 
     /// Recolor a line's stroke (for recoloring a selection).
@@ -361,7 +361,7 @@ impl GridCanvas {
         let start = idx * LINE_STRIDE;
         if start + LINE_STRIDE <= self.drawn_lines.len() {
             self.drawn_lines[start + 4] = color;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -371,7 +371,7 @@ impl GridCanvas {
         let start = idx * RECT_STRIDE;
         if start + RECT_STRIDE <= self.drawn_rects.len() {
             self.drawn_rects[start + 4] = color;
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -381,7 +381,7 @@ impl GridCanvas {
         let start = idx * RECT_STRIDE;
         if start + RECT_STRIDE <= self.drawn_rects.len() {
             self.drawn_rects[start + 5] = color;
-            self.render();
+            self.maybe_render();
         }
     }
 }

@@ -12,7 +12,7 @@ impl GridCanvas {
         self.drawn_lines.clear();
         self.drawn_rects.clear();
         self.drawn_texts.clear();
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
@@ -30,7 +30,7 @@ impl GridCanvas {
     pub fn set_cell_color(&mut self, row: i32, col: i32, color: u8) {
         if color < 6 && self.cells.contains_key(&(row, col)) {
             self.cells.insert((row, col), color);
-            self.render();
+            self.maybe_render();
         }
     }
 
@@ -51,7 +51,7 @@ impl GridCanvas {
         } else {
             self.cells.remove(&(row, col));
         }
-        self.render();
+        self.maybe_render();
     }
 
     #[wasm_bindgen]
@@ -84,14 +84,14 @@ impl GridCanvas {
     pub fn move_cell(&mut self, from_row: i32, from_col: i32, to_row: i32, to_col: i32) {
         if let Some(color) = self.cells.remove(&(from_row, from_col)) {
             self.cells.insert((to_row, to_col), color);
-            self.render();
+            self.maybe_render();
         }
     }
 
     #[wasm_bindgen]
     pub fn delete_cell(&mut self, row: i32, col: i32) {
         if self.cells.remove(&(row, col)).is_some() {
-            self.render();
+            self.maybe_render();
         }
     }
 }

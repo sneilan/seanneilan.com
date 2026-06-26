@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
 import Gallery from './Gallery';
+import TrainingData from './TrainingData';
 import { cn } from '@/lib/utils';
 import { useServerStore } from '../store/serverStore';
 
@@ -81,7 +82,7 @@ function GridCanvas() {
     startTrainingCapture, captureSetInput, buildTrainingExample,
     finishTrainingCapture, cancelTrainingCapture,
     serializeWholeGrid, exportHistory, loadDesignWithHistory,
-    currentName, setCurrentName, saveState,
+    currentName, setCurrentName, saveState, setSaveState, resetHistory,
   } = store;
 
   // historyTick re-renders the component on any commit/undo/redo so the
@@ -110,6 +111,8 @@ function GridCanvas() {
   const [teacherAutoSave, setTeacherAutoSave] = useState<boolean>(false);
   // Gallery shown as a modal overlay over the editor (no page navigation).
   const [galleryOpen, setGalleryOpen] = useState<boolean>(false);
+  // Training-data console shown as a draggable modal over the editor.
+  const [trainingOpen, setTrainingOpen] = useState<boolean>(false);
 
   // Camera over the infinite world: (x, y) is the world-pixel coordinate shown
   // at the canvas top-left; zoom is the scale. The WASM grid renders through it
@@ -297,6 +300,18 @@ function GridCanvas() {
     window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
     setGalleryOpen(false);
   }, [loadDesignWithHistory, setCurrentName, getDrawing]);
+
+  // Start a fresh, unsaved drawing: detach from any current document FIRST (so
+  // clearing doesn't auto-save the blank over the old one), wipe the canvas,
+  // reset history, and return the URL to the base editor.
+  const newDrawing = useCallback(() => {
+    setCurrentName(null);
+    clear();
+    resetHistory();
+    setSaveState('idle');
+    window.history.replaceState({}, '', BASE);
+    setTrainStatus('');
+  }, [setCurrentName, clear, resetHistory, setSaveState]);
 
   // Handle window resize: just resize the visible viewport. The world is
   // infinite, so no content is ever lost — shrinking the window only narrows the
@@ -945,6 +960,15 @@ function GridCanvas() {
             Clear Grid
           </Button>
 
+          <Button
+            onClick={newDrawing}
+            disabled={loading}
+            size="sm"
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+          >
+            New Drawing
+          </Button>
+
           <p className="text-xs text-gray-400">
             \ line, m rect, t text, s select, 1-7 colors, ⌘Z undo
           </p>
@@ -1042,7 +1066,7 @@ function GridCanvas() {
                 size="sm"
                 variant="outline"
                 className="w-full"
-                onClick={() => { window.location.href = `${BASE}training/`; }}
+                onClick={() => setTrainingOpen(true)}
               >
                 View Training Data
               </Button>
@@ -1126,6 +1150,10 @@ function GridCanvas() {
 
       {galleryOpen && (
         <Gallery asModal onClose={() => setGalleryOpen(false)} onOpenDesign={openDrawing} />
+      )}
+
+      {trainingOpen && (
+        <TrainingData asModal onClose={() => setTrainingOpen(false)} />
       )}
     </>
   );
