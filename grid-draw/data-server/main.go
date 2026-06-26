@@ -528,7 +528,13 @@ func handleTrain(w http.ResponseWriter, r *http.Request) {
 
 	cmd := exec.Command("sh", "-c", trainCmd+" --job-id "+id)
 	cmd.Dir = trainDir
-	cmd.Env = append(os.Environ(), "DATA_SERVER=http://localhost"+envOr("ADDR", ":7843"))
+	cmd.Env = append(os.Environ(),
+		"DATA_SERVER=http://localhost"+envOr("ADDR", ":7843"),
+		// The inference server (serve.py) stays resident on the GPU, so a
+		// training run shares VRAM with it. expandable_segments cuts the
+		// fragmentation that otherwise OOMs the run at step 0 on a 12GB card.
+		"PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+	)
 
 	setJob(job{ID: id, Status: "starting", Message: "launching trainer"})
 	go func() {

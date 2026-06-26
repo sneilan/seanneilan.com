@@ -65,7 +65,10 @@ def main():
     ap.add_argument("--model", default=os.getenv("MODEL", "Qwen/Qwen2.5-1.5B-Instruct"))
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--lr", type=float, default=2e-4)
-    ap.add_argument("--batch-size", type=int, default=4)
+    # Small default: training shares the GPU with the resident inference server
+    # (serve.py), so a large batch OOMs a 12GB card. grad accumulation keeps the
+    # effective batch reasonable; bump this on a bigger GPU.
+    ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--job-id", default="qlora-1")
     ap.add_argument("--no-augment", action="store_true")
     ap.add_argument("--out", default=None, help="output dir (default outputs/<job-id>)")

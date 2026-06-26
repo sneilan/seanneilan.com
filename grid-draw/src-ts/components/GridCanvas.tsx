@@ -1154,7 +1154,8 @@ function GridCanvas() {
           defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 560 }}
         >
           <div className="space-y-2 w-72">
-            {jobs.map((j) => {
+            {/* Only the latest run matters; the store lists newest first. */}
+            {jobs.slice(0, 1).map((j) => {
               const pct = j.total > 0 ? Math.min(100, Math.round((j.step / j.total) * 100)) : 0;
               const barColor =
                 j.status === 'error' ? 'bg-red-500'
