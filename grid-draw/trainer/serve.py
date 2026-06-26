@@ -26,7 +26,7 @@ import os
 import requests
 import outlines
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from schema import Design
@@ -80,10 +80,23 @@ class PredictRequest(BaseModel):
 def predict(req: PredictRequest):
     prompt = make_prompt(req.input, few_shot_demos())
     # Grammar-constrained generation: the logits processor built from Design
-    # guarantees schema-valid JSON regardless of model quality. outlines 1.x
+    # guarantees schema-valid *tokens* regardless of model quality. outlines 1.x
     # returns the JSON as a string for a pydantic output type.
     raw = generator(prompt, max_new_tokens=MAX_TOKENS)
-    design = raw if isinstance(raw, Design) else Design.model_validate_json(raw)
+    try:
+        design = raw if isinstance(raw, Design) else Design.model_validate_json(raw)
+    except ValidationError:
+        # The grammar guarantees valid tokens but NOT that generation finishes
+        # within the budget: a runaway can hit max_new_tokens mid-string and
+        # truncate the JSON. Degrade to "no prediction" (a valid empty design
+        # sized to the input) rather than 500 — the app skips empty outputs.
+        log.warning(
+            "prediction unparseable (likely truncated at max_new_tokens=%d); "
+            "returning empty design. head=%r",
+            MAX_TOKENS, raw[:160] if isinstance(raw, str) else raw,
+        )
+        design = Design(w=int(req.input.get("w", 1) or 1),
+                        h=int(req.input.get("h", 1) or 1))
     return {"output": json.loads(design.model_dump_json())}
 
 

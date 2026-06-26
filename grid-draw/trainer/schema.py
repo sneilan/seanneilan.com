@@ -8,14 +8,23 @@ instance survive. The model chooses content; the grammar guarantees form.
 
 from __future__ import annotations
 
-from typing import List
-from pydantic import BaseModel, Field, conint, conlist
+from pydantic import BaseModel, Field, conint, conlist, constr
 
 # Color indices: 0=black 1=white 2=red 3=yellow 4=blue 5=green 6=transparent.
 Color = conint(ge=0, le=6)
 # Coordinates are unbounded (non-negative) — the grid can be any size. Coverage
 # of larger/odd layouts comes from data augmentation, not a schema cap.
 Coord = conint(ge=0)
+
+# Upper bounds keep the constrained grammar FINITE so generation always reaches a
+# closing token within the decode budget. Without them an untrained / few-shot
+# model can loop forever (observed: an endless `texts` array of {"text":" "}),
+# overrun max_new_tokens, and return truncated — invalid — JSON, which then 500s
+# the server. These caps are generous for real selections; coverage of bigger
+# layouts comes from a trained model, not from removing the ceiling.
+MAX_SHAPES = 256
+MAX_TEXTS = 16
+MAX_TEXT_LEN = 64
 
 # Fixed-arity rows, matching the flat arrays the app produces.
 Cell = conlist(int, min_length=3, max_length=3)            # [r, c, color]
@@ -28,15 +37,15 @@ class TextItem(BaseModel):
     c: int
     color: Color
     size: float
-    text: str
+    text: constr(max_length=MAX_TEXT_LEN)
 
 
 class Design(BaseModel):
     w: Coord
     h: Coord
-    cells: List[Cell] = Field(default_factory=list)
-    lines: List[Line] = Field(default_factory=list)
-    rects: List[Rect] = Field(default_factory=list)
-    # Texts are awkward for constrained free-text generation; default empty and
-    # let only the (rarer) text-producing fine-tuned model fill them later.
-    texts: List[TextItem] = Field(default_factory=list)
+    cells: conlist(Cell, max_length=MAX_SHAPES) = Field(default_factory=list)
+    lines: conlist(Line, max_length=MAX_SHAPES) = Field(default_factory=list)
+    rects: conlist(Rect, max_length=MAX_SHAPES) = Field(default_factory=list)
+    # Texts are awkward for constrained free-text generation; bounded tightly so
+    # a weak model can't run away here. The fine-tuned model fills them later.
+    texts: conlist(TextItem, max_length=MAX_TEXTS) = Field(default_factory=list)
