@@ -9,3 +9,4 @@ node_modules/
 
 # Override parent gitignore's lib/ exclusion for src-ts/lib
 !src-ts/lib/
+logs/
