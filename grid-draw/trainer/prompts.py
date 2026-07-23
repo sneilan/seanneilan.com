@@ -17,9 +17,19 @@ SYSTEM = (
 )
 
 
+# Key order MUST match the Design schema's field order: the outlines grammar
+# constrains generated keys to that order, so training on any other order puts
+# the fine-tuned model off-distribution at inference (observed: sorted keys ->
+# constrained output degenerates to empty designs).
+_KEY_ORDER = ("w", "h", "cells", "lines", "rects", "texts")
+
+
 def to_json(design: dict) -> str:
-    """Compact, key-sorted JSON so identical designs serialize identically."""
-    return json.dumps(design, separators=(",", ":"), sort_keys=True)
+    """Compact JSON in schema field order so train and constrained-inference
+    serializations are identical."""
+    ordered = {k: design[k] for k in _KEY_ORDER if k in design}
+    ordered.update({k: v for k, v in design.items() if k not in ordered})
+    return json.dumps(ordered, separators=(",", ":"))
 
 
 def make_prompt(inp: dict, demos: list[dict] | None = None) -> str:
@@ -35,4 +45,6 @@ def make_prompt(inp: dict, demos: list[dict] | None = None) -> str:
         parts.append("")
     parts.append("INPUT:\n" + to_json(inp))
     parts.append("OUTPUT:")
-    return "\n".join(parts)
+    # Trailing newline so generation starts directly at `{`, matching both the
+    # demo blocks above and the training completions.
+    return "\n".join(parts) + "\n"

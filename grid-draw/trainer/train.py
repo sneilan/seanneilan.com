@@ -53,7 +53,7 @@ def build_dataset(rows: list[dict], *, augment: bool) -> Dataset:
         pairs = augment_pair(row["input"], row["output"]) if augment else [(row["input"], row["output"])]
         for inp, out in pairs:
             prompts.append(make_prompt(inp))
-            completions.append(" " + to_json(out))
+            completions.append(to_json(out))
     if not prompts:
         raise SystemExit("no training data — capture some examples in the app first")
     log.info("%d captured pairs -> %d training rows", len(rows), len(prompts))
@@ -83,20 +83,26 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # 4-bit (QLoRA) keeps a 1.5B model well within a consumer GPU's memory.
-    bnb = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model, quantization_config=bnb, device_map="auto", torch_dtype=torch.bfloat16,
-    )
+    # bitsandbytes is CUDA-only, so elsewhere (Apple Silicon / CPU) the model
+    # loads unquantized — fine for the small models those machines run.
+    if torch.cuda.is_available():
+        bnb = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_use_double_quant=True,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model, quantization_config=bnb, device_map="auto", torch_dtype=torch.bfloat16,
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(args.model, device_map="auto")
 
     peft_config = LoraConfig(
         r=16, lora_alpha=32, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
+        # Adapt every linear layer (except the LM head); module names differ per
+        # architecture (Qwen q_proj/..., GPT-NeoX query_key_value/...).
+        target_modules="all-linear",
     )
 
     cfg = SFTConfig(
@@ -107,7 +113,7 @@ def main():
         learning_rate=args.lr,
         logging_steps=5,
         save_strategy="epoch",
-        bf16=True,
+        bf16=torch.cuda.is_available(),
         completion_only_loss=True,  # mask the prompt; learn only the OUTPUT JSON
         report_to=[],
     )

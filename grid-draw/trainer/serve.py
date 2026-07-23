@@ -158,7 +158,11 @@ class PredictRequest(BaseModel):
 @app.post("/predict")
 def predict(req: PredictRequest):
     ensure_latest()  # auto-pick up a newer adapter from a finished training run
-    prompt = make_prompt(req.input, few_shot_demos())
+    # Demos help the untrained base model, but a fine-tuned adapter never saw
+    # them (train.py builds demo-less prompts) — and a small model will copy
+    # cells out of the demos instead of transforming the input.
+    demos = [] if _current_adapter else few_shot_demos()
+    prompt = make_prompt(req.input, demos)
     # Grammar-constrained generation: the logits processor built from Design
     # guarantees schema-valid *tokens* regardless of model quality. outlines 1.x
     # returns the JSON as a string for a pydantic output type.
