@@ -41,6 +41,14 @@ url = "https://www.linkedin.com/in/seanneilan"
 name = "github"
 url = "https://github.com/sneilan"
 
+[[params.social]]
+name = "ycombinator"
+url = "https://news.ycombinator.com/user?id=sneilan1"
+
+[[params.social]]
+name = "reddit"
+url = "https://www.reddit.com/user/my_cat_is_too_fat/"
+
 [[params.menu]]
 name = "home"
 url = "/"
