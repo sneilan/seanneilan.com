@@ -604,7 +604,15 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
   pickTextSize: (size) => {
     set({ textSize: size });
-    const { grid, selectedItems } = get();
+    const { grid, selectedItems, textEdit, colorIdx } = get();
+    // If text is actively being typed, resize it live so the in-progress text
+    // reflows to the new size (the preview is re-rendered, not committed).
+    if (textEdit) {
+      const next = { ...textEdit, size };
+      set({ textEdit: next });
+      grid?.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+      return;
+    }
     if (!grid || selectedItems.length === 0) return;
     const edits: Edit[] = [];
     for (const item of selectedItems) {
