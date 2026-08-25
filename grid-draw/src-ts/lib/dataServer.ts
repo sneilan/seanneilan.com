@@ -78,6 +78,18 @@ export async function saveExample(input: DesignJSON, output: DesignJSON): Promis
   return (await api<{ id: number }>('/examples', { input, output })).id;
 }
 
+// Overwrite an existing training example in place (PUT /examples/{id}) rather
+// than appending a new one — used when an example's half is loaded into the
+// editor, edited, and re-saved over the original.
+export async function updateExample(id: number, input: DesignJSON, output: DesignJSON): Promise<void> {
+  const res = await fetch(`${DATA_SERVER}/examples/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input, output }),
+  });
+  if (!res.ok) throw new Error(`/examples/${id} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
 // --- Prediction + teacher ---------------------------------------------------
 
 export function predict(input: DesignJSON): Promise<{ output: DesignJSON }> {

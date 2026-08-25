@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { queryClient } from '../lib/queryClient';
 import {
   listDesigns, listExamples, listPredictions, listJobs,
-  getDesign, getDesignByName, saveDesign, saveExample, predict, teacherPredict, startTraining,
+  getDesign, getDesignByName, saveDesign, saveExample, updateExample, predict, teacherPredict, startTraining,
   type SavedDesign, type SavedExample, type SavedPrediction, type TrainingJob, type HistoryStacks,
 } from '../lib/dataServer';
 import type { DesignJSON } from './gridStore';
@@ -34,6 +34,7 @@ type ServerState = {
   getDrawing: (name: string) => Promise<SavedDesign>;
   getDrawingById: (id: number) => Promise<SavedDesign>;
   saveExamplePair: (input: DesignJSON, output: DesignJSON) => Promise<void>;
+  updateExamplePair: (id: number, input: DesignJSON, output: DesignJSON) => Promise<void>;
   runPredict: (input: DesignJSON) => Promise<DesignJSON>;
   runTeacher: (input: DesignJSON, save: boolean) => Promise<{ output: DesignJSON; saved: boolean }>;
   runTraining: () => Promise<string>;
@@ -112,6 +113,12 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
   saveExamplePair: async (input, output) => {
     await saveExample(input, output);
+    queryClient.invalidateQueries({ queryKey: KEYS.examples });
+    await get().loadExamples();
+  },
+
+  updateExamplePair: async (id, input, output) => {
+    await updateExample(id, input, output);
     queryClient.invalidateQueries({ queryKey: KEYS.examples });
     await get().loadExamples();
   },

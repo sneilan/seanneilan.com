@@ -4,7 +4,7 @@ import { DraggablePanel } from './DraggablePanel';
 import { DesignThumbnail } from './DesignThumbnail';
 import { useServerStore } from '../store/serverStore';
 import { isEmptyDesign } from '../utils/designUtils';
-import type { SavedPrediction } from '../lib/dataServer';
+import type { SavedExample, SavedPrediction } from '../lib/dataServer';
 import type { DesignJSON } from '../store/gridStore';
 
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
@@ -14,21 +14,47 @@ type Props = {
   // full-page route at <base>training/.
   asModal?: boolean;
   onClose?: () => void;
+  // Load one half of a training example into the editor for editing. Only wired
+  // in the modal (over the editor); absent on the standalone page.
+  onEditExample?: (ex: SavedExample, half: 'input' | 'output') => void;
 };
 
-// An input → output pair rendered as two thumbnails (the gallery look).
-function Pair({ input, output }: { input: DesignJSON; output: DesignJSON }) {
+// One labelled thumbnail. When onClick is given it becomes a button that loads
+// that half into the editor (a subtle hover ring signals it's clickable).
+function Half({ design, label, onClick }: { design: DesignJSON; label: string; onClick?: () => void }) {
+  const thumb = <DesignThumbnail design={design} size={84} />;
+  return (
+    <div className="flex flex-col items-center">
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          title={`Load this ${label} into the editor`}
+          className="rounded ring-1 ring-transparent hover:ring-blue-400 hover:ring-2 focus:outline-none focus:ring-blue-500 cursor-pointer"
+        >
+          {thumb}
+        </button>
+      ) : thumb}
+      <span className="text-[10px] text-gray-400 mt-1">{label}</span>
+    </div>
+  );
+}
+
+// An input → output pair rendered as two thumbnails (the gallery look). When
+// onInput/onOutput are supplied, that half is clickable to load into the editor.
+function Pair({
+  input, output, onInput, onOutput,
+}: {
+  input: DesignJSON;
+  output: DesignJSON;
+  onInput?: () => void;
+  onOutput?: () => void;
+}) {
   return (
     <div className="flex items-center justify-center gap-2">
-      <div className="flex flex-col items-center">
-        <DesignThumbnail design={input} size={84} />
-        <span className="text-[10px] text-gray-400 mt-1">input</span>
-      </div>
+      <Half design={input} label="input" onClick={onInput} />
       <span className="text-gray-300">→</span>
-      <div className="flex flex-col items-center">
-        <DesignThumbnail design={output} size={84} />
-        <span className="text-[10px] text-gray-400 mt-1">output</span>
-      </div>
+      <Half design={output} label="output" onClick={onOutput} />
     </div>
   );
 }
@@ -40,7 +66,7 @@ function Pair({ input, output }: { input: DesignJSON; output: DesignJSON }) {
  * training example by having the teacher (480B) label its input. Reads from the
  * server store; the network lives in the store/.ts layer.
  */
-export default function TrainingData({ asModal, onClose }: Props = {}) {
+export default function TrainingData({ asModal, onClose, onEditExample }: Props = {}) {
   const examples = useServerStore((s) => s.examples);
   const predictions = useServerStore((s) => s.predictions);
   const error = useServerStore((s) => s.error);
@@ -89,7 +115,12 @@ export default function TrainingData({ asModal, onClose }: Props = {}) {
         <div className={grid}>
           {examples.map((ex) => (
             <div key={ex.id} className="bg-white rounded border p-2 flex flex-col gap-1">
-              <Pair input={ex.input} output={ex.output} />
+              <Pair
+                input={ex.input}
+                output={ex.output}
+                onInput={onEditExample && (() => onEditExample(ex, 'input'))}
+                onOutput={onEditExample && (() => onEditExample(ex, 'output'))}
+              />
               <span className="text-[10px] text-gray-400">#{ex.id}</span>
             </div>
           ))}

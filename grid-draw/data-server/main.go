@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,6 +108,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /examples", handleExamples)
+	mux.HandleFunc("PUT /examples/{id}", handleExampleUpdate)
 	mux.HandleFunc("GET /examples", handleExamplesList)
 	mux.HandleFunc("/count", handleCount)
 	mux.HandleFunc("/examples.jsonl", handleJSONL)
@@ -129,7 +131,7 @@ func main() {
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -162,6 +164,41 @@ func handleExamples(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, _ := res.LastInsertId()
+	writeJSON(w, map[string]any{"id": id, "count": countRows()})
+}
+
+// handleExampleUpdate overwrites an existing training example's input+output in
+// place (PUT /examples/{id}). Unlike POST, this does NOT append a new row — it's
+// how the editor saves edits made after loading an example's half back into the
+// canvas. The whole pair is sent (the untouched half unchanged) so the row is a
+// full replacement.
+func handleExampleUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	var ex example
+	if err := json.NewDecoder(r.Body).Decode(&ex); err != nil {
+		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(ex.Input) == 0 || len(ex.Output) == 0 {
+		http.Error(w, "input and output are required", http.StatusBadRequest)
+		return
+	}
+	res, err := db.Exec(
+		`UPDATE examples SET input = ?, output = ? WHERE id = ?`,
+		string(ex.Input), string(ex.Output), id,
+	)
+	if err != nil {
+		http.Error(w, "update: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, "no such example", http.StatusNotFound)
+		return
+	}
 	writeJSON(w, map[string]any{"id": id, "count": countRows()})
 }
 

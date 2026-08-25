@@ -10,6 +10,8 @@ import Gallery from './Gallery';
 import TrainingData from './TrainingData';
 import { cn } from '@/lib/utils';
 import { useServerStore } from '../store/serverStore';
+import type { SavedExample } from '../lib/dataServer';
+import type { DesignJSON } from '../store/gridStore';
 
 const CELL_SIZE = 16;
 const HEADER_HEIGHT = 48;
@@ -98,6 +100,7 @@ function GridCanvas() {
   const getDrawing = useServerStore((s) => s.getDrawing);
   const getDrawingById = useServerStore((s) => s.getDrawingById);
   const saveExamplePair = useServerStore((s) => s.saveExamplePair);
+  const updateExamplePair = useServerStore((s) => s.updateExamplePair);
   const runPredict = useServerStore((s) => s.runPredict);
   const runTeacher = useServerStore((s) => s.runTeacher);
   const runTraining = useServerStore((s) => s.runTraining);
@@ -114,6 +117,11 @@ function GridCanvas() {
   const [galleryOpen, setGalleryOpen] = useState<boolean>(false);
   // Training-data console shown as a draggable modal over the editor.
   const [trainingOpen, setTrainingOpen] = useState<boolean>(false);
+  // When a training example's half was loaded into the canvas for editing, this
+  // tracks which example/half so "Update example" can overwrite it in place; the
+  // untouched half (otherHalf) is preserved. Null when not editing an example.
+  const [editingExample, setEditingExample] =
+    useState<{ id: number; half: 'input' | 'output'; otherHalf: DesignJSON } | null>(null);
 
   // Camera over the infinite world: (x, y) is the world-pixel coordinate shown
   // at the canvas top-left; zoom is the scale. The WASM grid renders through it
@@ -298,15 +306,53 @@ function GridCanvas() {
     const d = await getDrawing(name);
     loadDesignWithHistory(d.design, d.history ?? null);
     setCurrentName(d.name);
+    setEditingExample(null);
     window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
     setGalleryOpen(false);
   }, [loadDesignWithHistory, setCurrentName, getDrawing]);
+
+  // Load one half (input or output) of a training example into the canvas to
+  // edit it. Detaches from any gallery document (currentName=null) so auto-save
+  // won't write this into the designs table, and remembers the example + half so
+  // "Update example" can overwrite it in place, keeping the untouched half.
+  const editExampleHalf = useCallback((ex: SavedExample, half: 'input' | 'output') => {
+    const design = half === 'input' ? ex.input : ex.output;
+    const otherHalf = half === 'input' ? ex.output : ex.input;
+    loadDesignWithHistory(design, null);
+    setCurrentName(null);
+    setEditingExample({ id: ex.id, half, otherHalf });
+    window.history.replaceState({}, '', BASE);
+    setTrainingOpen(false);
+    setTrainStatus(`Editing example #${ex.id} (${half}) — click "Update example" to save over it.`);
+  }, [loadDesignWithHistory, setCurrentName]);
+
+  // Overwrite the loaded training example in place: the current canvas becomes
+  // the half that was loaded; the other half is sent unchanged.
+  const saveExampleUpdate = useCallback(async () => {
+    if (!editingExample) return;
+    const design = serializeWholeGrid();
+    if (!design) {
+      setTrainStatus('Nothing to save — draw something first.');
+      return;
+    }
+    const { id, half, otherHalf } = editingExample;
+    const input = half === 'input' ? design : otherHalf;
+    const output = half === 'output' ? design : otherHalf;
+    setTrainStatus(`Updating example #${id}…`);
+    try {
+      await updateExamplePair(id, input, output);
+      setTrainStatus(`Example #${id} (${half}) updated.`);
+    } catch (err) {
+      setTrainStatus(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, [editingExample, serializeWholeGrid, updateExamplePair]);
 
   // Start a fresh, unsaved drawing: detach from any current document FIRST (so
   // clearing doesn't auto-save the blank over the old one), wipe the canvas,
   // reset history, and return the URL to the base editor.
   const newDrawing = useCallback(() => {
     setCurrentName(null);
+    setEditingExample(null);
     clear();
     resetHistory();
     setSaveState('idle');
@@ -983,6 +1029,19 @@ function GridCanvas() {
             </Button>
           </div>
 
+          {editingExample && (
+            <Button
+              variant="outline"
+              onClick={saveExampleUpdate}
+              disabled={loading}
+              size="sm"
+              className="w-full border-amber-400 text-amber-700 hover:bg-amber-50"
+              title={`Overwrite training example #${editingExample.id}'s ${editingExample.half} with the current canvas`}
+            >
+              Update example #{editingExample.id} ({editingExample.half})
+            </Button>
+          )}
+
           <Button
             variant="destructive"
             onClick={clear}
@@ -1187,7 +1246,7 @@ function GridCanvas() {
       )}
 
       {trainingOpen && (
-        <TrainingData asModal onClose={() => setTrainingOpen(false)} />
+        <TrainingData asModal onClose={() => setTrainingOpen(false)} onEditExample={editExampleHalf} />
       )}
     </>
   );
