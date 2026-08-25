@@ -10,7 +10,7 @@ import Gallery from './Gallery';
 import TrainingData from './TrainingData';
 import { cn } from '@/lib/utils';
 import { useServerStore } from '../store/serverStore';
-import type { SavedExample } from '../lib/dataServer';
+import type { SavedExample } from '../lib/localDb';
 import type { DesignJSON } from '../store/gridStore';
 
 const CELL_SIZE = 16;
@@ -92,27 +92,25 @@ function GridCanvas() {
   // undo/redo buttons' enabled state stays in sync with the history stacks.
   void store.historyTick;
 
-  // Server access goes through the server store (the network lives in .ts; this
-  // component never fetches). Live training jobs come from the store, polled below.
-  const jobs = useServerStore((s) => s.jobs);
-  const loadJobs = useServerStore((s) => s.loadJobs);
+  // Data + model access goes through the store (IndexedDB + in-browser TF.js;
+  // this component never touches storage/ml directly). Training progress comes
+  // from the store's local `training` state (no server, no polling).
   const saveDrawing = useServerStore((s) => s.saveDrawing);
   const getDrawing = useServerStore((s) => s.getDrawing);
   const getDrawingById = useServerStore((s) => s.getDrawingById);
   const saveExamplePair = useServerStore((s) => s.saveExamplePair);
   const updateExamplePair = useServerStore((s) => s.updateExamplePair);
   const runPredict = useServerStore((s) => s.runPredict);
-  const runTeacher = useServerStore((s) => s.runTeacher);
-  const runTraining = useServerStore((s) => s.runTraining);
+  const trainModel = useServerStore((s) => s.trainModel);
+  const initModel = useServerStore((s) => s.initModel);
+  const modelStatus = useServerStore((s) => s.modelStatus);
+  const training = useServerStore((s) => s.training);
 
   // Helper to get selected cells only
   const selectedCells = getSelectedCells();
 
   // Training-data capture/predict status shown in the Training Data panel.
   const [trainStatus, setTrainStatus] = useState<string>('');
-  // When on, a teacher (480B) output is auto-accepted into the training set
-  // (gated on server-side schema validation).
-  const [teacherAutoSave, setTeacherAutoSave] = useState<boolean>(false);
   // Gallery shown as a modal overlay over the editor (no page navigation).
   const [galleryOpen, setGalleryOpen] = useState<boolean>(false);
   // Training-data console shown as a draggable modal over the editor.
@@ -207,15 +205,12 @@ function GridCanvas() {
     return () => { cancelled = true; };
   }, [grid, loadDesignWithHistory, setCurrentName, getDrawing, getDrawingById]);
 
-  // Live training-job progress, polled from the server store every 2s. The poll
-  // is a timer trigger; the actual network is in the store (loadJobs).
-  useEffect(() => {
-    loadJobs();
-    const id = setInterval(loadJobs, 2000);
-    return () => clearInterval(id);
-  }, [loadJobs]);
+  // Load any persisted in-browser model at startup so Predict works after a
+  // reload with no server (replaces the old /jobs polling).
+  useEffect(() => { initModel(); }, [initModel]);
 
-  // Save the assembled {input, output} example to the data server.
+  // Save the assembled {input, output, delta} example to IndexedDB. `delta` puts
+  // the two halves in a shared frame so the coordinate model can learn the move.
   const saveTrainingExample = useCallback(async () => {
     const example = buildTrainingExample();
     if (!example) {
@@ -224,7 +219,7 @@ function GridCanvas() {
     }
     setTrainStatus('Saving…');
     try {
-      await saveExamplePair(example.input, example.output);
+      await saveExamplePair(example.input, example.output, example.delta);
       finishTrainingCapture();
       setTrainStatus('Saved.');
     } catch (err) {
@@ -232,20 +227,22 @@ function GridCanvas() {
     }
   }, [buildTrainingExample, finishTrainingCapture, saveExamplePair]);
 
-  // Kick off a training run on the server; progress shows in Training Jobs.
+  // Train the tiny in-browser model on the stored examples. Progress streams into
+  // the store's `training` state (shown in the Training panel below).
   const startTraining = useCallback(async () => {
-    setTrainStatus('Starting training…');
+    setTrainStatus('Training in the browser…');
     try {
-      const id = await runTraining();
-      setTrainStatus(`Training started (${id}). See Training Jobs.`);
+      await trainModel();
+      setTrainStatus('Model trained. Try Predict from Selection.');
     } catch (err) {
       setTrainStatus(`Train failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [runTraining]);
+  }, [trainModel]);
 
-  // Send the current selection as an input to the trained model and stamp the
-  // predicted design onto the grid (just below the input) via importJson-style
-  // placement. Requires the server's /predict endpoint to be wired to a model.
+  // Run the in-browser coordinate model over the selection: each selected cell's
+  // coordinate is mapped to a new coordinate (same color). The model outputs
+  // coordinates in the input's bbox frame, so we anchor placement at the input's
+  // origin (its top-left), reproducing the learned absolute move.
   const predictFromSelection = useCallback(async () => {
     const { grid: g, selectedItems: items } = useGridStore.getState();
     if (!g) return;
@@ -254,50 +251,20 @@ function GridCanvas() {
       setTrainStatus('Select an input region to predict from.');
       return;
     }
-    // Anchor the prediction just below the input selection's bounding box.
     const bounds = getSelectionBoundsAll(items, g);
-    const anchorRow = bounds ? bounds.maxRow + 2 : 0;
+    const anchorRow = bounds ? bounds.minRow : 0;
     const anchorCol = bounds ? bounds.minCol : 0;
     setTrainStatus('Predicting…');
     try {
       const out = await runPredict(input);
-      if (!out) throw new Error('no output in response');
       useGridStore.getState().placeDesign(out, anchorRow, anchorCol);
       setTrainStatus(isEmptyDesign(out)
-        ? 'Model returned an EMPTY design (the local model is untrained — try Teacher 480B).'
-        : 'Prediction placed below the input.');
+        ? 'Model returned nothing — capture more examples and train again.'
+        : 'Prediction placed.');
     } catch (err) {
       setTrainStatus(`Predict failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }, [runPredict]);
-
-  // Ask the teacher model (Qwen3-Coder-480B) to draft the output, learning the
-  // transform from the stored examples. Places it below the input to edit; with
-  // auto-save on, the schema-validated pair also lands in the training set.
-  const teacherFromSelection = useCallback(async () => {
-    const { grid: g, selectedItems: items } = useGridStore.getState();
-    if (!g) return;
-    const input = serializeSelection(g, items);
-    if (!input) {
-      setTrainStatus('Select an input region for the teacher.');
-      return;
-    }
-    const bounds = getSelectionBoundsAll(items, g);
-    const anchorRow = bounds ? bounds.maxRow + 2 : 0;
-    const anchorCol = bounds ? bounds.minCol : 0;
-    setTrainStatus('Asking teacher (480B)…');
-    try {
-      const { output, saved } = await runTeacher(input, teacherAutoSave);
-      useGridStore.getState().placeDesign(output, anchorRow, anchorCol);
-      setTrainStatus(isEmptyDesign(output)
-        ? 'Teacher returned an EMPTY design.'
-        : saved
-          ? 'Teacher output placed & saved to training data.'
-          : 'Teacher output placed below the input — fix it, then Make Training Data.');
-    } catch (err) {
-      setTrainStatus(`Teacher failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [teacherAutoSave, runTeacher]);
 
   // Open a saved drawing in place (from the Gallery modal): fetch it with its
   // history, load it, adopt its name for auto-save, and reflect the URL — no
@@ -1112,8 +1079,8 @@ function GridCanvas() {
           {captureMode === 'idle' && (
             <>
               <p className="text-xs text-gray-500">
-                Capture input→output pairs to train the model, or predict an
-                output from a selection.
+                Capture input→output pairs, train the tiny in-browser model, then
+                predict a moved output from a selection.
               </p>
               <Button size="sm" className="w-full" onClick={startTrainingCapture} disabled={loading}>
                 Make Training Data
@@ -1123,7 +1090,8 @@ function GridCanvas() {
                 variant="outline"
                 className="w-full"
                 onClick={predictFromSelection}
-                disabled={loading || selectedItems.length === 0}
+                disabled={loading || selectedItems.length === 0 || modelStatus !== 'ready'}
+                title={modelStatus !== 'ready' ? 'Train a model first' : 'Map the selection through the model'}
               >
                 Predict from Selection
               </Button>
@@ -1131,28 +1099,10 @@ function GridCanvas() {
                 size="sm"
                 variant="outline"
                 className="w-full"
-                onClick={teacherFromSelection}
-                disabled={loading || selectedItems.length === 0}
-                title="Draft the output with Qwen3-Coder-480B (OpenRouter)"
-              >
-                Teacher (480B)
-              </Button>
-              <label className="flex items-center gap-2 text-xs text-gray-600">
-                <input
-                  type="checkbox"
-                  checked={teacherAutoSave}
-                  onChange={(e) => setTeacherAutoSave(e.target.checked)}
-                />
-                Auto-save teacher output to training data
-              </label>
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
                 onClick={startTraining}
-                disabled={loading}
+                disabled={loading || training?.status === 'running'}
               >
-                Start Training Run
+                {training?.status === 'running' ? 'Training…' : 'Start Training Run'}
               </Button>
               <Button
                 size="sm"
@@ -1207,36 +1157,35 @@ function GridCanvas() {
         </div>
       </DraggablePanel>
 
-      {jobs.length > 0 && (
+      {training && (
         <DraggablePanel
-          title="Training Jobs"
-          defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 560 }}
+          title="Training"
+          defaultPosition={{ x: Math.max(20, window.innerWidth - 340), y: HEADER_HEIGHT + 540 }}
         >
-          <div className="space-y-2 w-72">
-            {/* Only the latest run matters; the store lists newest first. */}
-            {jobs.slice(0, 1).map((j) => {
-              const pct = j.total > 0 ? Math.min(100, Math.round((j.step / j.total) * 100)) : 0;
+          <div className="space-y-2 w-72 text-xs">
+            {(() => {
+              const pct = training.total > 0 ? Math.min(100, Math.round((training.epoch / training.total) * 100)) : (training.status === 'done' ? 100 : 0);
               const barColor =
-                j.status === 'error' ? 'bg-red-500'
-                  : j.status === 'done' ? 'bg-green-500'
+                training.status === 'error' ? 'bg-red-500'
+                  : training.status === 'done' ? 'bg-green-500'
                     : 'bg-blue-500';
               return (
-                <div key={j.id} className="text-xs">
+                <>
                   <div className="flex justify-between">
-                    <span className="font-medium truncate">{j.id}</span>
-                    <span className="text-gray-400">{j.status}</span>
+                    <span className="font-medium">In-browser model</span>
+                    <span className="text-gray-400">{training.status}</span>
                   </div>
-                  <div className="h-1.5 bg-gray-200 rounded mt-1 overflow-hidden">
+                  <div className="h-1.5 bg-gray-200 rounded overflow-hidden">
                     <div className={cn('h-full', barColor)} style={{ width: `${pct}%` }} />
                   </div>
-                  <div className="flex justify-between text-gray-400 mt-0.5">
-                    <span>{j.total > 0 ? `${j.step}/${j.total} (${pct}%)` : `step ${j.step}`}</span>
-                    {j.loss > 0 && <span>loss {j.loss.toFixed(3)}</span>}
+                  <div className="flex justify-between text-gray-400">
+                    <span>{training.total > 0 ? `epoch ${training.epoch}/${training.total} (${pct}%)` : ''}</span>
+                    {Number.isFinite(training.loss) && <span>loss {training.loss.toFixed(4)}</span>}
                   </div>
-                  {j.message && <p className="text-gray-400 truncate">{j.message}</p>}
-                </div>
+                  {training.message && <p className="text-gray-400">{training.message}</p>}
+                </>
               );
-            })}
+            })()}
           </div>
         </DraggablePanel>
       )}

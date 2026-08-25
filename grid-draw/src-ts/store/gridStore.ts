@@ -132,6 +132,10 @@ type GridState = {
   // target output selection. captureInput holds the serialized input half.
   captureMode: CaptureMode;
   captureInput: DesignJSON | null;
+  // Absolute bbox-min (row,col) of the input selection at capture time. Lets the
+  // coordinate model reconstruct a shared input/output frame (the two halves are
+  // each bbox-normalized, so without this the relative move between them is lost).
+  captureInputOrigin: [number, number] | null;
 
   // Output state
   jsonOutput: string;
@@ -239,7 +243,7 @@ type GridActions = {
   cancelTrainingCapture: () => void;
   // Build the {input, output} example from the captured input + current
   // selection (the output). Returns null if either half is empty.
-  buildTrainingExample: () => { input: DesignJSON; output: DesignJSON } | null;
+  buildTrainingExample: () => { input: DesignJSON; output: DesignJSON; delta: [number, number] } | null;
   finishTrainingCapture: () => void;
   // Place a serialized design onto the grid at (anchorRow, anchorCol) as one
   // undoable batch, selecting the placed shapes. Used for model predictions.
@@ -511,6 +515,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
 
   captureMode: 'idle',
   captureInput: null,
+  captureInputOrigin: null,
 
   jsonOutput: '',
   tensorOutput: '',
@@ -1426,7 +1431,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   // the user is box-selecting, not drawing, during capture.
   startTrainingCapture: () => {
     if (get().textEdit) get().commitTextEdit();
-    set({ captureMode: 'input', captureInput: null, selectedItems: [], tool: 'select' });
+    set({ captureMode: 'input', captureInput: null, captureInputOrigin: null, selectedItems: [], tool: 'select' });
     get().renderSelection();
   },
 
@@ -1435,25 +1440,35 @@ export const useGridStore = create<GridStore>((set, get) => ({
     if (!grid) return;
     const input = serializeSelection(grid, selectedItems);
     if (!input) return; // ignore an empty input selection
-    set({ captureInput: input, captureMode: 'output', selectedItems: [] });
+    // Record the input's absolute origin so the output can be expressed in the
+    // same frame (see captureInputOrigin / buildTrainingExample's delta).
+    const b = getSelectionBoundsAll(selectedItems, grid);
+    const origin: [number, number] = b ? [b.minRow, b.minCol] : [0, 0];
+    set({ captureInput: input, captureInputOrigin: origin, captureMode: 'output', selectedItems: [] });
     get().renderSelection();
   },
 
   buildTrainingExample: () => {
-    const { grid, selectedItems, captureInput } = get();
+    const { grid, selectedItems, captureInput, captureInputOrigin } = get();
     if (!grid || !captureInput) return null;
     const output = serializeSelection(grid, selectedItems);
     if (!output) return null;
-    return { input: captureInput, output };
+    // delta = outputOrigin - inputOrigin (absolute bbox-mins). The coordinate
+    // model uses it to place both halves in one shared frame.
+    const b = getSelectionBoundsAll(selectedItems, grid);
+    const inO = captureInputOrigin ?? [0, 0];
+    const outO: [number, number] = b ? [b.minRow, b.minCol] : [0, 0];
+    const delta: [number, number] = [outO[0] - inO[0], outO[1] - inO[1]];
+    return { input: captureInput, output, delta };
   },
 
   finishTrainingCapture: () => {
-    set({ captureMode: 'idle', captureInput: null, selectedItems: [] });
+    set({ captureMode: 'idle', captureInput: null, captureInputOrigin: null, selectedItems: [] });
     get().renderSelection();
   },
 
   cancelTrainingCapture: () => {
-    set({ captureMode: 'idle', captureInput: null, selectedItems: [] });
+    set({ captureMode: 'idle', captureInput: null, captureInputOrigin: null, selectedItems: [] });
     get().renderSelection();
   },
 

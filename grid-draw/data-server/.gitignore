@@ -1,6 +1,0 @@
-# Compiled binary
-/grid-draw-data-server
-# SQLite database + WAL/SHM sidecars
-*.db
-*.db-wal
-*.db-shm
