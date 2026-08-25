@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import {
   listDesigns, listExamples, getDesign, getDesignByName, saveDesign, saveExample, updateExample,
+  deleteDesign, deleteExample,
   type SavedDesign, type SavedExample, type HistoryStacks,
 } from '../lib/localDb';
 import * as coordModel from '../ml/coordModel';
@@ -43,6 +44,8 @@ type ServerState = {
   getDrawingById: (id: number) => Promise<SavedDesign>;
   saveExamplePair: (input: DesignJSON, output: DesignJSON, delta?: [number, number]) => Promise<void>;
   updateExamplePair: (id: number, input: DesignJSON, output: DesignJSON, delta?: [number, number]) => Promise<void>;
+  deleteDrawing: (id: number) => Promise<void>;
+  deleteExamplePair: (id: number) => Promise<void>;
 
   // Model — train/predict/load, all in-browser via TF.js.
   initModel: () => Promise<void>;
@@ -98,6 +101,16 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
   updateExamplePair: async (id, input, output, delta) => {
     await updateExample(id, input, output, delta);
+    await get().loadExamples();
+  },
+
+  deleteDrawing: async (id) => {
+    await deleteDesign(id);
+    await get().loadDesigns();
+  },
+
+  deleteExamplePair: async (id) => {
+    await deleteExample(id);
     await get().loadExamples();
   },
 

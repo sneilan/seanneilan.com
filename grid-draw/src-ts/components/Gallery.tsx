@@ -36,8 +36,17 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
   const error = useServerStore((s) => s.error);
   const loadDesigns = useServerStore((s) => s.loadDesigns);
   const loadExamples = useServerStore((s) => s.loadExamples);
+  const deleteDrawing = useServerStore((s) => s.deleteDrawing);
+  const deleteExamplePair = useServerStore((s) => s.deleteExamplePair);
   const refresh = useCallback(() => { loadDesigns(); loadExamples(); }, [loadDesigns, loadExamples]);
   useEffect(() => { refresh(); }, [refresh]);
+
+  const removeDesign = useCallback((id: number, name: string) => {
+    if (window.confirm(`Delete drawing “${name}”? This can't be undone.`)) deleteDrawing(id);
+  }, [deleteDrawing]);
+  const removeExample = useCallback((id: number) => {
+    if (window.confirm("Delete this training example? This can't be undone.")) deleteExamplePair(id);
+  }, [deleteExamplePair]);
 
   // "Open" loads in place when used as a modal, otherwise navigates to the page.
   const open = useCallback((name: string) => {
@@ -61,7 +70,10 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
                 <DesignThumbnail design={d.design} size={120} />
               </div>
               <div className="text-xs font-medium truncate" title={d.name}>{d.name}</div>
-              <Button size="sm" className="w-full text-xs" onClick={() => open(d.name)}>Open</Button>
+              <div className="flex gap-1">
+                <Button size="sm" className="flex-1 text-xs" onClick={() => open(d.name)}>Open</Button>
+                <Button variant="outline" size="sm" className="text-xs text-red-600" onClick={() => removeDesign(d.id, d.name)}>Delete</Button>
+              </div>
             </div>
           ))}
         </div>
@@ -74,7 +86,7 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
         )}
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
           {examples.map((ex) => (
-            <div key={ex.id} className="bg-white rounded border p-2">
+            <div key={ex.id} className="bg-white rounded border p-2 flex flex-col gap-2">
               <div className="flex items-center justify-center gap-2">
                 <div className="flex flex-col items-center">
                   <DesignThumbnail design={ex.input} size={80} />
@@ -86,6 +98,7 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
                   <span className="text-[10px] text-gray-400 mt-1">output</span>
                 </div>
               </div>
+              <Button variant="outline" size="sm" className="w-full text-xs text-red-600" onClick={() => removeExample(ex.id)}>Delete</Button>
             </div>
           ))}
         </div>

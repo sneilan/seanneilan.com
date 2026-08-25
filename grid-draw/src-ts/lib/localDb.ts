@@ -93,6 +93,10 @@ export async function saveDesign(name: string, design: DesignJSON, history?: His
   return id as number;
 }
 
+export async function deleteDesign(id: number): Promise<void> {
+  await (await db()).delete('designs', id);
+}
+
 // --- Training examples ------------------------------------------------------
 
 export async function listExamples(): Promise<SavedExample[]> {
@@ -113,4 +117,8 @@ export async function updateExample(id: number, input: DesignJSON, output: Desig
   if (!existing) throw new Error(`example ${id} not found`);
   await tx.store.put({ ...existing, input, output, delta: delta ?? existing.delta });
   await tx.done;
+}
+
+export async function deleteExample(id: number): Promise<void> {
+  await (await db()).delete('examples', id);
 }
