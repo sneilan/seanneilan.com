@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="{{ or site.Language.LanguageCode site.Language.Lang `en` }}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ .Title }}</title>
+    {{ with .Description }}<meta name="description" content="{{ . }}" />{{ end }}
+    <link rel="canonical" href="{{ .Permalink }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    {{/*
+      Standalone SPA layout: deliberately does NOT load the site theme's global
+      stylesheet (partials/head/css.html). That CSS is unlayered and would beat
+      Tailwind's cascade-layered utilities, stripping the app's styling. Only the
+      app's own bundle is loaded here — matching the standalone Vite build in
+      static/grid-draw/index.html so the page renders identically to local dev.
+    */}}
+    <script type="module" src="/grid-draw/assets/index.js"></script>
+    <link rel="stylesheet" href="/grid-draw/assets/index.css" />
+  </head>
+  <body>
+    <div id="grid-draw-root"></div>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 ---
 title: "Grid Draw"
 description: "A 32x32 interactive grid powered by Rust and WebAssembly"
+type: gridapp
 gridDraw: true
 hideBackToTop: true
 hidePagination: true
