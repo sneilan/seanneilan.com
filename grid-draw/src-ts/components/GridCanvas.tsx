@@ -901,7 +901,7 @@ function GridCanvas() {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 h-12 bg-white/90 backdrop-blur-sm border-b border-gray-200 z-50 flex items-center px-4">
-        <h1 className="text-xl font-bold">Grid Draw</h1>
+        <h1 className="text-xl font-bold">Sean's Autism World</h1>
         {loading && <span className="ml-4 text-sm text-gray-500">Loading...</span>}
         <div className="ml-auto flex items-center gap-3">
           {currentName && (

@@ -1,5 +1,5 @@
 ---
-title: "Grid Draw"
+title: "Sean's Autism World"
 description: "A 32x32 interactive grid powered by Rust and WebAssembly"
 type: gridapp
 gridDraw: true

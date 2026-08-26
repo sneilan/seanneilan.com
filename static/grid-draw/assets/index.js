@@ -14774,7 +14774,7 @@ sparse = sparse.coalesce()`;
                     children: [
                         g.jsx("h1", {
                             className: "text-xl font-bold",
-                            children: "Grid Draw"
+                            children: "Sean's Autism World"
                         }),
                         o && g.jsx("span", {
                             className: "ml-4 text-sm text-gray-500",
