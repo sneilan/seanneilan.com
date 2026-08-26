@@ -77,7 +77,10 @@ impl GridCanvas {
             let h = (r1c - r2c).abs() * cp;
             if fill != 6 {
                 self.ctx.set_fill_style_str(color_for_idx(fill as u8));
-                self.ctx.fill_rect(x, y, w, h);
+                // Inset the fill by 1px on the top/left so it doesn't paint over the
+                // grid line stroked at `boundary + 0.5`. The right/bottom edges already
+                // stop a pixel short of their grid line, so this keeps all four visible.
+                self.ctx.fill_rect(x + 1.0, y + 1.0, w - 1.0, h - 1.0);
             }
             if outline != 6 {
                 self.ctx.set_stroke_style_str(color_for_idx(outline as u8));
@@ -183,7 +186,8 @@ impl GridCanvas {
         self.ctx.set_global_alpha(0.7);
         if fill != 6 {
             self.ctx.set_fill_style_str(color_for_idx(fill));
-            self.ctx.fill_rect(x, y, w, h);
+            // Match render(): inset the fill so the grid lines stay visible.
+            self.ctx.fill_rect(x + 1.0, y + 1.0, w - 1.0, h - 1.0);
         }
         if outline != 6 {
             self.ctx.set_stroke_style_str(color_for_idx(outline));
