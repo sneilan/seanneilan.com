@@ -113,7 +113,10 @@ impl GridCanvas {
         // Committed texts (BigBlue Terminal). Baseline sits on grid row `r`.
         self.ctx.set_text_baseline("alphabetic");
         for t in &self.drawn_texts {
-            let x = self.sx(t.c as f64 * CELL_SIZE);
+            // +1px so the glyph's left edge clears the grid line (stroked at
+            // boundary+0.5) instead of sitting on top of it — matches the rect
+            // fill inset.
+            let x = self.sx(t.c as f64 * CELL_SIZE) + 1.0;
             let y = self.sy(t.r as f64 * CELL_SIZE);
             self.ctx.set_font(&crate::text_font(t.size * self.zoom));
             self.ctx.set_fill_style_str(color_for_idx(if t.color >= 6 { 0 } else { t.color }));

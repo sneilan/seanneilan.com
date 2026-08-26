@@ -178,7 +178,7 @@ impl GridCanvas {
     /// Draw a moving "ghost" of a text with baseline at row `r`. Does NOT clear.
     #[wasm_bindgen]
     pub fn preview_text(&self, r: i32, c: i32, color: u8, size: f64, text: &str) {
-        let x = self.sx(c as f64 * CELL_SIZE);
+        let x = self.sx(c as f64 * CELL_SIZE) + 1.0; // clear the grid line (see render)
         let y = self.sy(r as f64 * CELL_SIZE);
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_font(&text_font(size * self.zoom));
@@ -195,7 +195,7 @@ impl GridCanvas {
         self.maybe_render();
         // World-px width first (sets unscaled font), then scale to screen.
         let w = self.measure_text_px(text, size) * self.zoom;
-        let x = self.sx(c as f64 * CELL_SIZE);
+        let x = self.sx(c as f64 * CELL_SIZE) + 1.0; // clear the grid line (see render)
         let y = self.sy(r as f64 * CELL_SIZE);
         self.ctx.set_font(&text_font(size * self.zoom));
         self.ctx.set_text_baseline("alphabetic");
