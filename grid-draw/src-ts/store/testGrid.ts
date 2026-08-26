@@ -23,6 +23,7 @@ export function makeGrid(opts?: {
   let lineCount = lines.length;
   let rectCount = rects.length;
   let textCount = 0;
+  let imageCount = 0;
 
   // In-memory cell state so set/get round-trips (place → serialize) work.
   const filled = new Map<string, number>(); // "r,c" -> colorIdx
@@ -61,6 +62,19 @@ export function makeGrid(opts?: {
     get_text: () => new Int32Array([1, 0, 0, 1, 1]),
     get_text_string: () => '',
     get_text_size: () => 1,
+    insert_image: (idx, r1, c1, r2, c2) => { imageCount++; calls.push(['insert_image', idx, r1, c1, r2, c2]); },
+    add_image: (r1, c1, r2, c2) => { imageCount++; calls.push(['add_image', r1, c1, r2, c2]); },
+    delete_image: (idx) => { imageCount--; calls.push(['delete_image', idx]); },
+    move_image: (idx, dr, dc) => calls.push(['move_image', idx, dr, dc]),
+    set_image_geom: (idx, r1, c1, r2, c2) => calls.push(['set_image_geom', idx, r1, c1, r2, c2]),
+    resize_image: (idx, handle, r, c) => calls.push(['resize_image', idx, handle, r, c]),
+    get_image_count: () => imageCount,
+    get_image: () => new Int32Array([0, 0, 8, 8]),
+    get_image_url: () => '',
+    hit_test_image: () => -1,
+    image_intersects_box: () => false,
+    highlight_image: () => {},
+    preview_image: () => {},
     delete_cell: (r, c) => { calls.push(['delete_cell', r, c]); filled.delete(key(r, c)); },
     get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
     get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
@@ -83,7 +97,7 @@ export function makeGrid(opts?: {
     get_cam_x: () => 0,
     get_cam_y: () => 0,
     get_zoom: () => 1,
-    clear: () => { filled.clear(); lineCount = 0; rectCount = 0; textCount = 0; },
+    clear: () => { filled.clear(); lineCount = 0; rectCount = 0; textCount = 0; imageCount = 0; },
     render: () => {},
     highlight_cell: () => {},
     highlight_line: () => {},

@@ -106,6 +106,22 @@ export type GridCanvasWasm = {
   highlight_text(idx: number): void;
   preview_text(r: number, c: number, color: number, size: number, boxW: number, boxH: number, halign: number, valign: number, text: string): void;
   render_text_preview(r: number, c: number, color: number, size: number, text: string): void;
+
+  // Image objects (bitmaps in a grid-snapped box; pixels loaded from `url`).
+  // Only the box + URL are serialized; the browser-decoded element is passed in.
+  get_image_count(): number;
+  get_image(idx: number): Int32Array; // [r1, c1, r2, c2] (box, fine units, normalized)
+  get_image_url(idx: number): string;
+  add_image(r1: number, c1: number, r2: number, c2: number, url: string, img: HTMLImageElement): void;
+  insert_image(idx: number, r1: number, c1: number, r2: number, c2: number, url: string, img: HTMLImageElement): void;
+  delete_image(idx: number): void;
+  move_image(idx: number, delta_row: number, delta_col: number): void;
+  set_image_geom(idx: number, r1: number, c1: number, r2: number, c2: number): void;
+  resize_image(idx: number, handle: number, r: number, c: number): void;
+  hit_test_image(x: number, y: number): number;
+  image_intersects_box(idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
+  highlight_image(idx: number): void;
+  preview_image(r1: number, c1: number, r2: number, c2: number, img: HTMLImageElement): void;
 };
 
 export type GridWasmState = {

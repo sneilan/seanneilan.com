@@ -62,6 +62,24 @@ export function renderDesignToCanvas(
     ctx.fillRect(c * cs, r * cs, cs, cs);
   }
 
+  // Images: a bitmap referenced by URL. Thumbnails are drawn synchronously from
+  // the stored JSON, so we can't wait on a remote decode here — represent each
+  // image as a light placeholder box (matching the real render order: above the
+  // cells, below the vector shapes) so the layout still reads correctly.
+  for (const im of design.images ?? []) {
+    if (!Array.isArray(im) || im.length < 4) continue;
+    const [r1, c1, r2, c2] = im;
+    const x = Math.min(c1, c2) * cs;
+    const y = Math.min(r1, r2) * cs;
+    const rw = Math.abs(c2 - c1) * cs;
+    const rh = Math.abs(r2 - r1) * cs;
+    ctx.fillStyle = '#eef2f7';
+    ctx.fillRect(x, y, rw, rh);
+    ctx.strokeStyle = '#c3ccd8';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, rw - 1, rh - 1);
+  }
+
   // Rects: fill then outline (intersection coords).
   for (const [r1, c1, r2, c2, fillIdx, outlineIdx] of design.rects ?? []) {
     const x = Math.min(c1, c2) * cs;

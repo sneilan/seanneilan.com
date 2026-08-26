@@ -15,9 +15,21 @@ const LINE_STRIDE = 6;
 const RECT_STRIDE = 6;
 const TRANSPARENT = 6;
 
+type FakeImage = { r1: number; c1: number; r2: number; c2: number; url: string };
+
+/** Normalize a box, keeping ≥1 unit per side (mirrors images.rs `norm`). */
+function normBox(r1: number, c1: number, r2: number, c2: number): [number, number, number, number] {
+  const minR = Math.min(r1, r2);
+  const maxR = Math.max(r1, r2);
+  const minC = Math.min(c1, c2);
+  const maxC = Math.max(c1, c2);
+  return [minR, minC, Math.max(maxR, minR + 1), Math.max(maxC, minC + 1)];
+}
+
 export class FakeGrid {
   lines: number[] = [];
   rects: number[] = [];
+  images: FakeImage[] = [];
   // Filled cells keyed "r,c" → color index. Absence = empty.
   cells = new Map<string, number>();
   private drawColor = 0;
@@ -32,7 +44,7 @@ export class FakeGrid {
   /** Stable serialization of the whole document, for equality assertions. */
   snapshot(): string {
     const cells = [...this.cells.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return JSON.stringify({ lines: this.lines, rects: this.rects, cells });
+    return JSON.stringify({ lines: this.lines, rects: this.rects, images: this.images, cells });
   }
 
   // --- reads ---------------------------------------------------------------
@@ -141,11 +153,53 @@ export class FakeGrid {
   add_line(r1: number, c1: number, r2: number, c2: number, color: number, width = 10) { this.lines.push(r1, c1, r2, c2, color, width); }
   add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number) { this.rects.push(r1, c1, r2, c2, fill, outline); }
 
+  // --- image mutators (mirror images.rs) -----------------------------------
+  get_image_count() { return this.images.length; }
+  get_image(idx: number) {
+    const im = this.images[idx];
+    return im ? new Int32Array([im.r1, im.c1, im.r2, im.c2]) : new Int32Array([]);
+  }
+  get_image_url(idx: number) { return this.images[idx]?.url ?? ''; }
+  insert_image(idx: number, r1: number, c1: number, r2: number, c2: number, url: string) {
+    const [nr1, nc1, nr2, nc2] = normBox(r1, c1, r2, c2);
+    this.images.splice(Math.min(idx, this.images.length), 0, { r1: nr1, c1: nc1, r2: nr2, c2: nc2, url });
+  }
+  add_image(r1: number, c1: number, r2: number, c2: number, url: string) {
+    const [nr1, nc1, nr2, nc2] = normBox(r1, c1, r2, c2);
+    this.images.push({ r1: nr1, c1: nc1, r2: nr2, c2: nc2, url });
+  }
+  delete_image(idx: number) { if (idx < this.images.length) this.images.splice(idx, 1); }
+  move_image(idx: number, dr: number, dc: number) {
+    const im = this.images[idx];
+    if (!im) return;
+    im.r1 += dr; im.r2 += dr; im.c1 += dc; im.c2 += dc;
+  }
+  set_image_geom(idx: number, r1: number, c1: number, r2: number, c2: number) {
+    const im = this.images[idx];
+    if (!im) return;
+    [im.r1, im.c1, im.r2, im.c2] = normBox(r1, c1, r2, c2);
+  }
+  resize_image(idx: number, handle: number, r: number, c: number) {
+    const im = this.images[idx];
+    if (!im) return;
+    let minR = Math.min(im.r1, im.r2), maxR = Math.max(im.r1, im.r2);
+    let minC = Math.min(im.c1, im.c2), maxC = Math.max(im.c1, im.c2);
+    if (handle === 0 || handle === 1 || handle === 2) minR = r;
+    if (handle === 4 || handle === 5 || handle === 6) maxR = r;
+    if (handle === 0 || handle === 6 || handle === 7) minC = c;
+    if (handle === 2 || handle === 3 || handle === 4) maxC = c;
+    [im.r1, im.c1, im.r2, im.c2] = normBox(minR, minC, maxR, maxC);
+  }
+
   // --- no-op rendering / selection surface ---------------------------------
   render() {}
   highlight_cell() {}
   highlight_line() {}
   highlight_rect() {}
+  highlight_image() {}
+  hit_test_image() { return -1; }
+  image_intersects_box() { return false; }
+  preview_image() {}
   draw_handle() {}
   draw_selection_box() {}
   set_outline_color() {}

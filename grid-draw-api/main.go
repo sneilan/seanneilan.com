@@ -11,12 +11,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/term"
 )
 
@@ -56,6 +59,26 @@ func main() {
 
 		addr := envOr("GRID_DRAW_ADDR", "127.0.0.1:8080")
 		srv := &server{db: db}
+
+		// Image-object uploads: presign PUTs to a public S3 bucket. Credentials
+		// come from the instance role (same as backups); disabled if unset or if
+		// AWS config can't load (e.g. local dev with no credentials).
+		if bucket := os.Getenv("GRID_DRAW_IMAGES_BUCKET"); bucket != "" {
+			cfg, err := config.LoadDefaultConfig(context.Background(), config.WithEC2IMDSRegion())
+			if err != nil {
+				log.Printf("image uploads disabled, cannot load AWS config: %v", err)
+			} else {
+				region := cfg.Region
+				if region == "" {
+					region = envOr("GRID_DRAW_AWS_REGION", "us-east-2")
+				}
+				srv.images = newImageUploader(s3.NewFromConfig(cfg), bucket, region)
+				log.Printf("image uploads enabled: bucket=%s region=%s", bucket, region)
+			}
+		} else {
+			log.Print("GRID_DRAW_IMAGES_BUCKET not set; image uploads disabled")
+		}
+
 		log.Printf("listening on %s", addr)
 		log.Fatal(http.ListenAndServe(addr, corsMiddleware(origins, srv.routes())))
 

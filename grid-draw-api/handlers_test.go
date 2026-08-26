@@ -194,3 +194,36 @@ func TestUserIsolation(t *testing.T) {
 		t.Fatal("cross-user delete removed a design")
 	}
 }
+
+func TestPresignImageDisabledWhenUnconfigured(t *testing.T) {
+	s, token := newTestServer(t) // no s.images configured
+	w := do(t, s, token, "POST", "/api/images/presign", map[string]any{"contentType": "image/png", "size": 100})
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("presign (unconfigured): got %d, want 503: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPresignImageValidatesRequest(t *testing.T) {
+	s, token := newTestServer(t)
+	// A non-nil uploader with a nil presigner: validation runs (and rejects)
+	// before the presigner is ever touched, so these cases never dereference it.
+	s.images = &imageUploader{bucket: "b", region: "us-east-2"}
+
+	w := do(t, s, token, "POST", "/api/images/presign", map[string]any{"contentType": "application/pdf", "size": 100})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("bad content type: got %d, want 400: %s", w.Code, w.Body.String())
+	}
+
+	w = do(t, s, token, "POST", "/api/images/presign", map[string]any{"contentType": "image/png", "size": int64(maxImageBytes) + 1})
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversize: got %d, want 413: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPresignImageRequiresAuth(t *testing.T) {
+	s, _ := newTestServer(t)
+	w := do(t, s, "", "POST", "/api/images/presign", map[string]any{"contentType": "image/png", "size": 1})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("presign (no auth): got %d, want 401", w.Code)
+	}
+}

@@ -81,6 +81,11 @@ impl GridCanvas {
             self.ctx.stroke();
         }
 
+        // Committed images: bitmaps composited above the grid/cells but below
+        // the vector shapes, so lines/rects/text draw over a reference image and
+        // transparent PNG regions keep the grid visible behind them.
+        self.render_images();
+
         // Committed rects (independent fill + outline; index 6 = none).
         let mut i = 0;
         while i + 5 < self.drawn_rects.len() {

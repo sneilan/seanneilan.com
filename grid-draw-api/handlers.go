@@ -34,6 +34,9 @@ type savedExample struct {
 
 type server struct {
 	db *sql.DB
+	// Presigner for image-object uploads to the public S3 bucket; nil when
+	// GRID_DRAW_IMAGES_BUCKET is unset (uploads then return 503).
+	images *imageUploader
 }
 
 type ctxKey int
@@ -56,6 +59,9 @@ func (s *server) routes() http.Handler {
 	mux.Handle("POST /api/examples", s.auth(s.handleCreateExample))
 	mux.Handle("PUT /api/examples/{id}", s.auth(s.handleUpdateExample))
 	mux.Handle("DELETE /api/examples/{id}", s.auth(s.handleDeleteExample))
+
+	// Presigned upload for image objects (bytes go straight to public S3).
+	mux.Handle("POST /api/images/presign", s.auth(s.handlePresignImage))
 	return mux
 }
 

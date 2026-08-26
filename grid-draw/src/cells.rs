@@ -12,6 +12,7 @@ impl GridCanvas {
         self.drawn_lines.clear();
         self.drawn_rects.clear();
         self.drawn_texts.clear();
+        self.drawn_images.clear();
         self.maybe_render();
     }
 

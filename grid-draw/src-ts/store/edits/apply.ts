@@ -1,5 +1,6 @@
 import type { GridCanvasWasm } from '../../types/grid';
 import type { Edit } from './types';
+import { getImageEl } from '../../lib/imageCache';
 
 /**
  * Validate that an edit's target index is in range for the current document.
@@ -15,6 +16,7 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
   const lineCount = grid.get_line_count();
   const rectCount = grid.get_rect_count();
   const textCount = typeof grid.get_text_count === 'function' ? grid.get_text_count() : 0;
+  const imageCount = typeof grid.get_image_count === 'function' ? grid.get_image_count() : 0;
   const bad = (what: string, idx: number, max: number) => {
     if (idx < 0 || idx > max) {
       throw new RangeError(`applyEdit: ${e.kind} index ${idx} out of range (0..${max}) for ${what}`);
@@ -52,6 +54,14 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
     case 'setTextFrame':
     case 'moveText':
       bad('texts', e.idx, textCount - 1);
+      break;
+    case 'addImage':
+      bad('images', e.idx, imageCount);
+      break;
+    case 'deleteImage':
+    case 'moveImage':
+    case 'setImageGeom':
+      bad('images', e.idx, imageCount - 1);
       break;
   }
 }
@@ -135,6 +145,20 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
     case 'deleteText':
       grid.delete_text(e.idx);
       break;
+    case 'moveImage':
+      grid.move_image(e.idx, e.dRow, e.dCol);
+      break;
+    case 'setImageGeom':
+      grid.set_image_geom(e.idx, e.to.r1, e.to.c1, e.to.r2, e.to.c2);
+      break;
+    case 'addImage':
+      // The bitmap element is re-created from the URL (cached), so an image
+      // round-trips through undo/redo/reload without re-downloading.
+      grid.insert_image(e.idx, e.image.r1, e.image.c1, e.image.r2, e.image.c2, e.image.url, getImageEl(e.image.url));
+      break;
+    case 'deleteImage':
+      grid.delete_image(e.idx);
+      break;
     case 'batch':
       // Apply the whole batch with rendering paused so the canvas paints ONCE at
       // the end, not once per child edit — the difference between a snappy and a
@@ -194,6 +218,14 @@ export function invertEdit(e: Edit): Edit {
       return { kind: 'deleteText', idx: e.idx, text: e.text };
     case 'deleteText':
       return { kind: 'addText', idx: e.idx, text: e.text };
+    case 'setImageGeom':
+      return { ...e, from: e.to, to: e.from };
+    case 'moveImage':
+      return { ...e, dRow: -e.dRow, dCol: -e.dCol };
+    case 'addImage':
+      return { kind: 'deleteImage', idx: e.idx, image: e.image };
+    case 'deleteImage':
+      return { kind: 'addImage', idx: e.idx, image: e.image };
     case 'batch':
       return { kind: 'batch', edits: [...e.edits].reverse().map(invertEdit) };
   }
@@ -239,11 +271,13 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
       return null;
     case 'setLineGeom':
     case 'setRectGeom':
+    case 'setImageGeom':
       if (next.kind === prev.kind && prev.idx === next.idx) return { ...prev, to: next.to };
       return null;
     case 'moveLine':
     case 'moveRect':
     case 'moveText':
+    case 'moveImage':
       if (next.kind === prev.kind && prev.idx === next.idx) {
         return { ...prev, dRow: prev.dRow + next.dRow, dCol: prev.dCol + next.dCol };
       }

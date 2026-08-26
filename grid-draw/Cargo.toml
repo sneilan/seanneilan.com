@@ -17,6 +17,7 @@ features = [
     "Document",
     "Window",
     "HtmlCanvasElement",
+    "HtmlImageElement",
     "CanvasRenderingContext2d",
     "TextMetrics",
     "console",

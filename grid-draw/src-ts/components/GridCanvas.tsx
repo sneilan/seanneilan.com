@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, LINE_WIDTHS, type SelectedItem } from '../store/gridStore';
+import { uploadImage } from '../lib/apiClient';
+import { loadImageSize } from '../lib/imageCache';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -90,7 +92,7 @@ function GridCanvas() {
     jsonOutput, tensorOutput,
     importJson, importTensor, clear,
     updateOutputs, renderSelection,
-    beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
+    beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect, placeImage,
     undo, redo, canUndo, canRedo,
     captureMode, captureInput,
     startTrainingCapture, captureSetInput, buildTrainingExample,
@@ -131,6 +133,69 @@ function GridCanvas() {
   // untouched half (otherHalf) is preserved. Null when not editing an example.
   const [editingExample, setEditingExample] =
     useState<{ id: number; half: 'input' | 'output'; otherHalf: DesignJSON } | null>(null);
+
+  // Image-object add flow: hidden <input> for upload, and a status line for
+  // upload/decoding/errors shown under the Image controls.
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [imgStatus, setImgStatus] = useState<string>('');
+  // Default longest-side size (whole cells) for a newly added image; the user
+  // then drags the handles to fit.
+  const IMG_DEFAULT_CELLS = 16;
+
+  // Add an image object to the drawing. `source` is either a Blob (upload/paste
+  // — sent to S3 first) or a URL string (referenced directly). The box is sized
+  // from the image's aspect ratio and centered in the current viewport, snapped
+  // to whole cells; the user resizes from there.
+  const addImageObject = useCallback(async (source: Blob | string) => {
+    try {
+      let url: string;
+      if (typeof source === 'string') {
+        url = source;
+      } else {
+        setImgStatus('Uploading…');
+        url = await uploadImage(source);
+      }
+      setImgStatus('Loading…');
+      const { width, height } = await loadImageSize(url);
+      const maxNat = Math.max(width, height) || 1;
+      const wCells = Math.max(1, Math.round((width / maxNat) * IMG_DEFAULT_CELLS));
+      const hCells = Math.max(1, Math.round((height / maxNat) * IMG_DEFAULT_CELLS));
+      // Center of the current viewport, in whole cells (fine units), snapped.
+      const c = camRef.current;
+      const centerCol = Math.round((c.x + viewport.w / 2 / c.zoom) / CELL_SIZE / CELL_UNITS) * CELL_UNITS;
+      const centerRow = Math.round((c.y + viewport.h / 2 / c.zoom) / CELL_SIZE / CELL_UNITS) * CELL_UNITS;
+      const c1 = centerCol - Math.round(wCells / 2) * CELL_UNITS;
+      const r1 = centerRow - Math.round(hCells / 2) * CELL_UNITS;
+      placeImage(url, { r1, c1, r2: r1 + hCells * CELL_UNITS, c2: c1 + wCells * CELL_UNITS });
+      setImgStatus('');
+    } catch (e) {
+      setImgStatus(e instanceof Error ? e.message : 'image failed');
+    }
+  }, [placeImage, viewport.w, viewport.h]);
+
+  // Paste an image from the OS clipboard (Cmd/Ctrl+V of a copied picture). The
+  // DOM paste event carries the bitmap even though the keyboard handler's
+  // grid-clipboard paste runs too (that just no-ops when the grid clipboard is
+  // empty). Only intercept when an actual image is present.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (useGridStore.getState().textEdit) return; // typing: let text input handle it
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.kind === 'file' && it.type.startsWith('image/')) {
+          const file = it.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void addImageObject(file);
+            return;
+          }
+        }
+      }
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [addImageObject]);
 
   // Camera over the infinite world: (x, y) is the world-pixel coordinate shown
   // at the canvas top-left; zoom is the scale. The WASM grid renders through it
@@ -511,6 +576,9 @@ function GridCanvas() {
       if (s.type === 'text' && item.type === 'text') {
         return s.index === item.index;
       }
+      if (s.type === 'image' && item.type === 'image') {
+        return s.index === item.index;
+      }
       return false;
     });
   };
@@ -575,12 +643,14 @@ function GridCanvas() {
         // else so handles take priority over the drag/hit-test branches.
         if (selectedItems.length === 1 && !shiftHeld) {
           const only = selectedItems[0];
-          if (only.type === 'line' || only.type === 'rect' || only.type === 'text') {
+          if (only.type === 'line' || only.type === 'rect' || only.type === 'text' || only.type === 'image') {
             const handles = only.type === 'line'
               ? getLineHandles(grid.get_line(only.index))
               : only.type === 'rect'
                 ? getRectHandles(grid.get_rect(only.index))
-                : getRectHandles(textFrameCorners(grid.get_text(only.index)));
+                : only.type === 'image'
+                  ? getRectHandles(grid.get_image(only.index))
+                  : getRectHandles(textFrameCorners(grid.get_text(only.index)));
             const hit = hitTestHandle(x, y, handles, CELL_SIZE, 9);
             if (hit) {
               startResize({ shape: only.type, index: only.index, handle: hit.handle });
@@ -626,6 +696,8 @@ function GridCanvas() {
               grid.highlight_line(hitItem.index);
             } else if (hitItem.type === 'rect') {
               grid.highlight_rect(hitItem.index);
+            } else if (hitItem.type === 'image') {
+              grid.highlight_image(hitItem.index);
             }
           }
         } else {
@@ -682,12 +754,14 @@ function GridCanvas() {
           // Handle hover (single line/rect selected) -> grab (resize affordance).
           if (cursor === 'crosshair' && selectedItems.length === 1) {
             const only = selectedItems[0];
-            if (only.type === 'line' || only.type === 'rect' || only.type === 'text') {
+            if (only.type === 'line' || only.type === 'rect' || only.type === 'text' || only.type === 'image') {
               const handles = only.type === 'line'
                 ? getLineHandles(grid.get_line(only.index))
                 : only.type === 'rect'
                   ? getRectHandles(grid.get_rect(only.index))
-                  : getRectHandles(textFrameCorners(grid.get_text(only.index)));
+                  : only.type === 'image'
+                    ? getRectHandles(grid.get_image(only.index))
+                    : getRectHandles(textFrameCorners(grid.get_text(only.index)));
               if (hitTestHandle(x, y, handles, CELL_SIZE, 9)) cursor = 'grab';
             }
           }
@@ -922,6 +996,46 @@ function GridCanvas() {
               <ToggleGroupItem value="4" className="text-xs" title="Quarter cells">&frac14;</ToggleGroupItem>
               <ToggleGroupItem value="8" className="text-xs" title="Eighth cells">&#8539;</ToggleGroupItem>
             </ToggleGroup>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Image</label>
+            <div className="flex gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs flex-1"
+                onClick={() => imageInputRef.current?.click()}
+                title="Upload an image (transparent PNG works best)"
+              >
+                Upload
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs flex-1"
+                onClick={() => {
+                  const url = window.prompt('Image URL (transparent PNG works best):');
+                  if (url && url.trim()) void addImageObject(url.trim());
+                }}
+                title="Add an image by URL"
+              >
+                From URL
+              </Button>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">…or paste an image (Ctrl/Cmd+V)</p>
+            {imgStatus && <p className="text-[10px] text-gray-500 mt-1">{imgStatus}</p>}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void addImageObject(file);
+                e.target.value = ''; // allow re-selecting the same file
+              }}
+            />
           </div>
 
           {tool === 'text' && (

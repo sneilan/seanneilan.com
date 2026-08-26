@@ -18,6 +18,15 @@ export type LineGeom = { r1: number; c1: number; r2: number; c2: number };
 /** Just the geometry of a rect (no colors), for move/resize edits. */
 export type RectGeom = { r1: number; c1: number; r2: number; c2: number };
 
+/** An image object as stored in WASM: a grid-snapped box + the URL its bitmap
+ * is loaded from. Only the box + URL are ever persisted — the decoded
+ * HtmlImageElement is re-created from the URL on apply (see lib/imageCache.ts),
+ * which keeps this edit pure data and the undo history JSON-serializable. */
+export type ImageData = { r1: number; c1: number; r2: number; c2: number; url: string };
+
+/** Just the box geometry of an image, for move/resize edits. */
+export type ImageGeom = { r1: number; c1: number; r2: number; c2: number };
+
 /** A text shape: frame top-left (r, c) + size (fine units) in `box`, color,
  * size (cells), alignment, string. Coordinates are fine units. */
 export type TextFrame = { r: number; c: number; boxW: number; boxH: number };
@@ -55,5 +64,9 @@ export type Edit =
   | { kind: 'moveText'; idx: number; dRow: number; dCol: number }
   | { kind: 'addText'; idx: number; text: TextData }
   | { kind: 'deleteText'; idx: number; text: TextData }
+  | { kind: 'moveImage'; idx: number; dRow: number; dCol: number }
+  | { kind: 'setImageGeom'; idx: number; from: ImageGeom; to: ImageGeom }
+  | { kind: 'addImage'; idx: number; image: ImageData }
+  | { kind: 'deleteImage'; idx: number; image: ImageData }
   // A group of edits that undo/redo as a single step (gestures, multi-select ops).
   | { kind: 'batch'; edits: Edit[] };

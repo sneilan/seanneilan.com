@@ -1,10 +1,11 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 use std::collections::HashMap;
 
 mod buffers;
 mod cells;
+mod images;
 mod rendering;
 mod shapes;
 mod texts;
@@ -44,7 +45,26 @@ pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 /// snap to sub-cell (½/¼/⅛) positions; designs stamp `sub` for rescale on load.
 /// v7 = text is a resizable frame: `(r,c)` is the box top-left (was baseline)
 /// and it carries box_w/box_h + halign/valign.
-pub const SCHEMA_VERSION: u32 = 7;
+/// v8 = image objects: a grid-snapped box referencing a bitmap by URL (decoded
+/// by the browser into an HtmlImageElement); only box + URL are serialized.
+pub const SCHEMA_VERSION: u32 = 8;
+
+/// An image object: a bitmap placed in a grid-snapped box. `(r1,c1)` is the box
+/// top-left and `(r2,c2)` the bottom-right, in fine units (normalized so r1≤r2,
+/// c1≤c2). `url` is the only persisted source of the pixels (an S3/remote URL);
+/// `img` is the browser-decoded element the renderer draws. Mirrors the rect
+/// object model so select/resize/move/delete/undo reuse the same machinery. The
+/// element is a live JS handle and is never serialized — designs store the URL,
+/// and the host re-creates the element on load (see lib/imageCache.ts).
+#[derive(Clone)]
+pub(crate) struct ImageItem {
+    pub(crate) r1: i32,
+    pub(crate) c1: i32,
+    pub(crate) r2: i32,
+    pub(crate) c2: i32,
+    pub(crate) url: String,
+    pub(crate) img: HtmlImageElement,
+}
 
 /// A text shape: a string anchored at grid-intersection coords (r, c), drawn
 /// in the BigBlue Terminal font at `color`. Coordinates are signed world cells
@@ -152,6 +172,7 @@ pub struct GridCanvas {
     pub(crate) drawn_lines: Vec<i32>, // flat: [r1, c1, r2, c2, color_idx, width_x10, ...]
     pub(crate) drawn_rects: Vec<i32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, ...]
     pub(crate) drawn_texts: Vec<TextItem>,
+    pub(crate) drawn_images: Vec<ImageItem>,
 }
 
 #[wasm_bindgen]
@@ -202,6 +223,7 @@ impl GridCanvas {
             drawn_lines: Vec::new(),
             drawn_rects: Vec::new(),
             drawn_texts: Vec::new(),
+            drawn_images: Vec::new(),
         };
 
         instance.render();

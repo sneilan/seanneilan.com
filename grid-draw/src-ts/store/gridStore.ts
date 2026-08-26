@@ -5,8 +5,9 @@ import {
   type Cell,
 } from '../utils/selection';
 import { getLineHandles, getRectHandles, rotateHandlePoint } from '../utils/handles';
+import { getImageEl } from '../lib/imageCache';
 import { History } from './edits/history';
-import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData, TextFrame } from './edits/types';
+import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
 
 // Single source of undo/redo history for the document. Lives at module scope
 // (one canvas per app); every mutating action routes its edits through here so
@@ -46,6 +47,16 @@ function readText(grid: GridCanvasWasm, idx: number): TextData {
   };
 }
 
+function imageGeom(grid: GridCanvasWasm, idx: number): ImageGeom {
+  const a = grid.get_image(idx); // [r1, c1, r2, c2]
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
+
+function readImage(grid: GridCanvasWasm, idx: number): ImageData {
+  const a = grid.get_image(idx); // [r1, c1, r2, c2]
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], url: grid.get_image_url(idx) };
+}
+
 /** Discrete text-size presets, in grid cells tall. */
 export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
 
@@ -69,7 +80,7 @@ export type SelectMode = 'box' | 'drag' | 'resize' | 'rotate' | null;
 
 // Which handle of which single shape is being dragged during a resize.
 export type ResizeTarget = {
-  shape: 'line' | 'rect' | 'text';
+  shape: 'line' | 'rect' | 'text' | 'image';
   index: number;
   handle: number;
 };
@@ -79,7 +90,8 @@ export type SelectedItem =
   | { type: 'cell'; row: number; col: number }
   | { type: 'line'; index: number }
   | { type: 'rect'; index: number }
-  | { type: 'text'; index: number };
+  | { type: 'text'; index: number }
+  | { type: 'image'; index: number };
 
 // An in-progress text being typed (before it's committed as a shape). `row`/
 // `col` are the text frame's TOP-LEFT grid coords (fine units).
@@ -90,12 +102,14 @@ type ClipboardCell = { relRow: number; relCol: number; color: number };
 type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; width: number };
 type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
 type ClipboardText = { relR: number; relC: number; color: number; size: number; boxW: number; boxH: number; halign: number; valign: number; text: string };
+type ClipboardImage = { relR1: number; relC1: number; relR2: number; relC2: number; url: string };
 
 export type ClipboardData = {
   cells: ClipboardCell[];
   lines: ClipboardLine[];
   rects: ClipboardRect[];
   texts: ClipboardText[];
+  images: ClipboardImage[];
   // Original top-left of the copied selection, so paste can anchor relative to
   // it (with a small offset) instead of the mouse position.
   originRow: number;
@@ -146,7 +160,7 @@ type GridState = {
 
   // Geometry of the shape being resized, captured at gesture start so the
   // whole resize commits as a single from→to edit on release.
-  resizeOrigin: LineGeom | RectGeom | TextFrame | null;
+  resizeOrigin: LineGeom | RectGeom | TextFrame | ImageGeom | null;
 
   // Active during a rotate gesture: the selection's center in WORLD pixels and
   // the pointer angle (radians) at gesture start. The live drag rotates freely
@@ -260,6 +274,9 @@ type GridActions = {
   endDrawStroke: () => void;
   commitLine: (r1: number, c1: number, r2: number, c2: number) => void;
   commitRect: (r1: number, c1: number, r2: number, c2: number) => void;
+  // Add an image object (grid-snapped box + URL) as one undoable step and select
+  // it. `url` is a public bitmap source (uploaded to S3, or a pasted-in URL).
+  placeImage: (url: string, box: { r1: number; c1: number; r2: number; c2: number }) => void;
 
   // Undo/redo
   commitEdits: (edits: Edit[], opts?: { coalesceKey?: string }) => void;
@@ -331,6 +348,9 @@ function itemsEqual(a: SelectedItem, b: SelectedItem): boolean {
   if (a.type === 'text' && b.type === 'text') {
     return a.index === b.index;
   }
+  if (a.type === 'image' && b.type === 'image') {
+    return a.index === b.index;
+  }
   return false;
 }
 
@@ -390,6 +410,14 @@ export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWas
         maxRow = Math.max(maxRow, t[0] + t[4]);
         maxCol = Math.max(maxCol, t[1] + t[3]);
       }
+    } else if (item.type === 'image') {
+      const im = grid.get_image(item.index); // [r1, c1, r2, c2] (normalized box)
+      if (im.length >= 4) {
+        minRow = Math.min(minRow, im[0], im[2]);
+        minCol = Math.min(minCol, im[1], im[3]);
+        maxRow = Math.max(maxRow, im[0], im[2]);
+        maxCol = Math.max(maxCol, im[1], im[3]);
+      }
     }
   }
 
@@ -416,6 +444,9 @@ export type DesignJSON = {
   rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
   // [r, c, colorIdx, size, boxW, boxH, halign, valign, text] (frame top-left, fine units)
   texts: Array<[number, number, number, number, number, number, number, number, string]>;
+  // [r1, c1, r2, c2, url] — image objects (grid-snapped box + S3/remote source).
+  // Optional so older designs (and training-example halves) stay valid.
+  images?: Array<[number, number, number, number, string]>;
   // Fine units per whole cell at save time. Absent = a pre-subdivision design in
   // whole-cell units (sub=1); loaders rescale coords by CELL_UNITS/sub.
   sub?: number;
@@ -444,6 +475,7 @@ export function serializeSelection(
   const lines: number[][] = [];
   const rects: number[][] = [];
   const texts: Array<[number, number, number, number, number, number, number, number, string]> = [];
+  const images: Array<[number, number, number, number, string]> = [];
 
   for (const item of items) {
     if (item.type === 'cell') {
@@ -457,6 +489,9 @@ export function serializeSelection(
     } else if (item.type === 'text') {
       const a = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
       texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), a[3], a[4], a[5], a[6], grid.get_text_string(item.index)]);
+    } else if (item.type === 'image') {
+      const a = grid.get_image(item.index); // [r1, c1, r2, c2]
+      images.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, grid.get_image_url(item.index)]);
     }
   }
 
@@ -469,6 +504,7 @@ export function serializeSelection(
     lines,
     rects,
     texts,
+    images,
     sub: CELL_UNITS,
   };
 }
@@ -512,6 +548,7 @@ function allItems(grid: GridCanvasWasm): SelectedItem[] {
   for (let i = 0; i < grid.get_line_count(); i++) items.push({ type: 'line', index: i });
   for (let i = 0; i < grid.get_rect_count(); i++) items.push({ type: 'rect', index: i });
   for (let i = 0; i < grid.get_text_count(); i++) items.push({ type: 'text', index: i });
+  for (let i = 0; i < grid.get_image_count(); i++) items.push({ type: 'image', index: i });
   return items;
 }
 
@@ -833,6 +870,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
         grid.highlight_rect(item.index);
       } else if (item.type === 'text') {
         grid.highlight_text(item.index);
+      } else if (item.type === 'image') {
+        grid.highlight_image(item.index);
       }
     }
   },
@@ -882,6 +921,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
     for (let i = 0; i < textCount; i++) {
       if (grid.text_intersects_box(i, r1, c1, r2, c2)) {
         boxItems.push({ type: 'text', index: i });
+      }
+    }
+
+    // Get images that intersect the box
+    const imageCount = grid.get_image_count();
+    for (let i = 0; i < imageCount; i++) {
+      if (grid.image_intersects_box(i, r1, c1, r2, c2)) {
+        boxItems.push({ type: 'image', index: i });
       }
     }
 
@@ -987,7 +1034,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
         newSelected.push({ type: 'text', index: item.index });
       }
 
-      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits, ...textEdits]);
+      const imageEdits: Edit[] = [];
+      const imagesToMove = selectedItems.filter(i => i.type === 'image') as Array<{ type: 'image'; index: number }>;
+      for (const item of imagesToMove) {
+        imageEdits.push({ kind: 'moveImage', idx: item.index, dRow: deltaRow, dCol: deltaCol });
+        newSelected.push({ type: 'image', index: item.index });
+      }
+
+      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits, ...textEdits, ...imageEdits]);
 
       set({
         selectedItems: newSelected,
@@ -1026,6 +1080,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const resizeOrigin = grid
       ? (target.shape === 'line' ? lineGeom(grid, target.index)
         : target.shape === 'rect' ? rectGeom(grid, target.index)
+        : target.shape === 'image' ? imageGeom(grid, target.index)
         : textFrame(grid, target.index))
       : null;
     set({ selectMode: 'resize', resizeTarget: target, resizeOrigin, isSelecting: true });
@@ -1040,6 +1095,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
       grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
     } else if (resizeTarget.shape === 'rect') {
       grid.resize_rect(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
+    } else if (resizeTarget.shape === 'image') {
+      grid.resize_image(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
     } else {
       grid.resize_text(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
     }
@@ -1061,6 +1118,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
         if (resizeOrigin) {
           get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin as RectGeom, to: rectGeom(grid, resizeTarget.index) }]);
         }
+      } else if (resizeTarget.shape === 'image') {
+        grid.resize_image(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+        if (resizeOrigin) {
+          get().commitEdits([{ kind: 'setImageGeom', idx: resizeTarget.index, from: resizeOrigin as ImageGeom, to: imageGeom(grid, resizeTarget.index) }]);
+        }
       } else {
         grid.resize_text(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
         if (resizeOrigin) {
@@ -1080,6 +1142,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
       if (resizeTarget.shape === 'text') {
         const f = resizeOrigin as TextFrame;
         grid.set_text_frame(resizeTarget.index, f.r, f.c, f.boxW, f.boxH);
+      } else if (resizeTarget.shape === 'image') {
+        const g = resizeOrigin as ImageGeom;
+        grid.set_image_geom(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
       } else {
         const g = resizeOrigin as LineGeom;
         if (resizeTarget.shape === 'line') grid.set_line(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
@@ -1147,6 +1212,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
         if (t.length >= 7) {
           const p = rotateQuarter(t[0], t[1], k, icr, icc);
           grid.preview_text(p.r, p.c, t[2], grid.get_text_size(item.index), t[3], t[4], t[5], t[6], grid.get_text_string(item.index));
+        }
+      } else if (item.type === 'image') {
+        const im = grid.get_image(item.index); // [r1, c1, r2, c2]
+        if (im.length >= 4) {
+          // Images can't render rotated, so preview the box moved (upright) to
+          // where its top-left rotates to, keeping its size.
+          const p = rotateQuarter(im[0], im[1], k, icr, icc);
+          grid.preview_image(p.r, p.c, p.r + (im[2] - im[0]), p.c + (im[3] - im[1]), getImageEl(grid.get_image_url(item.index)));
         }
       }
     }
@@ -1226,6 +1299,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
         const np = quarter(t[0], t[1]);
         geomEdits.push({ kind: 'moveText', idx: item.index, dRow: np.r - t[0], dCol: np.c - t[1] });
         newSelected.push({ type: 'text', index: item.index });
+      } else if (item.type === 'image') {
+        const im = grid.get_image(item.index);
+        if (im.length < 4) continue;
+        // Like text: the image stays upright, its anchor follows the rotation.
+        const np = quarter(im[0], im[1]);
+        geomEdits.push({ kind: 'moveImage', idx: item.index, dRow: np.r - im[0], dCol: np.c - im[1] });
+        newSelected.push({ type: 'image', index: item.index });
       }
     }
 
@@ -1330,6 +1410,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
     get().updateOutputs();
   },
 
+  placeImage: (url, box) => {
+    const { grid } = get();
+    if (!grid) return;
+    if (get().textEdit) get().commitTextEdit();
+    const idx = grid.get_image_count();
+    get().commitEdits([{ kind: 'addImage', idx, image: { r1: box.r1, c1: box.c1, r2: box.r2, c2: box.c2, url } }]);
+    // Select the new image with the select tool so it's immediately movable.
+    set({ tool: 'select', selectedItems: [{ type: 'image', index: idx }] });
+    grid.render();
+    get().renderSelection();
+    get().updateOutputs();
+  },
+
   // Hit test for shapes - returns the topmost shape at position
   hitTestShapes: (x, y) => {
     const { grid } = get();
@@ -1351,6 +1444,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const rectIdx = grid.hit_test_rect(x, y);
     if (rectIdx >= 0) {
       return { type: 'rect', index: rectIdx };
+    }
+
+    // Test images (below the vector shapes above, but above cells — an image is
+    // a backdrop object, so a line/text/rect drawn over it still selects first).
+    const imageIdx = grid.hit_test_image(x, y);
+    if (imageIdx >= 0) {
+      return { type: 'image', index: imageIdx };
     }
 
     // Test cells
@@ -1376,6 +1476,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const lines: ClipboardLine[] = [];
     const rects: ClipboardRect[] = [];
     const texts: ClipboardText[] = [];
+    const images: ClipboardImage[] = [];
 
     for (const item of selectedItems) {
       if (item.type === 'cell') {
@@ -1420,10 +1521,21 @@ export const useGridStore = create<GridStore>((set, get) => ({
             text: grid.get_text_string(item.index),
           });
         }
+      } else if (item.type === 'image') {
+        const a = grid.get_image(item.index); // [r1, c1, r2, c2]
+        if (a.length >= 4) {
+          images.push({
+            relR1: a[0] - origin.minRow,
+            relC1: a[1] - origin.minCol,
+            relR2: a[2] - origin.minRow,
+            relC2: a[3] - origin.minCol,
+            url: grid.get_image_url(item.index),
+          });
+        }
       }
     }
 
-    set({ clipboard: { cells, lines, rects, texts, originRow: origin.minRow, originCol: origin.minCol } });
+    set({ clipboard: { cells, lines, rects, texts, images, originRow: origin.minRow, originCol: origin.minCol } });
   },
 
   paste: () => {
@@ -1447,6 +1559,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
+    let imageIdx = grid.get_image_count();
 
     // Paste cells. Infinite canvas: any coordinate is valid (incl. negative).
     for (const cell of clipboard.cells) {
@@ -1492,6 +1605,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
       textIdx++;
     }
 
+    // Paste images (box + URL; the bitmap element is re-created from the URL).
+    for (const im of clipboard.images ?? []) {
+      edits.push({
+        kind: 'addImage', idx: imageIdx,
+        image: {
+          r1: anchor.row + im.relR1, c1: anchor.col + im.relC1,
+          r2: anchor.row + im.relR2, c2: anchor.col + im.relC2, url: im.url,
+        },
+      });
+      newSelected.push({ type: 'image', index: imageIdx });
+      imageIdx++;
+    }
+
     get().commitEdits(edits);
     grid.render();
     set({ selectedItems: newSelected });
@@ -1521,6 +1647,11 @@ export const useGridStore = create<GridStore>((set, get) => ({
       .map(i => (i as { type: 'text'; index: number }).index)
       .sort((a, b) => b - a);
 
+    const imageIndices = selectedItems
+      .filter(i => i.type === 'image')
+      .map(i => (i as { type: 'image'; index: number }).index)
+      .sort((a, b) => b - a);
+
     const edits: Edit[] = [];
 
     for (const item of selectedItems) {
@@ -1542,6 +1673,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
     }
     for (const idx of textIndices) {
       edits.push({ kind: 'deleteText', idx, text: readText(grid, idx) });
+    }
+    for (const idx of imageIndices) {
+      edits.push({ kind: 'deleteImage', idx, image: readImage(grid, idx) });
     }
 
     get().commitEdits(edits);
@@ -1605,6 +1739,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
+    let imageIdx = grid.get_image_count();
 
     // Rescale coordinates from the design's fine-unit resolution to the current
     // one (CELL_UNITS). A design saved at this resolution → f=1; a pre-
@@ -1658,6 +1793,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
       });
       newSelected.push({ type: 'text', index: textIdx });
       textIdx++;
+    }
+    // Images: [r1, c1, r2, c2, url]. Skip malformed entries so a bad design
+    // can't crash the editor; the bitmap element is re-created from the URL.
+    for (const im of design.images ?? []) {
+      if (!Array.isArray(im) || im.length < 5) continue;
+      const [r1, c1, r2, c2, url] = im;
+      if (typeof url !== 'string') continue;
+      edits.push({
+        kind: 'addImage', idx: imageIdx,
+        image: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, url },
+      });
+      newSelected.push({ type: 'image', index: imageIdx });
+      imageIdx++;
     }
 
     if (edits.length === 0) return;
@@ -1883,6 +2031,9 @@ sparse = sparse.coalesce()`;
     // Express clear as one undoable batch: remove every rect/line (high index
     // first) and every filled cell. Undo restores the whole document.
     const edits: Edit[] = [];
+    for (let i = grid.get_image_count() - 1; i >= 0; i--) {
+      edits.push({ kind: 'deleteImage', idx: i, image: readImage(grid, i) });
+    }
     for (let i = grid.get_text_count() - 1; i >= 0; i--) {
       edits.push({ kind: 'deleteText', idx: i, text: readText(grid, i) });
     }
@@ -1920,6 +2071,8 @@ sparse = sparse.coalesce()`;
         grid.highlight_rect(item.index);
       } else if (item.type === 'text') {
         grid.highlight_text(item.index);
+      } else if (item.type === 'image') {
+        grid.highlight_image(item.index);
       }
     }
 
@@ -1935,6 +2088,9 @@ sparse = sparse.coalesce()`;
       } else if (only.type === 'text') {
         const t = grid.get_text(only.index); // [r, c, color, boxW, boxH, ...]
         const handles = getRectHandles([t[0], t[1], t[0] + t[4], t[1] + t[3]]);
+        for (const h of handles) grid.draw_handle(h.r, h.c);
+      } else if (only.type === 'image') {
+        const handles = getRectHandles(grid.get_image(only.index)); // [r1, c1, r2, c2]
         for (const h of handles) grid.draw_handle(h.r, h.c);
       }
     }

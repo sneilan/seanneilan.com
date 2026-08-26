@@ -22,6 +22,7 @@ function makeGrid(opts?: {
   let lineCount = lines.length;
   let rectCount = rects.length;
   let textCount = 0;
+  let imageCount = 0;
   const g: Partial<GridCanvasWasm> = {
     set_cell: (r, c, v) => calls.push(['set_cell', r, c, v ? 1 : 0]),
     set_cell_color: (r, c, color) => calls.push(['set_cell_color', r, c, color]),
@@ -46,6 +47,14 @@ function makeGrid(opts?: {
     get_text: () => new Int32Array([1, 0, 0, 1, 1]),
     get_text_string: () => '',
     get_text_size: () => 1,
+    insert_image: (idx, r1, c1, r2, c2) => { imageCount++; calls.push(['insert_image', idx, r1, c1, r2, c2]); },
+    delete_image: (idx) => { imageCount--; calls.push(['delete_image', idx]); },
+    move_image: (idx, dr, dc) => calls.push(['move_image', idx, dr, dc]),
+    set_image_geom: (idx, r1, c1, r2, c2) => calls.push(['set_image_geom', idx, r1, c1, r2, c2]),
+    get_image_count: () => imageCount,
+    get_image: () => new Int32Array([0, 0, 8, 8]),
+    get_image_url: () => '',
+    highlight_image: () => {},
     delete_cell: (r, c) => calls.push(['delete_cell', r, c]),
     get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
     get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
@@ -126,6 +135,7 @@ describe('store undo/redo integration', () => {
         lines: [{ relR1: 0, relC1: 0, relR2: 1, relC2: 1, color: 2, width: 10 }],
         rects: [],
         texts: [],
+        images: [],
         originRow: 0,
         originCol: 0,
       },

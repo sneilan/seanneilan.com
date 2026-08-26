@@ -1,8 +1,9 @@
 locals {
-  name       = "grid-draw-api"
-  domain     = "api.seanneilan.com"
-  account_id = "888199526337"
-  bucket     = "grid-draw-api-888199526337"
+  name          = "grid-draw-api"
+  domain        = "api.seanneilan.com"
+  account_id    = "888199526337"
+  bucket        = "grid-draw-api-888199526337"
+  images_bucket = "grid-draw-images-888199526337"
 }
 
 # --- lookups ---
@@ -79,6 +80,69 @@ resource "aws_s3_bucket_lifecycle_configuration" "data" {
   }
 }
 
+# --- S3: public bucket for image objects added to drawings ---
+# Bitmaps for image objects are uploaded here (via a presigned PUT the API mints)
+# and referenced by public URL from saved designs. Public-read by bucket policy;
+# ACLs are disabled (BucketOwnerEnforced), which is the current AWS best practice.
+
+resource "aws_s3_bucket" "images" {
+  bucket = local.images_bucket
+}
+
+resource "aws_s3_bucket_ownership_controls" "images" {
+  bucket = aws_s3_bucket.images.id
+  rule {
+    object_ownership = "BucketOwnerEnforced" # ACLs off; access is policy-based
+  }
+}
+
+# Allow a public-read bucket policy (the other three stay locked so nothing but
+# GetObject is ever public).
+resource "aws_s3_bucket_public_access_block" "images" {
+  bucket                  = aws_s3_bucket.images.id
+  block_public_acls       = true
+  ignore_public_acls      = true
+  block_public_policy     = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_policy" "images_public_read" {
+  bucket     = aws_s3_bucket.images.id
+  depends_on = [aws_s3_bucket_public_access_block.images]
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "PublicReadGetObject"
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "s3:GetObject"
+      Resource  = "${aws_s3_bucket.images.arn}/*"
+    }]
+  })
+}
+
+# CORS: browsers PUT bytes to the presigned URL from the site origin, and the
+# canvas loads the bitmaps cross-origin (crossOrigin=anonymous) so PNG export
+# stays untainted — hence GET from anywhere.
+resource "aws_s3_bucket_cors_configuration" "images" {
+  bucket = aws_s3_bucket.images.id
+
+  cors_rule {
+    allowed_methods = ["PUT", "GET", "HEAD"]
+    allowed_origins = ["https://seanneilan.com", "http://localhost:5173"]
+    allowed_headers = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+
+  cors_rule {
+    allowed_methods = ["GET"]
+    allowed_origins = ["*"]
+    allowed_headers = ["*"]
+    max_age_seconds = 3000
+  }
+}
+
 # --- IAM: SSM access + S3 read/write for the instance ---
 
 resource "aws_iam_role" "instance" {
@@ -115,6 +179,13 @@ resource "aws_iam_role_policy" "s3" {
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject"]
         Resource = "${aws_s3_bucket.data.arn}/*"
+      },
+      {
+        # Presigning a PUT requires the signer (this role) to hold PutObject on
+        # the images bucket. GetObject is public via bucket policy; no read here.
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${aws_s3_bucket.images.arn}/*"
       }
     ]
   })
@@ -169,8 +240,9 @@ resource "aws_instance" "api" {
   iam_instance_profile   = aws_iam_instance_profile.instance.name
 
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    bucket = local.bucket
-    domain = local.domain
+    bucket        = local.bucket
+    images_bucket = local.images_bucket
+    domain        = local.domain
   })
 
   metadata_options {
@@ -187,7 +259,10 @@ resource "aws_instance" "api" {
   }
 
   lifecycle {
-    ignore_changes = [ami]
+    # user_data only runs on first boot; we set new env (e.g. the images bucket)
+    # via an SSM systemd drop-in instead, so don't let a user_data edit trigger a
+    # destroy/replace of the running instance.
+    ignore_changes = [ami, user_data]
   }
 }
 
@@ -227,4 +302,8 @@ output "api_url" {
 
 output "bucket" {
   value = aws_s3_bucket.data.bucket
+}
+
+output "images_bucket" {
+  value = aws_s3_bucket.images.bucket
 }

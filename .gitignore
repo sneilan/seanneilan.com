@@ -28,3 +28,4 @@ ENV/
 
 # Standalone GPT-2 training project — lives outside this repo (moved to ~/gpt2_training).
 gpt2_training/
+password.env

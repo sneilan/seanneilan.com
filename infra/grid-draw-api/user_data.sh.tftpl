@@ -3,6 +3,7 @@
 set -euxo pipefail
 
 BUCKET="${bucket}"
+IMAGES_BUCKET="${images_bucket}"
 DOMAIN="${domain}"
 
 # 512MB of swap — the box only has 512MB of RAM.
@@ -75,6 +76,7 @@ User=griddraw
 Group=griddraw
 Environment=GRID_DRAW_DB=/var/lib/grid-draw/grid-draw.db
 Environment=GRID_DRAW_BACKUP_BUCKET=$BUCKET
+Environment=GRID_DRAW_IMAGES_BUCKET=$IMAGES_BUCKET
 Environment=GRID_DRAW_ADDR=127.0.0.1:8080
 ExecStart=/usr/local/bin/grid-draw-api serve
 Restart=always

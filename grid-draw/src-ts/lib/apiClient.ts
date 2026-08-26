@@ -115,3 +115,29 @@ export function updateExample(
 export function deleteExample(id: number): Promise<void> {
   return request('DELETE', `/api/examples/${id}`);
 }
+
+// --- Image objects (uploaded to public S3 via a presigned PUT) --------------
+
+type PresignedUpload = { uploadUrl: string; publicUrl: string; key: string };
+
+/**
+ * Upload an image blob to the public bucket and return its public URL, which
+ * becomes an image object's source. Flow: ask the API for a short-lived
+ * presigned PUT (server holds the AWS creds), then PUT the bytes straight to
+ * S3 — the bytes never touch the API box. The Content-Type must match what was
+ * signed. Throws with a readable message on any step's failure.
+ */
+export async function uploadImage(file: Blob): Promise<string> {
+  const contentType = file.type || 'application/octet-stream';
+  const { uploadUrl, publicUrl } = await request<PresignedUpload>('POST', '/api/images/presign', {
+    contentType,
+    size: file.size,
+  });
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    body: file,
+    headers: { 'Content-Type': contentType },
+  });
+  if (!res.ok) throw new Error(`image upload failed (${res.status})`);
+  return publicUrl;
+}
