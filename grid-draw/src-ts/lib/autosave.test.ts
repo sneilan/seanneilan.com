@@ -9,7 +9,7 @@ vi.mock('./apiClient', () => ({
 }));
 
 import { saveDesign } from './apiClient';
-import './autosave'; // side-effect import installs the store subscription
+import { suppressAutoCreate } from './autosave'; // import also installs the store subscription
 import { useGridStore } from '../store/gridStore';
 import { makeGrid } from '../store/testGrid';
 
@@ -17,11 +17,13 @@ import { makeGrid } from '../store/testGrid';
  * The auto-save subscription is action-driven: committing an edit (which bumps
  * historyTick) schedules a debounced save — no React effect involved. These
  * tests drive real edit actions and assert the machine saves (or doesn't).
+ * A nameless drawing auto-creates a gallery piece on its first real content.
  */
 describe('autosave subscription', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(saveDesign).mockClear();
+    suppressAutoCreate(false);
     useGridStore.setState({
       grid: null, currentName: null, saveState: 'idle', saveMessage: '',
       colorIdx: 0, selectedItems: [],
@@ -69,17 +71,49 @@ describe('autosave subscription', () => {
     expect(saveDesign).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT save when there is no current document (the load-before-name case)', async () => {
+  it('auto-creates a named piece on the first edit of an unnamed drawing', async () => {
     const { grid } = makeGrid({ cell: () => false });
     useGridStore.setState({ grid, currentName: null, colorIdx: 2 });
 
-    // Editing while unnamed (mirrors loadDesignWithHistory bumping historyTick
-    // before setCurrentName runs) must not trigger a save.
+    useGridStore.getState().beginDrawStroke();
+    useGridStore.getState().drawCellAt(0, 0, true);
+    useGridStore.getState().endDrawStroke();
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(saveDesign).toHaveBeenCalledTimes(1);
+    const [name] = vi.mocked(saveDesign).mock.calls[0];
+    expect(name).toMatch(/^[a-z0-9]{8}$/);           // minted auto-name
+    expect(useGridStore.getState().currentName).toBe(name); // adopted for future saves
+    expect(window.location.pathname).toContain(`design/${name}`);
+  });
+
+  it('does NOT create a piece when the unnamed canvas has no content', async () => {
+    const { grid } = makeGrid({ cell: () => false });
+    useGridStore.setState({ grid, currentName: null });
+
+    // A committed edit that leaves the canvas empty (draw, then undo it).
+    useGridStore.getState().beginDrawStroke();
+    useGridStore.getState().drawCellAt(0, 0, true);
+    useGridStore.getState().endDrawStroke();
+    useGridStore.getState().undo();
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(saveDesign).not.toHaveBeenCalled();
+    expect(useGridStore.getState().currentName).toBeNull();
+  });
+
+  it('does NOT auto-create while suppressed (editing a training-example half)', async () => {
+    const { grid } = makeGrid({ cell: () => false });
+    useGridStore.setState({ grid, currentName: null, colorIdx: 2 });
+    suppressAutoCreate(true);
+
     useGridStore.getState().beginDrawStroke();
     useGridStore.getState().drawCellAt(0, 0, true);
     useGridStore.getState().endDrawStroke();
 
     await vi.advanceTimersByTimeAsync(600);
     expect(saveDesign).not.toHaveBeenCalled();
+    expect(useGridStore.getState().currentName).toBeNull();
   });
 });

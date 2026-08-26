@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, LINE_WIDTHS, type SelectedItem } from '../store/gridStore';
 import { uploadImage } from '../lib/apiClient';
+import { suppressAutoCreate } from '../lib/autosave';
 import { loadImageSize } from '../lib/imageCache';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
@@ -36,14 +37,6 @@ const COLORS = [
   { hex: '#22aa22', name: 'Green' },
   { hex: null, name: 'Transparent' },
 ];
-
-// An 8-char id of lowercase letters + digits, used to auto-name saved drawings.
-function randomName(): string {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  const bytes = new Uint8Array(8);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
-}
 
 // A design with no drawable content — used to flag an empty prediction (the
 // untrained local model often returns this) so the status isn't misleading.
@@ -97,7 +90,7 @@ function GridCanvas() {
     captureMode, captureInput,
     startTrainingCapture, captureSetInput, buildTrainingExample,
     finishTrainingCapture, cancelTrainingCapture,
-    serializeWholeGrid, exportHistory, loadDesignWithHistory,
+    serializeWholeGrid, loadDesignWithHistory,
     currentName, setCurrentName, saveState, setSaveState, resetHistory,
   } = store;
 
@@ -108,7 +101,6 @@ function GridCanvas() {
   // Data + model access goes through the store (IndexedDB + in-browser TF.js;
   // this component never touches storage/ml directly). Training progress comes
   // from the store's local `training` state (no server, no polling).
-  const saveDrawing = useServerStore((s) => s.saveDrawing);
   const getDrawing = useServerStore((s) => s.getDrawing);
   const getDrawingById = useServerStore((s) => s.getDrawingById);
   const saveExamplePair = useServerStore((s) => s.saveExamplePair);
@@ -223,28 +215,6 @@ function GridCanvas() {
   const [spaceHeld, setSpaceHeld] = useState(false);
   const panRef = useRef<{ x: number; y: number; camX: number; camY: number } | null>(null);
 
-  // Save the whole current drawing to the gallery under an auto-generated
-  // 8-char [a-z0-9] name (no prompt).
-  const saveToGallery = useCallback(async () => {
-    const design = serializeWholeGrid();
-    if (!design || (design.cells.length + design.lines.length + design.rects.length + design.texts.length) === 0) {
-      setTrainStatus('Nothing to save — draw something first.');
-      return;
-    }
-    const name = randomName();
-    setTrainStatus('Saving to gallery…');
-    try {
-      await saveDrawing(name, design, exportHistory());
-      // Adopt this name so subsequent edits auto-save to the same drawing (see
-      // lib/autosave.ts), and reflect the shareable per-drawing URL.
-      setCurrentName(name);
-      window.history.replaceState({}, '', `${BASE}design/${name}/`);
-      setTrainStatus(`Saved as ${name}. Auto-saving changes.`);
-    } catch (err) {
-      setTrainStatus(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [serializeWholeGrid, exportHistory, setCurrentName, saveDrawing]);
-
   // One-shot init once the async WASM grid is ready: resolve a drawing from the
   // URL and load it. The actual work lives in store actions; this thin effect
   // only bridges the external readiness signal (grid) into those actions. The
@@ -350,19 +320,21 @@ function GridCanvas() {
     loadDesignWithHistory(d.design, d.history ?? null);
     setCurrentName(d.name);
     setEditingExample(null);
+    suppressAutoCreate(false);
     window.history.replaceState({}, '', `${BASE}design/${encodeURIComponent(d.name)}/`);
     setGalleryOpen(false);
   }, [loadDesignWithHistory, setCurrentName, getDrawing]);
 
   // Load one half (input or output) of a training example into the canvas to
-  // edit it. Detaches from any gallery document (currentName=null) so auto-save
-  // won't write this into the designs table, and remembers the example + half so
-  // "Update example" can overwrite it in place, keeping the untouched half.
+  // edit it. Detaches from any gallery document (currentName=null) and suppresses
+  // auto-create so edits here never mint a gallery piece; remembers the example +
+  // half so "Update example" can overwrite it in place, keeping the untouched half.
   const editExampleHalf = useCallback((ex: SavedExample, half: 'input' | 'output') => {
     const design = half === 'input' ? ex.input : ex.output;
     const otherHalf = half === 'input' ? ex.output : ex.input;
     loadDesignWithHistory(design, null);
     setCurrentName(null);
+    suppressAutoCreate(true);
     setEditingExample({ id: ex.id, half, otherHalf });
     window.history.replaceState({}, '', BASE);
     setTrainingOpen(false);
@@ -392,10 +364,12 @@ function GridCanvas() {
 
   // Start a fresh, unsaved drawing: detach from any current document FIRST (so
   // clearing doesn't auto-save the blank over the old one), wipe the canvas,
-  // reset history, and return the URL to the base editor.
+  // reset history, and return the URL to the base editor. The next real edit
+  // auto-creates a new gallery piece (lib/autosave.ts).
   const newDrawing = useCallback(() => {
     setCurrentName(null);
     setEditingExample(null);
+    suppressAutoCreate(false);
     clear();
     resetHistory();
     setSaveState('idle');
@@ -1167,26 +1141,14 @@ function GridCanvas() {
             </Button>
           </div>
 
-          <div className="flex gap-1">
-            <Button
-              variant="outline"
-              onClick={saveToGallery}
-              disabled={loading}
-              size="sm"
-              className="flex-1"
-              title="Save the whole drawing to the gallery"
-            >
-              Save to Gallery
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setGalleryOpen(true)}
-              size="sm"
-              className="flex-1"
-            >
-              Gallery
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            onClick={() => setGalleryOpen(true)}
+            size="sm"
+            className="w-full"
+          >
+            Gallery
+          </Button>
 
           {editingExample && (
             <Button
