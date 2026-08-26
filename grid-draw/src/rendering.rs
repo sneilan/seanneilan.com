@@ -1,5 +1,8 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE, LINE_STRIDE, color_for_idx};
+use crate::{GridCanvas, CELL_SIZE, CELL_UNITS, LINE_STRIDE, color_for_idx};
+
+/// Sub-grid lines (½/¼/⅛ boundaries) are drawn fainter than the whole-cell grid.
+const SUBLINE_COLOR: &str = "#e8e8e8";
 
 // Everything draws through the camera: world-pixel coords are mapped to screen
 // via self.sx()/self.sy() and scaled by self.cell_px(). Only the visible window
@@ -9,13 +12,13 @@ use crate::{GridCanvas, CELL_SIZE, LINE_STRIDE, color_for_idx};
 impl GridCanvas {
     /// Inclusive world-cell column range currently visible (with a 1-cell margin).
     fn visible_cols(&self) -> (i32, i32) {
-        let c0 = (self.cam_x / CELL_SIZE).floor() as i32 - 1;
-        let c1 = ((self.cam_x + self.view_w / self.zoom) / CELL_SIZE).ceil() as i32 + 1;
+        let c0 = (self.cam_x / CELL_SIZE).floor() as i32 - CELL_UNITS;
+        let c1 = ((self.cam_x + self.view_w / self.zoom) / CELL_SIZE).ceil() as i32 + CELL_UNITS;
         (c0, c1)
     }
     fn visible_rows(&self) -> (i32, i32) {
-        let r0 = (self.cam_y / CELL_SIZE).floor() as i32 - 1;
-        let r1 = ((self.cam_y + self.view_h / self.zoom) / CELL_SIZE).ceil() as i32 + 1;
+        let r0 = (self.cam_y / CELL_SIZE).floor() as i32 - CELL_UNITS;
+        let r1 = ((self.cam_y + self.view_h / self.zoom) / CELL_SIZE).ceil() as i32 + CELL_UNITS;
         (r0, r1)
     }
 
@@ -40,12 +43,28 @@ impl GridCanvas {
             self.ctx.fill_rect(x, y, cp, cp);
         }
 
-        // Grid lines across the visible window. Every 10th world line is darker;
-        // rem_euclid keeps the decade markers aligned across the origin (negatives).
+        // Grid lines. Coordinates are fine units (CELL_UNITS per cell), so most
+        // fine lines are NOT drawn: whole-cell lines every CELL_UNITS (every 10th
+        // cell darker), plus sub-grid lines every `sub_step` when subdivided.
+        // rem_euclid keeps the decade markers aligned across the origin.
         self.ctx.set_line_width(1.0);
+        let sub_step = CELL_UNITS / self.subdivision.max(1); // fine units between sub-lines
+        let decade = 10 * CELL_UNITS;
+        // Classify a fine coordinate: Some(color) to draw a grid line, None to skip.
+        let grid_color = |u: i32| -> Option<&str> {
+            if u.rem_euclid(decade) == 0 {
+                Some("#888888")
+            } else if u.rem_euclid(CELL_UNITS) == 0 {
+                Some(self.line_color.as_str())
+            } else if self.subdivision > 1 && u.rem_euclid(sub_step) == 0 {
+                Some(SUBLINE_COLOR)
+            } else {
+                None
+            }
+        };
         for col in c0..=c1 {
+            let Some(color) = grid_color(col) else { continue };
             let x = self.sx(col as f64 * CELL_SIZE) + 0.5;
-            let color = if col.rem_euclid(10) == 0 { "#888888" } else { &self.line_color };
             self.ctx.set_stroke_style_str(color);
             self.ctx.begin_path();
             self.ctx.move_to(x, 0.0);
@@ -53,8 +72,8 @@ impl GridCanvas {
             self.ctx.stroke();
         }
         for row in r0..=r1 {
+            let Some(color) = grid_color(row) else { continue };
             let y = self.sy(row as f64 * CELL_SIZE) + 0.5;
-            let color = if row.rem_euclid(10) == 0 { "#888888" } else { &self.line_color };
             self.ctx.set_stroke_style_str(color);
             self.ctx.begin_path();
             self.ctx.move_to(0.0, y);

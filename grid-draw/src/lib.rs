@@ -9,14 +9,22 @@ mod rendering;
 mod shapes;
 mod texts;
 
-pub(crate) const CELL_SIZE: f64 = 16.0;
+/// The coordinate model is measured in FINE UNITS: one whole visible cell spans
+/// `CELL_UNITS` fine units, and each fine unit is `CELL_SIZE` world pixels. So a
+/// whole cell is `WHOLE_PX` (= CELL_SIZE * CELL_UNITS = 16px) as before, but any
+/// coordinate can now land on a sub-cell boundary (½, ¼, ⅛ of a cell) while
+/// staying an integer. The subdivide feature just changes the snap step; nothing
+/// stores floats. All shape/cell coordinates are integers in these fine units.
+pub(crate) const CELL_UNITS: i32 = 8; // fine units per whole cell
+pub(crate) const CELL_SIZE: f64 = 2.0; // world px per fine unit (16 / CELL_UNITS)
+pub(crate) const WHOLE_PX: f64 = CELL_SIZE * CELL_UNITS as f64; // world px per whole cell (16)
 
 /// CSS font string for a text shape `size` cells tall. BigBlue Terminal is a
 /// fixed-width oldschool terminal face loaded as a document @font-face (see
 /// globals.css); the host must wait for it to load before the first text render.
-/// A `size` of 1.0 makes the em box one grid cell tall (font px = size * CELL_SIZE).
+/// A `size` of 1.0 makes the em box one whole cell tall (font px = size * WHOLE_PX).
 pub(crate) fn text_font(size: f64) -> String {
-    format!("{}px 'BigBlue Terminal', monospace", size * CELL_SIZE)
+    format!("{}px 'BigBlue Terminal', monospace", size * WHOLE_PX)
 }
 
 /// Flat-array strides for the shape buffers. These are the single source of
@@ -32,7 +40,9 @@ pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 /// `i32` shape buffers (negative world coordinates are now valid).
 /// v5 = lines carry a per-line stroke width (`width_x10`, tenths of the base
 /// 2px stroke): LINE_STRIDE grew from 5 to 6.
-pub const SCHEMA_VERSION: u32 = 5;
+/// v6 = coordinates are in fine units (CELL_UNITS per cell) so shapes/cells can
+/// snap to sub-cell (½/¼/⅛) positions; designs stamp `sub` for rescale on load.
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// A text shape: a string anchored at grid-intersection coords (r, c), drawn
 /// in the BigBlue Terminal font at `color`. Coordinates are signed world cells
@@ -46,7 +56,7 @@ pub(crate) struct TextItem {
     pub(crate) r: i32,
     pub(crate) c: i32,
     pub(crate) color: u8,
-    /// Height in grid cells (1.0, 1.5, 2.0, ...); font px = size * CELL_SIZE.
+    /// Height in whole cells (1.0, 1.5, 2.0, ...); font px = size * WHOLE_PX.
     pub(crate) size: f64,
     pub(crate) text: String,
 }
@@ -96,6 +106,10 @@ pub struct GridCanvas {
     /// 15 = 1.5×, …). Per-line width lives in `drawn_lines[..+5]`; this is just
     /// the current pick applied when `draw_line` appends.
     pub(crate) line_width: i32,
+    /// Grid subdivision level for display + snapping: 1 = whole cells only,
+    /// 2 = halves, 4 = quarters, 8 = eighths. Only affects which sub-grid lines
+    /// are drawn (the host owns snapping); coordinates are always fine units.
+    pub(crate) subdivision: i32,
     pub(crate) empty_color: String,
     pub(crate) line_color: String,
     pub(crate) drawn_lines: Vec<i32>, // flat: [r1, c1, r2, c2, color_idx, width_x10, ...]
@@ -145,6 +159,7 @@ impl GridCanvas {
             draw_color: 0,
             outline_color: 6, // default: no outline
             line_width: 10,   // default: 1× (2px)
+            subdivision: 1,   // default: whole cells, no sub-grid
             empty_color: String::from("#ffffff"),
             line_color: String::from("#cccccc"),
             drawn_lines: Vec::new(),
@@ -163,9 +178,14 @@ impl GridCanvas {
     pub(crate) fn sy(&self, world_y: f64) -> f64 {
         (world_y - self.cam_y) * self.zoom
     }
-    /// On-screen size of one grid cell at the current zoom.
+    /// On-screen size of one FINE unit at the current zoom (a filled cell is one
+    /// fine unit; a whole cell is CELL_UNITS of these).
     pub(crate) fn cell_px(&self) -> f64 {
         CELL_SIZE * self.zoom
+    }
+    /// On-screen size of one WHOLE cell at the current zoom (for text scaling).
+    pub(crate) fn whole_px(&self) -> f64 {
+        WHOLE_PX * self.zoom
     }
 
     /// Render unless paused — mutators call this instead of render() directly so

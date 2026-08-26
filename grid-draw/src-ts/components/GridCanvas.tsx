@@ -13,7 +13,9 @@ import { useServerStore } from '../store/serverStore';
 import type { SavedExample } from '../lib/localDb';
 import type { DesignJSON } from '../store/gridStore';
 
-const CELL_SIZE = 16;
+// World px per FINE unit; a whole cell is CELL_UNITS of these (see src/lib.rs).
+const CELL_SIZE = 2;
+const CELL_UNITS = 8;
 const HEADER_HEIGHT = 48;
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
 
@@ -66,6 +68,7 @@ function GridCanvas() {
     rectStart, startRect, finishRect,
     textSize, pickTextSize,
     lineWidth, pickLineWidth,
+    subdivision, cycleSubdivision, setSubdivision,
     beginTextEdit, typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
     selectedItems, setSelectedItems, selectAll,
     clipboard, copy, paste, deleteSelected,
@@ -367,6 +370,11 @@ function GridCanvas() {
         e.preventDefault();
         paste();
       }
+      // Grid subdivision: Ctrl/Cmd+G cycles whole → ½ → ¼ → ⅛ → whole.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        cycleSubdivision();
+      }
       // Undo: Ctrl/Cmd+Z. Redo: Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y.
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -381,7 +389,7 @@ function GridCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, selectAll]);
+  }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, selectAll, cycleSubdivision]);
 
   // Inline text typing. Active only while a text shape is being edited; captures
   // printable characters, Backspace to delete, Enter to commit, Esc to cancel.
@@ -461,15 +469,24 @@ function GridCanvas() {
     return { x: screenX / c.zoom + c.x, y: screenY / c.zoom + c.y };
   };
 
+  // Fine units per snap step at the current subdivision (8 = whole cell, 4 =
+  // half, 2 = quarter, 1 = eighth). Snapping quantizes to this in fine units.
+  const snapStep = () => CELL_UNITS / subdivision;
+
+  // Top-left of the cell/block the pointer is over, snapped to the subgrid.
   const getCellCoords = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasXY(event);
-    return { col: Math.floor(x / CELL_SIZE), row: Math.floor(y / CELL_SIZE) };
+    const step = snapStep();
+    const snap = (v: number) => Math.floor(Math.floor(v / CELL_SIZE) / step) * step;
+    return { col: snap(x), row: snap(y) };
   };
 
-  // Nearest grid intersection (for line/rect endpoints). Infinite grid: no clamp.
+  // Nearest sub-grid intersection (for line/rect endpoints). Infinite grid: no clamp.
   const getIntersectionCoords = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasXY(event);
-    return { col: Math.round(x / CELL_SIZE), row: Math.round(y / CELL_SIZE) };
+    const step = snapStep();
+    const snap = (v: number) => Math.round(v / CELL_SIZE / step) * step;
+    return { col: snap(x), row: snap(y) };
   };
 
   const isItemSelected = (item: SelectedItem) => {
@@ -877,6 +894,22 @@ function GridCanvas() {
               <ToggleGroupItem value="rect" className="text-xs">Rect</ToggleGroupItem>
               <ToggleGroupItem value="text" className="text-xs">Text</ToggleGroupItem>
               <ToggleGroupItem value="select" className="text-xs">Select</ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Grid (Ctrl+G)</label>
+            <ToggleGroup
+              type="single"
+              value={String(subdivision)}
+              onValueChange={(val) => val && setSubdivision(Number(val))}
+              variant="outline"
+              className="flex-wrap"
+            >
+              <ToggleGroupItem value="1" className="text-xs" title="Whole cells">1&times;</ToggleGroupItem>
+              <ToggleGroupItem value="2" className="text-xs" title="Half cells">&frac12;</ToggleGroupItem>
+              <ToggleGroupItem value="4" className="text-xs" title="Quarter cells">&frac14;</ToggleGroupItem>
+              <ToggleGroupItem value="8" className="text-xs" title="Eighth cells">&#8539;</ToggleGroupItem>
             </ToggleGroup>
           </div>
 

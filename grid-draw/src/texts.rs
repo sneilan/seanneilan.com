@@ -6,7 +6,7 @@
 //! work in unzoomed WORLD units; only the draw helpers apply the camera + zoom.
 
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, TextItem, CELL_SIZE, text_font, color_for_idx};
+use crate::{GridCanvas, TextItem, CELL_SIZE, CELL_UNITS, WHOLE_PX, text_font, color_for_idx};
 
 impl GridCanvas {
     /// Measured WORLD-pixel width of `text` at `size` (unzoomed). Sets the
@@ -17,15 +17,16 @@ impl GridCanvas {
         self.ctx.measure_text(text).map(|m| m.width()).unwrap_or(0.0)
     }
 
-    /// Width of a text in whole grid cells (rounded up, min 1) — for the JS
-    /// selection-bounds math which works in cell units.
+    /// Width of a text in FINE units (rounded up, min 1) — for the JS
+    /// selection-bounds math, which works in the same fine units as coordinates.
     pub(crate) fn text_width_cells(&self, text: &str, size: f64) -> u32 {
         ((self.measure_text_px(text, size) / CELL_SIZE).ceil() as u32).max(1)
     }
 
-    /// Height of a text in whole grid cells (rounded up, min 1).
+    /// Height of a text in FINE units (rounded up, min 1). `size` is in whole
+    /// cells, so a fine-unit height is `size * CELL_UNITS`.
     pub(crate) fn text_height_cells(size: f64) -> u32 {
-        (size.ceil() as u32).max(1)
+        ((size * CELL_UNITS as f64).ceil() as u32).max(1)
     }
 }
 
@@ -130,8 +131,8 @@ impl GridCanvas {
             let tx = t.c as f64 * CELL_SIZE;
             let baseline = t.r as f64 * CELL_SIZE;
             let w = self.measure_text_px(&t.text, t.size);
-            let top = baseline - t.size * CELL_SIZE;
-            let bottom = baseline + t.size * CELL_SIZE * 0.2; // descender slack
+            let top = baseline - t.size * WHOLE_PX;
+            let bottom = baseline + t.size * WHOLE_PX * 0.2; // descender slack
             if x >= tx && x <= tx + w && y >= top && y <= bottom {
                 return idx as i32;
             }
@@ -166,8 +167,8 @@ impl GridCanvas {
             let w = self.measure_text_px(&t.text, t.size) * self.zoom;
             let x = self.sx(t.c as f64 * CELL_SIZE);
             let baseline = self.sy(t.r as f64 * CELL_SIZE);
-            let top = baseline - t.size * self.cell_px();
-            let h = t.size * self.cell_px() * 1.2;
+            let top = baseline - t.size * self.whole_px();
+            let h = t.size * self.whole_px() * 1.2;
             self.ctx.set_stroke_style_str("#ff8800");
             self.ctx.set_line_width(2.0);
             self.ctx.stroke_rect(x - 1.0, top - 1.0, w + 2.0, h + 2.0);
@@ -205,7 +206,7 @@ impl GridCanvas {
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(1.5);
         self.ctx.begin_path();
-        self.ctx.move_to(x + w + 1.0, y - size * self.cell_px());
+        self.ctx.move_to(x + w + 1.0, y - size * self.whole_px());
         self.ctx.line_to(x + w + 1.0, y);
         self.ctx.stroke();
         self.ctx.set_line_width(1.0);

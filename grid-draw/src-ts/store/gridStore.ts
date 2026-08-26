@@ -44,6 +44,12 @@ export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
 /** Discrete line-width presets, as multiples of the base 2px stroke. */
 export const LINE_WIDTHS = [1, 1.5, 2, 3, 5];
 
+/** Fine units per whole cell (must match CELL_UNITS in src/lib.rs). Coordinates
+ * are integers in fine units, so a whole cell spans this many. */
+export const CELL_UNITS = 8;
+/** Selectable grid subdivisions and the fine-unit snap step each implies. */
+export const SUBDIVISIONS = [1, 2, 4, 8];
+
 /** Line widths are stored as tenths of the base stroke (10 = 1×) so they fit the
  * integer shape buffer; the UI picks a multiplier. */
 export const widthToTenths = (mult: number) => Math.round(mult * 10);
@@ -110,6 +116,8 @@ type GridState = {
   textSize: number;
   // Active stroke width (multiple of the base 2px) for new lines.
   lineWidth: number;
+  // Grid subdivision for snapping + display: 1 (whole cells), 2, 4, or 8.
+  subdivision: number;
 
   // Selection state - now unified
   selectedItems: SelectedItem[];
@@ -193,6 +201,8 @@ type GridActions = {
   pickTextSize: (size: number) => void;
   setLineWidth: (width: number) => void;
   pickLineWidth: (width: number) => void;
+  setSubdivision: (level: number) => void;
+  cycleSubdivision: () => void;
   beginTextEdit: (cell: Cell) => void;
   typeTextChar: (ch: string) => void;
   backspaceText: () => void;
@@ -395,6 +405,9 @@ export type DesignJSON = {
   lines: number[][];        // [r1, c1, r2, c2, colorIdx, widthX10]
   rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
   texts: Array<[number, number, number, number, string]>; // [r, c, colorIdx, size, text]
+  // Fine units per whole cell at save time. Absent = a pre-subdivision design in
+  // whole-cell units (sub=1); loaders rescale coords by CELL_UNITS/sub.
+  sub?: number;
 };
 
 /**
@@ -445,6 +458,7 @@ export function serializeSelection(
     lines,
     rects,
     texts,
+    sub: CELL_UNITS,
   };
 }
 
@@ -512,6 +526,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   textEdit: null,
   textSize: 1,
   lineWidth: 1,
+  subdivision: 1,
 
   selectedItems: [],
   clipboard: null,
@@ -658,6 +673,19 @@ export const useGridStore = create<GridStore>((set, get) => ({
     if (edits.length === 0) return;
     get().commitEdits(edits, { coalesceKey: `lineWidth:${selectionSignature(selectedItems)}` });
     get().renderSelection();
+  },
+
+  setSubdivision: (level) => {
+    const lvl = SUBDIVISIONS.includes(level) ? level : 1;
+    set({ subdivision: lvl });
+    const { grid } = get();
+    grid?.set_subdivision(lvl); // redraws the sub-grid
+  },
+
+  cycleSubdivision: () => {
+    const cur = get().subdivision;
+    const next = SUBDIVISIONS[(SUBDIVISIONS.indexOf(cur) + 1) % SUBDIVISIONS.length];
+    get().setSubdivision(next);
   },
 
   beginTextEdit: (cell) => {
@@ -1218,16 +1246,27 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   drawCellAt: (row, col, filled) => {
-    const { grid, colorIdx } = get();
+    const { grid, colorIdx, subdivision } = get();
     if (!grid) return;
-    // colorIdx 6 (transparent) erases; otherwise place a filled cell of that color.
-    const to = filled && colorIdx < 6
-      ? { filled: true, color: colorIdx }
-      : { filled: false, color: colorIdx < 6 ? colorIdx : grid.get_cell_color(row, col) };
-    const from = { filled: grid.get_cell(row, col), color: grid.get_cell_color(row, col) };
-    // Skip no-op writes so dragging across the same cell doesn't bloat history.
-    if (from.filled === to.filled && (!to.filled || from.color === to.color)) return;
-    get().commitEdits([{ kind: 'setCellState', row, col, from, to }]);
+    // A "cell" at the current subdivision covers a block of fine cells: whole
+    // cell = CELL_UNITS² fine cells, ½ = (CELL_UNITS/2)², etc. (row,col) is the
+    // block's snapped top-left. Paint/erase every fine cell in the block as one
+    // undo step, skipping no-ops so a drag over the same block doesn't bloat.
+    const block = CELL_UNITS / subdivision;
+    const edits: Edit[] = [];
+    for (let dr = 0; dr < block; dr++) {
+      for (let dc = 0; dc < block; dc++) {
+        const r = row + dr;
+        const c = col + dc;
+        const to = filled && colorIdx < 6
+          ? { filled: true, color: colorIdx }
+          : { filled: false, color: colorIdx < 6 ? colorIdx : grid.get_cell_color(r, c) };
+        const from = { filled: grid.get_cell(r, c), color: grid.get_cell_color(r, c) };
+        if (from.filled === to.filled && (!to.filled || from.color === to.color)) continue;
+        edits.push({ kind: 'setCellState', row: r, col: c, from, to });
+      }
+    }
+    if (edits.length > 0) get().commitEdits(edits);
   },
 
   endDrawStroke: () => {
@@ -1525,11 +1564,16 @@ export const useGridStore = create<GridStore>((set, get) => ({
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
 
+    // Rescale coordinates from the design's fine-unit resolution to the current
+    // one (CELL_UNITS). A design saved at this resolution → f=1; a pre-
+    // subdivision whole-cell design (no `sub`) → f=CELL_UNITS.
+    const f = CELL_UNITS / (design.sub ?? 1);
+
     // Infinite canvas: place every cell, no bounds clipping (a large design
     // opened in a small window no longer loses cells).
     for (const [r, c, color] of design.cells ?? []) {
-      const gr = anchorRow + r;
-      const gc = anchorCol + c;
+      const gr = anchorRow + r * f;
+      const gc = anchorCol + c * f;
       edits.push({
         kind: 'setCellState', row: gr, col: gc,
         from: { filled: grid.get_cell(gr, gc), color: grid.get_cell_color(gr, gc) },
@@ -1538,12 +1582,12 @@ export const useGridStore = create<GridStore>((set, get) => ({
       newSelected.push({ type: 'cell', row: gr, col: gc });
     }
     for (const [r1, c1, r2, c2, color, width] of design.lines ?? []) {
-      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, color, width: width ?? 10 } });
+      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, color, width: width ?? 10 } });
       newSelected.push({ type: 'line', index: lineIdx });
       lineIdx++;
     }
     for (const [r1, c1, r2, c2, fill, outline] of design.rects ?? []) {
-      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, fill, outline } });
+      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, fill, outline } });
       newSelected.push({ type: 'rect', index: rectIdx });
       rectIdx++;
     }
@@ -1558,7 +1602,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
       if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
       edits.push({
         kind: 'addText', idx: textIdx,
-        text: { r: anchorRow + o.r, c: anchorCol + o.c, color: o.color ?? 0, size: o.size ?? 1, text: String(o.text ?? '') },
+        text: { r: anchorRow + o.r * f, c: anchorCol + o.c * f, color: o.color ?? 0, size: o.size ?? 1, text: String(o.text ?? '') },
       });
       newSelected.push({ type: 'text', index: textIdx });
       textIdx++;

@@ -71,6 +71,9 @@ export type GridCanvasWasm = {
   set_line_width(idx: number, width_x10: number): void;
   // Stroke width applied to newly drawn lines (tenths of 2px).
   set_draw_line_width(width_x10: number): void;
+  // Grid subdivision level (1/2/4/8): draws sub-grid lines. Snapping is host-side.
+  set_subdivision(level: number): void;
+  get_subdivision(): number;
   set_rect_fill(idx: number, color: number): void;
   set_rect_outline(idx: number, color: number): void;
   line_intersects_box(line_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;

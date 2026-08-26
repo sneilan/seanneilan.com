@@ -156,7 +156,9 @@ describe('store undo/redo integration', () => {
   it('a freehand draw stroke is one undo step', () => {
     const { grid, calls } = makeGrid({ cell: () => false });
     reset(grid);
-    useGridStore.setState({ grid, colorIdx: 2 });
+    // subdivision 8 → one fine cell per draw (block = CELL_UNITS/8 = 1), so a
+    // stroke over two points is two cells, not two blocks.
+    useGridStore.setState({ grid, colorIdx: 2, subdivision: 8 });
 
     useGridStore.getState().beginDrawStroke();
     useGridStore.getState().drawCellAt(0, 0, true);

@@ -25,6 +25,19 @@ impl GridCanvas {
         self.outline_color = idx;
     }
 
+    /// Set the grid subdivision level (1, 2, 4, or 8). Controls which sub-grid
+    /// lines are drawn; snapping to this step is the host's job.
+    #[wasm_bindgen]
+    pub fn set_subdivision(&mut self, level: i32) {
+        self.subdivision = level.max(1);
+        self.maybe_render();
+    }
+
+    #[wasm_bindgen]
+    pub fn get_subdivision(&self) -> i32 {
+        self.subdivision
+    }
+
     /// Recolor an already-filled cell (for recoloring a selection).
     #[wasm_bindgen]
     pub fn set_cell_color(&mut self, row: i32, col: i32, color: u8) {

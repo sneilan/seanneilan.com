@@ -10,7 +10,7 @@ export type { GridCanvasWasm, GridWasmState };
  * version (e.g. a stale module survived a hot reload that changed the schema),
  * we reset it instead of rendering garbage from a half-migrated buffer.
  */
-const EXPECTED_SCHEMA_VERSION = 5;
+const EXPECTED_SCHEMA_VERSION = 6;
 
 function guardSchema(grid: GridCanvasWasm) {
   const version = grid.get_schema_version?.();
