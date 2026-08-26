@@ -3,6 +3,7 @@ import { useGridWasm } from '../hooks/useGridWasm';
 import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, LINE_WIDTHS, type SelectedItem } from '../store/gridStore';
 import { uploadImage } from '../lib/apiClient';
 import { suppressAutoCreate } from '../lib/autosave';
+import { removeWhiteBackground } from '../lib/removeBackground';
 import { loadImageSize } from '../lib/imageCache';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
@@ -130,6 +131,10 @@ function GridCanvas() {
   // upload/decoding/errors shown under the Image controls.
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [imgStatus, setImgStatus] = useState<string>('');
+  // Opt-in: flood-fill the border-connected white backdrop of an uploaded or
+  // pasted image into transparency before it goes to S3 (lib/removeBackground).
+  // Off by default — it would eat legitimate white regions of other images.
+  const [removeBg, setRemoveBg] = useState<boolean>(false);
   // Default longest-side size (whole cells) for a newly added image; the user
   // then drags the handles to fit.
   const IMG_DEFAULT_CELLS = 16;
@@ -144,8 +149,13 @@ function GridCanvas() {
       if (typeof source === 'string') {
         url = source;
       } else {
+        let blob = source;
+        if (removeBg) {
+          setImgStatus('Removing background…');
+          blob = await removeWhiteBackground(blob);
+        }
         setImgStatus('Uploading…');
-        url = await uploadImage(source);
+        url = await uploadImage(blob);
       }
       setImgStatus('Loading…');
       const { width, height } = await loadImageSize(url);
@@ -163,7 +173,7 @@ function GridCanvas() {
     } catch (e) {
       setImgStatus(e instanceof Error ? e.message : 'image failed');
     }
-  }, [placeImage, viewport.w, viewport.h]);
+  }, [placeImage, viewport.w, viewport.h, removeBg]);
 
   // Paste an image from the OS clipboard (Cmd/Ctrl+V of a copied picture). The
   // DOM paste event carries the bitmap even though the keyboard handler's
@@ -998,6 +1008,17 @@ function GridCanvas() {
               </Button>
             </div>
             <p className="text-[10px] text-gray-400 mt-1">…or paste an image (Ctrl/Cmd+V)</p>
+            <label
+              className="flex items-center gap-1.5 text-[10px] text-gray-500 mt-1 cursor-pointer"
+              title="Flood-fills the white backdrop (connected to the image edges) into transparency before upload. White areas inside the subject are kept."
+            >
+              <input
+                type="checkbox"
+                checked={removeBg}
+                onChange={(e) => setRemoveBg(e.target.checked)}
+              />
+              Remove white background
+            </label>
             {imgStatus && <p className="text-[10px] text-gray-500 mt-1">{imgStatus}</p>}
             <input
               ref={imageInputRef}
