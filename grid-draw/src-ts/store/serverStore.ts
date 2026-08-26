@@ -1,16 +1,15 @@
-// The local data + model store. grid-draw is fully client-side: this store is the
-// single funnel components read through. Storage is IndexedDB (lib/localDb.ts);
-// prediction/training is a tiny in-browser TensorFlow.js model (ml/coordModel.ts).
-// There is NO network — components never import the data/ml layers directly.
-//
-// (Named useServerStore for historical continuity; nothing here talks to a server.)
+// The data + model store: the single funnel components read through. Storage is
+// the grid-draw API server (lib/apiClient.ts → api.seanneilan.com, session-token
+// auth, SQLite on EC2); prediction/training stays a tiny in-browser
+// TensorFlow.js model (ml/coordModel.ts). Components never import the data/ml
+// layers directly.
 
 import { create } from 'zustand';
 import {
   listDesigns, listExamples, getDesign, getDesignByName, saveDesign, saveExample, updateExample,
   deleteDesign, deleteExample,
-  type SavedDesign, type SavedExample, type HistoryStacks,
-} from '../lib/localDb';
+} from '../lib/apiClient';
+import type { SavedDesign, SavedExample, HistoryStacks } from '../lib/localDb';
 import * as coordModel from '../ml/coordModel';
 import type { DesignJSON } from './gridStore';
 
@@ -34,11 +33,11 @@ type ServerState = {
   modelStatus: ModelStatus;
   training: TrainingState | null;
 
-  // Reads — populate store state from IndexedDB.
+  // Reads — populate store state from the API server.
   loadDesigns: () => Promise<void>;
   loadExamples: () => Promise<void>;
 
-  // Commands — mutate IndexedDB, then refresh the affected list.
+  // Commands — mutate on the server, then refresh the affected list.
   saveDrawing: (name: string, design: DesignJSON, history?: HistoryStacks) => Promise<number>;
   getDrawing: (name: string) => Promise<SavedDesign>;
   getDrawingById: (id: number) => Promise<SavedDesign>;

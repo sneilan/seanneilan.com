@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-// Mock the IndexedDB data layer before importing the autosave module (which saves
-// through the store → localDb). listDesigns is stubbed so the post-save refresh
-// doesn't hit real IndexedDB in jsdom.
-vi.mock('./localDb', () => ({
+// Mock the API data layer before importing the autosave module (which saves
+// through the store → apiClient). listDesigns is stubbed so the post-save
+// refresh doesn't hit the network in jsdom.
+vi.mock('./apiClient', () => ({
   saveDesign: vi.fn().mockResolvedValue(1),
   listDesigns: vi.fn().mockResolvedValue([]),
 }));
 
-import { saveDesign } from './localDb';
+import { saveDesign } from './apiClient';
 import './autosave'; // side-effect import installs the store subscription
 import { useGridStore } from '../store/gridStore';
 import { makeGrid } from '../store/testGrid';

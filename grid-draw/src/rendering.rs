@@ -129,17 +129,16 @@ impl GridCanvas {
             i += LINE_STRIDE;
         }
 
-        // Committed texts (BigBlue Terminal). Baseline sits on grid row `r`.
+        // Committed texts (BigBlue Terminal), positioned inside their frame by
+        // halign/valign. `measure_text_px` sets the unscaled font, so re-set the
+        // zoomed font before drawing.
         self.ctx.set_text_baseline("alphabetic");
         for t in &self.drawn_texts {
-            // +1px so the glyph's left edge clears the grid line (stroked at
-            // boundary+0.5) instead of sitting on top of it — matches the rect
-            // fill inset.
-            let x = self.sx(t.c as f64 * CELL_SIZE) + 1.0;
-            let y = self.sy(t.r as f64 * CELL_SIZE);
+            let w = self.measure_text_px(&t.text, t.size) * self.zoom;
+            let (x, baseline) = t.glyph_origin(self, w);
             self.ctx.set_font(&crate::text_font(t.size * self.zoom));
             self.ctx.set_fill_style_str(color_for_idx(if t.color >= 6 { 0 } else { t.color }));
-            let _ = self.ctx.fill_text(&t.text, x, y);
+            let _ = self.ctx.fill_text(&t.text, x, baseline);
         }
     }
 

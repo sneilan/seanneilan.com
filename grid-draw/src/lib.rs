@@ -42,7 +42,9 @@ pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 /// 2px stroke): LINE_STRIDE grew from 5 to 6.
 /// v6 = coordinates are in fine units (CELL_UNITS per cell) so shapes/cells can
 /// snap to sub-cell (½/¼/⅛) positions; designs stamp `sub` for rescale on load.
-pub const SCHEMA_VERSION: u32 = 6;
+/// v7 = text is a resizable frame: `(r,c)` is the box top-left (was baseline)
+/// and it carries box_w/box_h + halign/valign.
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// A text shape: a string anchored at grid-intersection coords (r, c), drawn
 /// in the BigBlue Terminal font at `color`. Coordinates are signed world cells
@@ -50,15 +52,50 @@ pub const SCHEMA_VERSION: u32 = 6;
 /// flat buffer like lines/rects) because it carries a String; the public WASM
 /// API still mirrors the line/rect index-stable shape so undo/redo/select reuse
 /// the same machinery.
+/// Text is framed by a resizable, grid-snapped bounding box. `(r, c)` is the
+/// box TOP-LEFT in fine units; `box_w`/`box_h` are its size in fine units. The
+/// glyph run (measured width × `size` cells tall) is positioned inside the box
+/// by `halign` (0 left, 1 center, 2 right) and `valign` (0 top, 1 middle,
+/// 2 bottom). A freshly typed text auto-fits its box; resizing gives alignment
+/// room to work.
 #[derive(Clone)]
 pub(crate) struct TextItem {
-    /// Baseline grid-row: the text sits ON this grid line, rising upward.
-    pub(crate) r: i32,
-    pub(crate) c: i32,
+    pub(crate) r: i32,      // box top row (fine units)
+    pub(crate) c: i32,      // box left col (fine units)
     pub(crate) color: u8,
     /// Height in whole cells (1.0, 1.5, 2.0, ...); font px = size * WHOLE_PX.
     pub(crate) size: f64,
+    pub(crate) box_w: i32,  // box width (fine units)
+    pub(crate) box_h: i32,  // box height (fine units)
+    pub(crate) halign: u8,  // 0 left, 1 center, 2 right
+    pub(crate) valign: u8,  // 0 top, 1 middle, 2 bottom
     pub(crate) text: String,
+}
+
+impl TextItem {
+    /// Screen-space glyph origin (left x, baseline y) inside the box, given the
+    /// measured world-pixel text width and the canvas transform helpers.
+    pub(crate) fn glyph_origin(&self, gc: &GridCanvas, text_w_px: f64) -> (f64, f64) {
+        let box_left = gc.sx(self.c as f64 * CELL_SIZE);
+        let box_top = gc.sy(self.r as f64 * CELL_SIZE);
+        let box_w_px = self.box_w as f64 * gc.cell_px();
+        let box_h_px = self.box_h as f64 * gc.cell_px();
+        let block_h = self.size * gc.whole_px(); // text block height (screen px)
+        let x_slack = box_w_px - text_w_px;
+        let y_slack = box_h_px - block_h;
+        // 1px inset on the flush edges so glyphs clear the box's grid line.
+        let x = box_left + match self.halign {
+            1 => x_slack / 2.0,
+            2 => (x_slack - 1.0).max(0.0),
+            _ => 1.0,
+        };
+        let baseline = box_top + block_h + match self.valign {
+            1 => y_slack / 2.0,
+            2 => y_slack,
+            _ => 0.0,
+        };
+        (x, baseline)
+    }
 }
 
 /// Screen-pixel stroke width for a line whose stored width is `width_x10`

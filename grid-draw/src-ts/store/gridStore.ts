@@ -6,7 +6,7 @@ import {
 } from '../utils/selection';
 import { getLineHandles, getRectHandles, rotateHandlePoint } from '../utils/handles';
 import { History } from './edits/history';
-import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData } from './edits/types';
+import type { Edit, LineData, RectData, LineGeom, RectGeom, TextData, TextFrame } from './edits/types';
 
 // Single source of undo/redo history for the document. Lives at module scope
 // (one canvas per app); every mutating action routes its edits through here so
@@ -33,9 +33,17 @@ function rectGeom(grid: GridCanvasWasm, idx: number): RectGeom {
   return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
 }
 
+function textFrame(grid: GridCanvasWasm, idx: number): TextFrame {
+  const a = grid.get_text(idx); // [r, c, color, boxW, boxH, ...]
+  return { r: a[0], c: a[1], boxW: a[3], boxH: a[4] };
+}
+
 function readText(grid: GridCanvasWasm, idx: number): TextData {
-  const a = grid.get_text(idx);
-  return { r: a[0], c: a[1], color: a[2], size: grid.get_text_size(idx), text: grid.get_text_string(idx) };
+  const a = grid.get_text(idx); // [r, c, color, boxW, boxH, halign, valign]
+  return {
+    r: a[0], c: a[1], color: a[2], size: grid.get_text_size(idx),
+    boxW: a[3], boxH: a[4], halign: a[5], valign: a[6], text: grid.get_text_string(idx),
+  };
 }
 
 /** Discrete text-size presets, in grid cells tall. */
@@ -61,7 +69,7 @@ export type SelectMode = 'box' | 'drag' | 'resize' | 'rotate' | null;
 
 // Which handle of which single shape is being dragged during a resize.
 export type ResizeTarget = {
-  shape: 'line' | 'rect';
+  shape: 'line' | 'rect' | 'text';
   index: number;
   handle: number;
 };
@@ -73,15 +81,15 @@ export type SelectedItem =
   | { type: 'rect'; index: number }
   | { type: 'text'; index: number };
 
-// An in-progress text being typed (before it's committed as a shape). `row` is
-// the baseline grid-row the text rests on.
+// An in-progress text being typed (before it's committed as a shape). `row`/
+// `col` are the text frame's TOP-LEFT grid coords (fine units).
 export type TextEditState = { row: number; col: number; size: number; text: string };
 
 // Clipboard data types
 type ClipboardCell = { relRow: number; relCol: number; color: number };
 type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; width: number };
 type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
-type ClipboardText = { relR: number; relC: number; color: number; size: number; text: string };
+type ClipboardText = { relR: number; relC: number; color: number; size: number; boxW: number; boxH: number; halign: number; valign: number; text: string };
 
 export type ClipboardData = {
   cells: ClipboardCell[];
@@ -138,7 +146,7 @@ type GridState = {
 
   // Geometry of the shape being resized, captured at gesture start so the
   // whole resize commits as a single from→to edit on release.
-  resizeOrigin: LineGeom | RectGeom | null;
+  resizeOrigin: LineGeom | RectGeom | TextFrame | null;
 
   // Active during a rotate gesture: the selection's center in WORLD pixels and
   // the pointer angle (radians) at gesture start. The live drag rotates freely
@@ -201,6 +209,8 @@ type GridActions = {
   pickTextSize: (size: number) => void;
   setLineWidth: (width: number) => void;
   pickLineWidth: (width: number) => void;
+  // Set horizontal and/or vertical alignment on selected texts (null = keep).
+  pickTextAlign: (halign: number | null, valign: number | null) => void;
   setSubdivision: (level: number) => void;
   cycleSubdivision: () => void;
   beginTextEdit: (cell: Cell) => void;
@@ -372,12 +382,12 @@ export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWas
         maxCol = Math.max(maxCol, rectData[1], rectData[3]);
       }
     } else if (item.type === 'text') {
-      const t = grid.get_text(item.index); // [r_baseline, c, color, wCells, hCells]
+      const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, ...]
       if (t.length >= 5) {
-        // Text rests its baseline on row t[0] and rises t[4] cells upward.
-        minRow = Math.min(minRow, t[0] - t[4]);
+        // Text occupies its frame: top-left (t[0], t[1]), size (t[4], t[3]).
+        minRow = Math.min(minRow, t[0]);
         minCol = Math.min(minCol, t[1]);
-        maxRow = Math.max(maxRow, t[0]);
+        maxRow = Math.max(maxRow, t[0] + t[4]);
         maxCol = Math.max(maxCol, t[1] + t[3]);
       }
     }
@@ -404,7 +414,8 @@ export type DesignJSON = {
   cells: number[][];        // [relRow, relCol, colorIdx]
   lines: number[][];        // [r1, c1, r2, c2, colorIdx, widthX10]
   rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
-  texts: Array<[number, number, number, number, string]>; // [r, c, colorIdx, size, text]
+  // [r, c, colorIdx, size, boxW, boxH, halign, valign, text] (frame top-left, fine units)
+  texts: Array<[number, number, number, number, number, number, number, number, string]>;
   // Fine units per whole cell at save time. Absent = a pre-subdivision design in
   // whole-cell units (sub=1); loaders rescale coords by CELL_UNITS/sub.
   sub?: number;
@@ -432,7 +443,7 @@ export function serializeSelection(
   const cells: number[][] = [];
   const lines: number[][] = [];
   const rects: number[][] = [];
-  const texts: Array<[number, number, number, number, string]> = [];
+  const texts: Array<[number, number, number, number, number, number, number, number, string]> = [];
 
   for (const item of items) {
     if (item.type === 'cell') {
@@ -444,8 +455,8 @@ export function serializeSelection(
       const a = grid.get_rect(item.index);
       rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
     } else if (item.type === 'text') {
-      const a = grid.get_text(item.index);
-      texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), grid.get_text_string(item.index)]);
+      const a = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+      texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), a[3], a[4], a[5], a[6], grid.get_text_string(item.index)]);
     }
   }
 
@@ -675,6 +686,25 @@ export const useGridStore = create<GridStore>((set, get) => ({
     get().renderSelection();
   },
 
+  pickTextAlign: (halign, valign) => {
+    const { grid, selectedItems } = get();
+    if (!grid || selectedItems.length === 0) return;
+    const edits: Edit[] = [];
+    for (const item of selectedItems) {
+      if (item.type === 'text') {
+        const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+        edits.push({
+          kind: 'alignText', idx: item.index,
+          from: { halign: t[5], valign: t[6] },
+          to: { halign: halign ?? t[5], valign: valign ?? t[6] },
+        });
+      }
+    }
+    if (edits.length === 0) return;
+    get().commitEdits(edits, { coalesceKey: `align:${selectionSignature(selectedItems)}` });
+    get().renderSelection();
+  },
+
   setSubdivision: (level) => {
     const lvl = SUBDIVISIONS.includes(level) ? level : 1;
     set({ subdivision: lvl });
@@ -692,11 +722,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
     // Starting a new text commits any text already being typed.
     if (get().textEdit) get().commitTextEdit();
     const { grid, colorIdx, textSize } = get();
-    // The text rests its baseline on the bottom grid line of the clicked cell,
-    // so a 1-cell text fills exactly that cell.
-    const baseline = cell.row + 1;
-    set({ textEdit: { row: baseline, col: cell.col, size: textSize, text: '' }, selectedItems: [] });
-    if (grid) grid.render_text_preview(baseline, cell.col, colorIdx, textSize, '');
+    // The text frame's top-left is the clicked cell, so a 1-cell text fills it.
+    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '' }, selectedItems: [] });
+    if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '');
   },
 
   typeTextChar: (ch) => {
@@ -725,7 +753,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
     get().commitEdits([{
       kind: 'addText',
       idx: grid.get_text_count(),
-      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, text: textEdit.text },
+      // box 0/0 → WASM auto-fits the frame to the text; align defaults to top-left.
+      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, boxW: 0, boxH: 0, halign: 0, valign: 0, text: textEdit.text },
     }]);
     grid.render();
   },
@@ -995,7 +1024,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid } = get();
     // Capture the pre-resize geometry so finish/cancel can commit/restore it.
     const resizeOrigin = grid
-      ? (target.shape === 'line' ? lineGeom(grid, target.index) : rectGeom(grid, target.index))
+      ? (target.shape === 'line' ? lineGeom(grid, target.index)
+        : target.shape === 'rect' ? rectGeom(grid, target.index)
+        : textFrame(grid, target.index))
       : null;
     set({ selectMode: 'resize', resizeTarget: target, resizeOrigin, isSelecting: true });
   },
@@ -1007,8 +1038,10 @@ export const useGridStore = create<GridStore>((set, get) => ({
     // cursor. This is NOT recorded; finishResize commits the single net edit.
     if (resizeTarget.shape === 'line') {
       grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
-    } else {
+    } else if (resizeTarget.shape === 'rect') {
       grid.resize_rect(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
+    } else {
+      grid.resize_text(resizeTarget.index, resizeTarget.handle, cell.row, cell.col);
     }
     get().renderSelection();
   },
@@ -1021,12 +1054,17 @@ export const useGridStore = create<GridStore>((set, get) => ({
       if (resizeTarget.shape === 'line') {
         grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
         if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setLineGeom', idx: resizeTarget.index, from: resizeOrigin, to: lineGeom(grid, resizeTarget.index) }]);
+          get().commitEdits([{ kind: 'setLineGeom', idx: resizeTarget.index, from: resizeOrigin as LineGeom, to: lineGeom(grid, resizeTarget.index) }]);
         }
-      } else {
+      } else if (resizeTarget.shape === 'rect') {
         grid.resize_rect(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
         if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin, to: rectGeom(grid, resizeTarget.index) }]);
+          get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin as RectGeom, to: rectGeom(grid, resizeTarget.index) }]);
+        }
+      } else {
+        grid.resize_text(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
+        if (resizeOrigin) {
+          get().commitEdits([{ kind: 'setTextFrame', idx: resizeTarget.index, from: resizeOrigin as TextFrame, to: textFrame(grid, resizeTarget.index) }]);
         }
       }
     }
@@ -1039,10 +1077,13 @@ export const useGridStore = create<GridStore>((set, get) => ({
     const { grid, resizeTarget, resizeOrigin } = get();
     // The live preview already mutated the shape; restore the captured geometry.
     if (grid && resizeTarget && resizeOrigin) {
-      if (resizeTarget.shape === 'line') {
-        grid.set_line(resizeTarget.index, resizeOrigin.r1, resizeOrigin.c1, resizeOrigin.r2, resizeOrigin.c2);
+      if (resizeTarget.shape === 'text') {
+        const f = resizeOrigin as TextFrame;
+        grid.set_text_frame(resizeTarget.index, f.r, f.c, f.boxW, f.boxH);
       } else {
-        grid.set_rect(resizeTarget.index, resizeOrigin.r1, resizeOrigin.c1, resizeOrigin.r2, resizeOrigin.c2);
+        const g = resizeOrigin as LineGeom;
+        if (resizeTarget.shape === 'line') grid.set_line(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
+        else grid.set_rect(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
       }
     }
     set({ selectMode: null, resizeTarget: null, resizeOrigin: null, isSelecting: false });
@@ -1102,10 +1143,10 @@ export const useGridStore = create<GridStore>((set, get) => ({
           grid.preview_rect(a.r, a.c, b.r, b.c, r[4], r[5]);
         }
       } else if (item.type === 'text') {
-        const t = grid.get_text(item.index);
-        if (t.length >= 3) {
+        const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+        if (t.length >= 7) {
           const p = rotateQuarter(t[0], t[1], k, icr, icc);
-          grid.preview_text(p.r, p.c, t[2], grid.get_text_size(item.index), grid.get_text_string(item.index));
+          grid.preview_text(p.r, p.c, t[2], grid.get_text_size(item.index), t[3], t[4], t[5], t[6], grid.get_text_string(item.index));
         }
       }
     }
@@ -1368,13 +1409,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
           });
         }
       } else if (item.type === 'text') {
-        const t = grid.get_text(item.index);
-        if (t.length >= 3) {
+        const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+        if (t.length >= 7) {
           texts.push({
             relR: t[0] - origin.minRow,
             relC: t[1] - origin.minCol,
             color: t[2],
             size: grid.get_text_size(item.index),
+            boxW: t[3], boxH: t[4], halign: t[5], valign: t[6],
             text: grid.get_text_string(item.index),
           });
         }
@@ -1445,7 +1487,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
     for (const t of clipboard.texts ?? []) {
       const r = anchor.row + t.relR;
       const c = anchor.col + t.relC;
-      edits.push({ kind: 'addText', idx: textIdx, text: { r, c, color: t.color, size: t.size, text: t.text } });
+      edits.push({ kind: 'addText', idx: textIdx, text: { r, c, color: t.color, size: t.size, boxW: t.boxW, boxH: t.boxH, halign: t.halign, valign: t.valign, text: t.text } });
       newSelected.push({ type: 'text', index: textIdx });
       textIdx++;
     }
@@ -1596,13 +1638,23 @@ export const useGridStore = create<GridStore>((set, get) => ({
     // Normalize and skip anything malformed so a stray prediction can't crash the
     // editor (this was the "[Symbol.iterator] is not iterable" Predict failure).
     for (const t of design.texts ?? []) {
+      // Full frame tuple [r,c,color,size,boxW,boxH,halign,valign,text], a legacy
+      // [r,c,color,size,text] tuple, or an object (a model's JSON decoder). Box
+      // dims of 0 mean "auto-fit" (WASM measures). Anything malformed is skipped.
       const o = Array.isArray(t)
-        ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] }
-        : (t as { r: number; c: number; color: number; size: number; text: string });
+        ? (t.length >= 9
+            ? { r: t[0], c: t[1], color: t[2], size: t[3], boxW: t[4], boxH: t[5], halign: t[6], valign: t[7], text: t[8] }
+            : { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] })
+        : (t as { r: number; c: number; color: number; size: number; boxW?: number; boxH?: number; halign?: number; valign?: number; text: string });
       if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
+      const oo = o as { r: number; c: number; color?: number; size?: number; boxW?: number; boxH?: number; halign?: number; valign?: number; text?: unknown };
       edits.push({
         kind: 'addText', idx: textIdx,
-        text: { r: anchorRow + o.r * f, c: anchorCol + o.c * f, color: o.color ?? 0, size: o.size ?? 1, text: String(o.text ?? '') },
+        text: {
+          r: anchorRow + oo.r * f, c: anchorCol + oo.c * f, color: oo.color ?? 0, size: oo.size ?? 1,
+          boxW: (oo.boxW ?? 0) * f, boxH: (oo.boxH ?? 0) * f, halign: oo.halign ?? 0, valign: oo.valign ?? 0,
+          text: String(oo.text ?? ''),
+        },
       });
       newSelected.push({ type: 'text', index: textIdx });
       textIdx++;
@@ -1871,7 +1923,7 @@ sparse = sparse.coalesce()`;
       }
     }
 
-    // Draw resize handles when exactly one line or rect is selected.
+    // Draw resize handles when exactly one line, rect, or text frame is selected.
     if (selectedItems.length === 1) {
       const only = selectedItems[0];
       if (only.type === 'line') {
@@ -1879,6 +1931,10 @@ sparse = sparse.coalesce()`;
         for (const h of handles) grid.draw_handle(h.r, h.c);
       } else if (only.type === 'rect') {
         const handles = getRectHandles(grid.get_rect(only.index));
+        for (const h of handles) grid.draw_handle(h.r, h.c);
+      } else if (only.type === 'text') {
+        const t = grid.get_text(only.index); // [r, c, color, boxW, boxH, ...]
+        const handles = getRectHandles([t[0], t[1], t[0] + t[4], t[1] + t[3]]);
         for (const h of handles) grid.draw_handle(h.r, h.c);
       }
     }

@@ -18,8 +18,13 @@ export type LineGeom = { r1: number; c1: number; r2: number; c2: number };
 /** Just the geometry of a rect (no colors), for move/resize edits. */
 export type RectGeom = { r1: number; c1: number; r2: number; c2: number };
 
-/** A text shape: baseline position (r, c), color index, size (cells), string. */
-export type TextData = { r: number; c: number; color: number; size: number; text: string };
+/** A text shape: frame top-left (r, c) + size (fine units) in `box`, color,
+ * size (cells), alignment, string. Coordinates are fine units. */
+export type TextFrame = { r: number; c: number; boxW: number; boxH: number };
+export type TextData = {
+  r: number; c: number; color: number; size: number;
+  boxW: number; boxH: number; halign: number; valign: number; text: string;
+};
 
 /** Full state of a single cell: whether it is filled, and its color index. */
 export type CellState = { filled: boolean; color: number };
@@ -45,6 +50,8 @@ export type Edit =
   | { kind: 'deleteRect'; idx: number; rect: RectData }
   | { kind: 'recolorText'; idx: number; from: number; to: number }
   | { kind: 'resizeText'; idx: number; from: number; to: number }
+  | { kind: 'alignText'; idx: number; from: { halign: number; valign: number }; to: { halign: number; valign: number } }
+  | { kind: 'setTextFrame'; idx: number; from: TextFrame; to: TextFrame }
   | { kind: 'moveText'; idx: number; dRow: number; dCol: number }
   | { kind: 'addText'; idx: number; text: TextData }
   | { kind: 'deleteText'; idx: number; text: TextData }

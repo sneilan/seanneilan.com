@@ -48,6 +48,8 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
     case 'deleteText':
     case 'recolorText':
     case 'resizeText':
+    case 'alignText':
+    case 'setTextFrame':
     case 'moveText':
       bad('texts', e.idx, textCount - 1);
       break;
@@ -122,7 +124,13 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
       grid.move_text(e.idx, e.dRow, e.dCol);
       break;
     case 'addText':
-      grid.insert_text(e.idx, e.text.r, e.text.c, e.text.color, e.text.size, e.text.text);
+      grid.insert_text(e.idx, e.text.r, e.text.c, e.text.color, e.text.size, e.text.boxW, e.text.boxH, e.text.halign, e.text.valign, e.text.text);
+      break;
+    case 'alignText':
+      grid.set_text_align(e.idx, e.to.halign, e.to.valign);
+      break;
+    case 'setTextFrame':
+      grid.set_text_frame(e.idx, e.to.r, e.to.c, e.to.boxW, e.to.boxH);
       break;
     case 'deleteText':
       grid.delete_text(e.idx);
@@ -176,6 +184,10 @@ export function invertEdit(e: Edit): Edit {
     case 'recolorText':
     case 'resizeText':
       return { ...e, from: e.to, to: e.from };
+    case 'alignText':
+      return { ...e, from: e.to, to: e.from };
+    case 'setTextFrame':
+      return { ...e, from: e.to, to: e.from };
     case 'moveText':
       return { ...e, dRow: -e.dRow, dCol: -e.dCol };
     case 'addText':
@@ -208,6 +220,12 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
     case 'recolorText':
     case 'resizeText':
       if (next.kind === prev.kind && prev.idx === next.idx) return { ...prev, to: next.to };
+      return null;
+    case 'alignText':
+      if (next.kind === 'alignText' && prev.idx === next.idx) return { ...prev, to: next.to };
+      return null;
+    case 'setTextFrame':
+      if (next.kind === 'setTextFrame' && prev.idx === next.idx) return { ...prev, to: next.to };
       return null;
     case 'setCellColor':
       if (next.kind === 'setCellColor' && prev.row === next.row && prev.col === next.col) {

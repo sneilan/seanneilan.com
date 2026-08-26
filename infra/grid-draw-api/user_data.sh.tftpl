@@ -1,0 +1,92 @@
+#!/bin/bash
+# First-boot setup for the grid-draw-api instance (AL2023 arm64, t4g.nano).
+set -euxo pipefail
+
+BUCKET="${bucket}"
+DOMAIN="${domain}"
+
+# 512MB of swap — the box only has 512MB of RAM.
+if ! swapon --show | grep -q /swapfile; then
+  dd if=/dev/zero of=/swapfile bs=1M count=512
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# --- users + dirs ---
+useradd --system --home-dir /var/lib/grid-draw --shell /sbin/nologin griddraw || true
+useradd --system --home-dir /var/lib/caddy --shell /sbin/nologin caddy || true
+mkdir -p /var/lib/grid-draw /var/lib/caddy /etc/caddy
+chown griddraw:griddraw /var/lib/grid-draw
+chown caddy:caddy /var/lib/caddy
+
+# --- caddy (reverse proxy + automatic Let's Encrypt) ---
+curl -fsSL -o /usr/local/bin/caddy "https://caddyserver.com/api/download?os=linux&arch=arm64"
+chmod +x /usr/local/bin/caddy
+
+cat > /etc/caddy/Caddyfile <<EOF
+$DOMAIN {
+	reverse_proxy localhost:8080
+}
+EOF
+
+cat > /etc/systemd/system/caddy.service <<'EOF'
+[Unit]
+Description=Caddy web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=caddy
+Group=caddy
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --force
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Environment=XDG_DATA_HOME=/var/lib/caddy
+Environment=XDG_CONFIG_HOME=/var/lib/caddy
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- grid-draw-api ---
+cat > /usr/local/bin/grid-draw-api-update <<EOF
+#!/bin/bash
+# Pull the latest release binary from S3 and restart. Used by deploy.sh via SSM.
+set -euo pipefail
+aws s3 cp "s3://$BUCKET/releases/grid-draw-api" /usr/local/bin/grid-draw-api.new
+chmod 755 /usr/local/bin/grid-draw-api.new
+mv /usr/local/bin/grid-draw-api.new /usr/local/bin/grid-draw-api
+systemctl restart grid-draw-api
+EOF
+chmod +x /usr/local/bin/grid-draw-api-update
+
+cat > /etc/systemd/system/grid-draw-api.service <<EOF
+[Unit]
+Description=grid-draw API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=griddraw
+Group=griddraw
+Environment=GRID_DRAW_DB=/var/lib/grid-draw/grid-draw.db
+Environment=GRID_DRAW_BACKUP_BUCKET=$BUCKET
+Environment=GRID_DRAW_ADDR=127.0.0.1:8080
+ExecStart=/usr/local/bin/grid-draw-api serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Binary may not exist yet on very first boot (before the first deploy);
+# Restart=always keeps retrying until deploy.sh uploads it.
+/usr/local/bin/grid-draw-api-update || true
+
+systemctl daemon-reload
+systemctl enable --now caddy grid-draw-api || true

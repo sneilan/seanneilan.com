@@ -17,6 +17,12 @@ import type { DesignJSON } from '../store/gridStore';
 const CELL_SIZE = 2;
 const CELL_UNITS = 8;
 const HEADER_HEIGHT = 48;
+
+// A text frame [r, c, color, boxW, boxH, ...] as rect corners [r1,c1,r2,c2] so
+// it can reuse the rect resize-handle geometry.
+function textFrameCorners(a: ArrayLike<number>): number[] {
+  return [a[0], a[1], a[0] + a[4], a[1] + a[3]];
+}
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
 
 const COLORS = [
@@ -68,6 +74,7 @@ function GridCanvas() {
     rectStart, startRect, finishRect,
     textSize, pickTextSize,
     lineWidth, pickLineWidth,
+    pickTextAlign,
     subdivision, cycleSubdivision, setSubdivision,
     beginTextEdit, typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
     selectedItems, setSelectedItems, selectAll,
@@ -568,10 +575,12 @@ function GridCanvas() {
         // else so handles take priority over the drag/hit-test branches.
         if (selectedItems.length === 1 && !shiftHeld) {
           const only = selectedItems[0];
-          if (only.type === 'line' || only.type === 'rect') {
+          if (only.type === 'line' || only.type === 'rect' || only.type === 'text') {
             const handles = only.type === 'line'
               ? getLineHandles(grid.get_line(only.index))
-              : getRectHandles(grid.get_rect(only.index));
+              : only.type === 'rect'
+                ? getRectHandles(grid.get_rect(only.index))
+                : getRectHandles(textFrameCorners(grid.get_text(only.index)));
             const hit = hitTestHandle(x, y, handles, CELL_SIZE, 9);
             if (hit) {
               startResize({ shape: only.type, index: only.index, handle: hit.handle });
@@ -673,10 +682,12 @@ function GridCanvas() {
           // Handle hover (single line/rect selected) -> grab (resize affordance).
           if (cursor === 'crosshair' && selectedItems.length === 1) {
             const only = selectedItems[0];
-            if (only.type === 'line' || only.type === 'rect') {
+            if (only.type === 'line' || only.type === 'rect' || only.type === 'text') {
               const handles = only.type === 'line'
                 ? getLineHandles(grid.get_line(only.index))
-                : getRectHandles(grid.get_rect(only.index));
+                : only.type === 'rect'
+                  ? getRectHandles(grid.get_rect(only.index))
+                  : getRectHandles(textFrameCorners(grid.get_text(only.index)));
               if (hitTestHandle(x, y, handles, CELL_SIZE, 9)) cursor = 'grab';
             }
           }
@@ -743,9 +754,9 @@ function GridCanvas() {
                 grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4], rr[5]);
               }
             } else if (item.type === 'text') {
-              const t = grid.get_text(item.index);
-              if (t.length >= 3) {
-                grid.preview_text(t[0] + deltaRow, t[1] + deltaCol, t[2], grid.get_text_size(item.index), grid.get_text_string(item.index));
+              const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+              if (t.length >= 7) {
+                grid.preview_text(t[0] + deltaRow, t[1] + deltaCol, t[2], grid.get_text_size(item.index), t[3], t[4], t[5], t[6], grid.get_text_string(item.index));
               }
             }
           }
@@ -927,6 +938,22 @@ function GridCanvas() {
                   <ToggleGroupItem key={s} value={String(s)} className="text-xs">{s}&times;</ToggleGroupItem>
                 ))}
               </ToggleGroup>
+            </div>
+          )}
+
+          {selectedItems.some((i) => i.type === 'text') && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Text align (drag the box to resize)</label>
+              <div className="flex gap-1 mb-1">
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(0, null)}>Left</Button>
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(1, null)}>Center</Button>
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(2, null)}>Right</Button>
+              </div>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(null, 0)}>Top</Button>
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(null, 1)}>Middle</Button>
+                <Button variant="outline" size="sm" className="text-xs flex-1" onClick={() => pickTextAlign(null, 2)}>Bottom</Button>
+              </div>
             </div>
           )}
 

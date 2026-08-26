@@ -3,7 +3,7 @@
 // renderer's shape drawing (it doesn't need grid lines or selection chrome), so
 // pictures are derived from the stored JSON and never go stale.
 
-import type { DesignJSON } from '../store/gridStore';
+import { CELL_UNITS, type DesignJSON } from '../store/gridStore';
 
 // Color index -> CSS color. 1=white draws white; 6=transparent/none draws nothing.
 const COLOR_HEX: (string | null)[] = [
@@ -86,18 +86,21 @@ export function renderDesignToCanvas(
     ctx.stroke();
   }
 
-  // Texts: baseline on row r, rising `size` cells (matches the WASM renderer).
-  // Accept both tuple [r,c,color,size,text] (our serialize format) and object
-  // {r,c,color,size,text} (what a model's JSON-schema decoder emits); skip junk.
+  // Texts: (r,c) is the frame top-left in fine units; the glyph run is `size`
+  // whole cells tall with its baseline at the block bottom. Accept the full
+  // tuple, a legacy [r,c,color,size,text] tuple, or an object; skip junk.
   ctx.textBaseline = 'alphabetic';
   for (const t of design.texts ?? []) {
     const o = Array.isArray(t)
-      ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] }
+      ? (t.length >= 9
+          ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[8] }
+          : { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] })
       : (t as { r: number; c: number; color: number; size: number; text: string });
     if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
     ctx.fillStyle = hex(o.color) ?? '#000000';
-    ctx.font = `${Math.max(6, (o.size ?? 1) * cs)}px 'BigBlue Terminal', monospace`;
-    ctx.fillText(String(o.text ?? ''), o.c * cs, o.r * cs);
+    const size = o.size ?? 1;
+    ctx.font = `${Math.max(6, size * cs * CELL_UNITS)}px 'BigBlue Terminal', monospace`;
+    ctx.fillText(String(o.text ?? ''), o.c * cs, (o.r + size * CELL_UNITS) * cs);
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);

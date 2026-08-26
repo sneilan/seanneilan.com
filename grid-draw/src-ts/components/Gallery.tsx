@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { DesignThumbnail } from './DesignThumbnail';
 import { DraggablePanel } from './DraggablePanel';
 import { useServerStore } from '../store/serverStore';
+import { logout } from '../lib/apiClient';
 
 const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
 
@@ -130,6 +131,7 @@ export default function Gallery({ asModal, onClose, onOpenDesign }: GalleryProps
         <h1 className="text-xl font-semibold">Gallery</h1>
         <Button variant="outline" size="sm" onClick={backToEditor}>← Editor</Button>
         <Button variant="outline" size="sm" onClick={refresh}>Refresh</Button>
+        <Button variant="outline" size="sm" onClick={() => { logout(); window.location.reload(); }}>Log out</Button>
         {error && <span className="text-sm text-red-500">Data server: {String(error)}</span>}
       </header>
       {content}
