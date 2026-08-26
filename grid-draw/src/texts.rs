@@ -17,6 +17,28 @@ impl GridCanvas {
         self.ctx.measure_text(text).map(|m| m.width()).unwrap_or(0.0)
     }
 
+    /// Screen-px `(width, ascent, descent)` for `text` at `size` cells and the
+    /// current `zoom`. Sets the ZOOMED font, so all three are in screen pixels.
+    /// Ascent/descent are the actual ink extents above/below the baseline; empty
+    /// or metric-less text falls back to the font em (0.75 / 0.25 split).
+    pub(crate) fn measure_screen_metrics(&self, text: &str, size: f64) -> (f64, f64, f64) {
+        let font_px = size * self.whole_px();
+        self.ctx.set_font(&text_font(size * self.zoom));
+        match self.ctx.measure_text(text) {
+            Ok(m) => {
+                let asc = m.actual_bounding_box_ascent();
+                let desc = m.actual_bounding_box_descent();
+                // A blank line reports 0/0; keep the em so the caret has height.
+                if asc + desc <= 0.0 {
+                    (m.width(), font_px * 0.75, font_px * 0.25)
+                } else {
+                    (m.width(), asc, desc)
+                }
+            }
+            Err(_) => (0.0, font_px * 0.75, font_px * 0.25),
+        }
+    }
+
     /// Width of a text in FINE units (rounded up, min 1) — for the JS
     /// selection-bounds math, which works in the same fine units as coordinates.
     pub(crate) fn text_width_cells(&self, text: &str, size: f64) -> u32 {
@@ -244,8 +266,8 @@ impl GridCanvas {
     #[allow(clippy::too_many_arguments)]
     pub fn preview_text(&self, r: i32, c: i32, color: u8, size: f64, box_w: i32, box_h: i32, halign: u8, valign: u8, text: &str) {
         let ghost = TextItem { r, c, color, size, box_w, box_h, halign, valign, text: text.to_string() };
-        let w = self.measure_text_px(text, size) * self.zoom;
-        let (x, baseline) = ghost.glyph_origin(self, w);
+        let (w, asc, desc) = self.measure_screen_metrics(text, size);
+        let (x, baseline) = ghost.glyph_origin(self, w, asc, desc);
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_font(&text_font(size * self.zoom));
         self.ctx.set_text_baseline("alphabetic");
@@ -259,15 +281,15 @@ impl GridCanvas {
     #[wasm_bindgen]
     pub fn render_text_preview(&self, r: i32, c: i32, color: u8, size: f64, text: &str) {
         self.maybe_render();
-        let w = self.measure_text_px(text, size) * self.zoom;
+        let (w, asc, desc) = self.measure_screen_metrics(text, size);
         let (box_w, box_h) = self.text_fit_box(text, size);
         let ghost = TextItem { r, c, color, size, box_w, box_h, halign: 0, valign: 0, text: text.to_string() };
-        let (x, baseline) = ghost.glyph_origin(self, w);
+        let (x, baseline) = ghost.glyph_origin(self, w, asc, desc);
         self.ctx.set_font(&text_font(size * self.zoom));
         self.ctx.set_text_baseline("alphabetic");
         self.ctx.set_fill_style_str(color_for_idx(if color >= 6 { 0 } else { color }));
         let _ = self.ctx.fill_text(text, x, baseline);
-        // Caret bar (text height) right after the text.
+        // Caret bar (em height) right after the text.
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(1.5);
         self.ctx.begin_path();

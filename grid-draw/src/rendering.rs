@@ -139,8 +139,8 @@ impl GridCanvas {
         // zoomed font before drawing.
         self.ctx.set_text_baseline("alphabetic");
         for t in &self.drawn_texts {
-            let w = self.measure_text_px(&t.text, t.size) * self.zoom;
-            let (x, baseline) = t.glyph_origin(self, w);
+            let (w, asc, desc) = self.measure_screen_metrics(&t.text, t.size);
+            let (x, baseline) = t.glyph_origin(self, w, asc, desc);
             self.ctx.set_font(&crate::text_font(t.size * self.zoom));
             self.ctx.set_fill_style_str(color_for_idx(if t.color >= 6 { 0 } else { t.color }));
             let _ = self.ctx.fill_text(&t.text, x, baseline);

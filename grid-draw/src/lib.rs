@@ -93,26 +93,35 @@ pub(crate) struct TextItem {
 }
 
 impl TextItem {
-    /// Screen-space glyph origin (left x, baseline y) inside the box, given the
-    /// measured world-pixel text width and the canvas transform helpers.
-    pub(crate) fn glyph_origin(&self, gc: &GridCanvas, text_w_px: f64) -> (f64, f64) {
+    /// Screen-space glyph origin (left x, baseline y) inside the box. `text_w_px`
+    /// is the measured advance width; `ascent_px`/`descent_px` are the actual ink
+    /// extents above/below the baseline (screen px). Vertical alignment centers
+    /// the *ink* box, not the font em box — digits like "342" have no descenders,
+    /// so em-box centering would leave them floating high in the frame.
+    pub(crate) fn glyph_origin(
+        &self,
+        gc: &GridCanvas,
+        text_w_px: f64,
+        ascent_px: f64,
+        descent_px: f64,
+    ) -> (f64, f64) {
         let box_left = gc.sx(self.c as f64 * CELL_SIZE);
         let box_top = gc.sy(self.r as f64 * CELL_SIZE);
         let box_w_px = self.box_w as f64 * gc.cell_px();
         let box_h_px = self.box_h as f64 * gc.cell_px();
-        let block_h = self.size * gc.whole_px(); // text block height (screen px)
+        let ink_h = ascent_px + descent_px; // visible glyph height (screen px)
         let x_slack = box_w_px - text_w_px;
-        let y_slack = box_h_px - block_h;
         // 1px inset on the flush edges so glyphs clear the box's grid line.
         let x = box_left + match self.halign {
             1 => x_slack / 2.0,
             2 => (x_slack - 1.0).max(0.0),
             _ => 1.0,
         };
-        let baseline = box_top + block_h + match self.valign {
-            1 => y_slack / 2.0,
-            2 => y_slack,
-            _ => 0.0,
+        // Baseline placed so the ink box lands top / centered / bottom in the frame.
+        let baseline = box_top + ascent_px + match self.valign {
+            1 => (box_h_px - ink_h) / 2.0,
+            2 => box_h_px - ink_h - 1.0,
+            _ => 1.0,
         };
         (x, baseline)
     }
