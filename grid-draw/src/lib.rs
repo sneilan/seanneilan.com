@@ -23,14 +23,16 @@ pub(crate) fn text_font(size: f64) -> String {
 /// truth for the packing of `drawn_lines` / `drawn_rects`; every read/write
 /// must derive offsets from them so a future field addition can't desync one
 /// call site (which is exactly what caused the rect corruption bug).
-pub(crate) const LINE_STRIDE: usize = 5; // [r1, c1, r2, c2, color]
+pub(crate) const LINE_STRIDE: usize = 6; // [r1, c1, r2, c2, color, width_x10]
 pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 
 /// Bump whenever the shape packing or coordinate model changes. Exposed to JS so
 /// the host can detect a stale/mismatched WASM instance and reset rather than
 /// render garbage. v4 = infinite canvas: sparse signed-coordinate cells and
 /// `i32` shape buffers (negative world coordinates are now valid).
-pub const SCHEMA_VERSION: u32 = 4;
+/// v5 = lines carry a per-line stroke width (`width_x10`, tenths of the base
+/// 2px stroke): LINE_STRIDE grew from 5 to 6.
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// A text shape: a string anchored at grid-intersection coords (r, c), drawn
 /// in the BigBlue Terminal font at `color`. Coordinates are signed world cells
@@ -47,6 +49,12 @@ pub(crate) struct TextItem {
     /// Height in grid cells (1.0, 1.5, 2.0, ...); font px = size * CELL_SIZE.
     pub(crate) size: f64,
     pub(crate) text: String,
+}
+
+/// Screen-pixel stroke width for a line whose stored width is `width_x10`
+/// (tenths of the base 2px stroke): 10 → 2px, 15 → 3px, 50 → 10px.
+pub(crate) fn line_px(width_x10: i32) -> f64 {
+    (width_x10.max(1) as f64 / 10.0) * 2.0
 }
 
 pub(crate) fn color_for_idx(idx: u8) -> &'static str {
@@ -84,9 +92,13 @@ pub struct GridCanvas {
     pub(crate) cells: HashMap<(i32, i32), u8>,
     pub(crate) draw_color: u8,
     pub(crate) outline_color: u8, // for new rects; index 6 = no outline
+    /// Stroke width for NEW lines, in tenths of the base 2px stroke (10 = 1×,
+    /// 15 = 1.5×, …). Per-line width lives in `drawn_lines[..+5]`; this is just
+    /// the current pick applied when `draw_line` appends.
+    pub(crate) line_width: i32,
     pub(crate) empty_color: String,
     pub(crate) line_color: String,
-    pub(crate) drawn_lines: Vec<i32>, // flat: [r1, c1, r2, c2, color_idx, ...]
+    pub(crate) drawn_lines: Vec<i32>, // flat: [r1, c1, r2, c2, color_idx, width_x10, ...]
     pub(crate) drawn_rects: Vec<i32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, ...]
     pub(crate) drawn_texts: Vec<TextItem>,
 }
@@ -132,6 +144,7 @@ impl GridCanvas {
             cells: HashMap::new(),
             draw_color: 0,
             outline_color: 6, // default: no outline
+            line_width: 10,   // default: 1× (2px)
             empty_color: String::from("#ffffff"),
             line_color: String::from("#cccccc"),
             drawn_lines: Vec::new(),

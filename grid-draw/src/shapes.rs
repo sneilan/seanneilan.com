@@ -9,8 +9,15 @@ use crate::buffers::{insert_record, delete_record, set_geom, resize_corners};
 impl GridCanvas {
     #[wasm_bindgen]
     pub fn draw_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
-        self.drawn_lines.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as i32]);
+        self.drawn_lines.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as i32, self.line_width]);
         self.maybe_render();
+    }
+
+    /// Set the stroke width applied to NEW lines, in tenths of the base 2px
+    /// stroke (10 = 1×, 15 = 1.5×, 20 = 2×, 30 = 3×, 50 = 5×).
+    #[wasm_bindgen]
+    pub fn set_draw_line_width(&mut self, width_x10: i32) {
+        self.line_width = width_x10.max(1);
     }
 
     #[wasm_bindgen]
@@ -342,8 +349,8 @@ impl GridCanvas {
 
     /// Add a line directly (for paste operations)
     #[wasm_bindgen]
-    pub fn add_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32, color: i32) {
-        self.drawn_lines.extend_from_slice(&[r1, c1, r2, c2, color]);
+    pub fn add_line(&mut self, r1: i32, c1: i32, r2: i32, c2: i32, color: i32, width_x10: i32) {
+        self.drawn_lines.extend_from_slice(&[r1, c1, r2, c2, color, width_x10]);
     }
 
     /// Add a rect directly (for paste operations)
@@ -356,8 +363,8 @@ impl GridCanvas {
     /// index-stable inverse of `delete_line`, used by the undo/redo edit layer.
     /// `idx` is clamped to the end, so inserting at the count appends.
     #[wasm_bindgen]
-    pub fn insert_line(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, color: i32) {
-        insert_record(&mut self.drawn_lines, LINE_STRIDE, idx, &[r1, c1, r2, c2, color]);
+    pub fn insert_line(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, color: i32, width_x10: i32) {
+        insert_record(&mut self.drawn_lines, LINE_STRIDE, idx, &[r1, c1, r2, c2, color, width_x10]);
         self.maybe_render();
     }
 
@@ -391,6 +398,16 @@ impl GridCanvas {
         let start = idx * LINE_STRIDE;
         if start + LINE_STRIDE <= self.drawn_lines.len() {
             self.drawn_lines[start + 4] = color;
+            self.maybe_render();
+        }
+    }
+
+    /// Change one line's stroke width in place (`width_x10` = tenths of 2px).
+    #[wasm_bindgen]
+    pub fn set_line_width(&mut self, idx: usize, width_x10: i32) {
+        let start = idx * LINE_STRIDE;
+        if start + LINE_STRIDE <= self.drawn_lines.len() {
+            self.drawn_lines[start + 5] = width_x10.max(1);
             self.maybe_render();
         }
     }

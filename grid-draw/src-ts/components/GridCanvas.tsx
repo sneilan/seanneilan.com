@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGridWasm } from '../hooks/useGridWasm';
-import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, type SelectedItem } from '../store/gridStore';
+import { useGridStore, getSelectionBoundsAll, serializeSelection, TEXT_SIZES, LINE_WIDTHS, type SelectedItem } from '../store/gridStore';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../utils/handles';
 import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -65,6 +65,7 @@ function GridCanvas() {
     lineStart, startLine, finishLine,
     rectStart, startRect, finishRect,
     textSize, pickTextSize,
+    lineWidth, pickLineWidth,
     beginTextEdit, typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
     selectedItems, setSelectedItems, selectAll,
     clipboard, copy, paste, deleteSelected,
@@ -716,8 +717,8 @@ function GridCanvas() {
               grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
             } else if (item.type === 'line') {
               const l = grid.get_line(item.index);
-              if (l.length >= 5) {
-                grid.preview_line(l[0] + deltaRow, l[1] + deltaCol, l[2] + deltaRow, l[3] + deltaCol, l[4]);
+              if (l.length >= 6) {
+                grid.preview_line(l[0] + deltaRow, l[1] + deltaCol, l[2] + deltaRow, l[3] + deltaCol, l[4], l[5]);
               }
             } else if (item.type === 'rect') {
               const rr = grid.get_rect(item.index);
@@ -891,6 +892,23 @@ function GridCanvas() {
               >
                 {TEXT_SIZES.map((s) => (
                   <ToggleGroupItem key={s} value={String(s)} className="text-xs">{s}&times;</ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
+          )}
+
+          {tool === 'line' && (
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Line width</label>
+              <ToggleGroup
+                type="single"
+                value={String(lineWidth)}
+                onValueChange={(val) => val && pickLineWidth(Number(val))}
+                variant="outline"
+                className="flex-wrap"
+              >
+                {LINE_WIDTHS.map((w) => (
+                  <ToggleGroupItem key={w} value={String(w)} className="text-xs">{w}&times;</ToggleGroupItem>
                 ))}
               </ToggleGroup>
             </div>

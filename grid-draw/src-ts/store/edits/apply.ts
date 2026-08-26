@@ -30,6 +30,7 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
       break;
     case 'deleteLine':
     case 'recolorLine':
+    case 'resizeLine':
     case 'moveLine':
     case 'setLineGeom':
       bad('lines', e.idx, lineCount - 1);
@@ -78,6 +79,9 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
     case 'recolorLine':
       grid.set_line_color(e.idx, e.to);
       break;
+    case 'resizeLine':
+      grid.set_line_width(e.idx, e.to);
+      break;
     case 'recolorRectFill':
       grid.set_rect_fill(e.idx, e.to);
       break;
@@ -97,7 +101,7 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
       grid.set_rect(e.idx, e.to.r1, e.to.c1, e.to.r2, e.to.c2);
       break;
     case 'addLine':
-      grid.insert_line(e.idx, e.line.r1, e.line.c1, e.line.r2, e.line.c2, e.line.color);
+      grid.insert_line(e.idx, e.line.r1, e.line.c1, e.line.r2, e.line.c2, e.line.color, e.line.width);
       break;
     case 'addRect':
       grid.insert_rect(e.idx, e.rect.r1, e.rect.c1, e.rect.r2, e.rect.c2, e.rect.fill, e.rect.outline);
@@ -151,6 +155,7 @@ export function invertEdit(e: Edit): Edit {
     case 'setCellState':
       return { ...e, from: e.to, to: e.from };
     case 'recolorLine':
+    case 'resizeLine':
     case 'recolorRectFill':
     case 'recolorRectOutline':
       return { ...e, from: e.to, to: e.from };
@@ -197,6 +202,7 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
 
   switch (prev.kind) {
     case 'recolorLine':
+    case 'resizeLine':
     case 'recolorRectFill':
     case 'recolorRectOutline':
     case 'recolorText':

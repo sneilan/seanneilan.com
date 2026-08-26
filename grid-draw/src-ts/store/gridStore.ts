@@ -15,7 +15,7 @@ const history = new History();
 
 function readLine(grid: GridCanvasWasm, idx: number): LineData {
   const a = grid.get_line(idx);
-  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4] };
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4], width: a[5] };
 }
 
 function readRect(grid: GridCanvasWasm, idx: number): RectData {
@@ -41,6 +41,14 @@ function readText(grid: GridCanvasWasm, idx: number): TextData {
 /** Discrete text-size presets, in grid cells tall. */
 export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
 
+/** Discrete line-width presets, as multiples of the base 2px stroke. */
+export const LINE_WIDTHS = [1, 1.5, 2, 3, 5];
+
+/** Line widths are stored as tenths of the base stroke (10 = 1×) so they fit the
+ * integer shape buffer; the UI picks a multiplier. */
+export const widthToTenths = (mult: number) => Math.round(mult * 10);
+export const tenthsToWidth = (tenths: number) => tenths / 10;
+
 // Types
 export type DrawTool = 'draw' | 'line' | 'rect' | 'text' | 'select';
 export type SelectMode = 'box' | 'drag' | 'resize' | 'rotate' | null;
@@ -65,7 +73,7 @@ export type TextEditState = { row: number; col: number; size: number; text: stri
 
 // Clipboard data types
 type ClipboardCell = { relRow: number; relCol: number; color: number };
-type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number };
+type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; width: number };
 type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
 type ClipboardText = { relR: number; relC: number; color: number; size: number; text: string };
 
@@ -100,6 +108,8 @@ type GridState = {
   textEdit: TextEditState | null;
   // Active size (cells tall) for new text shapes.
   textSize: number;
+  // Active stroke width (multiple of the base 2px) for new lines.
+  lineWidth: number;
 
   // Selection state - now unified
   selectedItems: SelectedItem[];
@@ -181,6 +191,8 @@ type GridActions = {
   setTextSize: (size: number) => void;
   // Set the active size AND resize any selected text shapes (undoable).
   pickTextSize: (size: number) => void;
+  setLineWidth: (width: number) => void;
+  pickLineWidth: (width: number) => void;
   beginTextEdit: (cell: Cell) => void;
   typeTextChar: (ch: string) => void;
   backspaceText: () => void;
@@ -380,7 +392,7 @@ export type DesignJSON = {
   w: number;
   h: number;
   cells: number[][];        // [relRow, relCol, colorIdx]
-  lines: number[][];        // [r1, c1, r2, c2, colorIdx]
+  lines: number[][];        // [r1, c1, r2, c2, colorIdx, widthX10]
   rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
   texts: Array<[number, number, number, number, string]>; // [r, c, colorIdx, size, text]
 };
@@ -414,7 +426,7 @@ export function serializeSelection(
       cells.push([item.row - oR, item.col - oC, grid.get_cell_color(item.row, item.col)]);
     } else if (item.type === 'line') {
       const a = grid.get_line(item.index);
-      lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4]]);
+      lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
     } else if (item.type === 'rect') {
       const a = grid.get_rect(item.index);
       rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
@@ -499,6 +511,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
   rectStart: null,
   textEdit: null,
   textSize: 1,
+  lineWidth: 1,
 
   selectedItems: [],
   clipboard: null,
@@ -622,6 +635,28 @@ export const useGridStore = create<GridStore>((set, get) => ({
     }
     if (edits.length === 0) return;
     get().commitEdits(edits, { coalesceKey: `size:${selectionSignature(selectedItems)}` });
+    get().renderSelection();
+  },
+
+  setLineWidth: (width) => set({ lineWidth: width }),
+
+  pickLineWidth: (width) => {
+    set({ lineWidth: width });
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    // Keep the WASM "new line" width in sync so the drag preview shows the pick.
+    grid.set_draw_line_width(widthToTenths(width));
+    if (selectedItems.length === 0) return;
+    // Restyle every selected line, like recolor/resizeText do for their kinds.
+    const to = widthToTenths(width);
+    const edits: Edit[] = [];
+    for (const item of selectedItems) {
+      if (item.type === 'line') {
+        edits.push({ kind: 'resizeLine', idx: item.index, from: grid.get_line(item.index)[5], to });
+      }
+    }
+    if (edits.length === 0) return;
+    get().commitEdits(edits, { coalesceKey: `lineWidth:${selectionSignature(selectedItems)}` });
     get().renderSelection();
   },
 
@@ -1026,10 +1061,10 @@ export const useGridStore = create<GridStore>((set, get) => ({
         grid.preview_cell(p.r, p.c, grid.get_cell_color(item.row, item.col));
       } else if (item.type === 'line') {
         const l = grid.get_line(item.index);
-        if (l.length >= 5) {
+        if (l.length >= 6) {
           const a = rotateQuarter(l[0], l[1], k, icr, icc);
           const b = rotateQuarter(l[2], l[3], k, icr, icc);
-          grid.preview_line(a.r, a.c, b.r, b.c, l[4]);
+          grid.preview_line(a.r, a.c, b.r, b.c, l[4], l[5]);
         }
       } else if (item.type === 'rect') {
         const r = grid.get_rect(item.index);
@@ -1202,9 +1237,9 @@ export const useGridStore = create<GridStore>((set, get) => ({
   },
 
   commitLine: (r1, c1, r2, c2) => {
-    const { grid, colorIdx } = get();
+    const { grid, colorIdx, lineWidth } = get();
     if (!grid) return;
-    get().commitEdits([{ kind: 'addLine', idx: grid.get_line_count(), line: { r1, c1, r2, c2, color: colorIdx } }]);
+    get().commitEdits([{ kind: 'addLine', idx: grid.get_line_count(), line: { r1, c1, r2, c2, color: colorIdx, width: widthToTenths(lineWidth) } }]);
     get().updateOutputs();
   },
 
@@ -1271,13 +1306,14 @@ export const useGridStore = create<GridStore>((set, get) => ({
         });
       } else if (item.type === 'line') {
         const lineData = grid.get_line(item.index);
-        if (lineData.length >= 5) {
+        if (lineData.length >= 6) {
           lines.push({
             relR1: lineData[0] - origin.minRow,
             relC1: lineData[1] - origin.minCol,
             relR2: lineData[2] - origin.minRow,
             relC2: lineData[3] - origin.minCol,
             color: lineData[4],
+            width: lineData[5],
           });
         }
       } else if (item.type === 'rect') {
@@ -1350,7 +1386,7 @@ export const useGridStore = create<GridStore>((set, get) => ({
       const c1 = anchor.col + line.relC1;
       const r2 = anchor.row + line.relR2;
       const c2 = anchor.col + line.relC2;
-      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1, c1, r2, c2, color: line.color } });
+      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1, c1, r2, c2, color: line.color, width: line.width ?? 10 } });
       newSelected.push({ type: 'line', index: lineIdx });
       lineIdx++;
     }
@@ -1501,8 +1537,8 @@ export const useGridStore = create<GridStore>((set, get) => ({
       });
       newSelected.push({ type: 'cell', row: gr, col: gc });
     }
-    for (const [r1, c1, r2, c2, color] of design.lines ?? []) {
-      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, color } });
+    for (const [r1, c1, r2, c2, color, width] of design.lines ?? []) {
+      edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1, c1: anchorCol + c1, r2: anchorRow + r2, c2: anchorCol + c2, color, width: width ?? 10 } });
       newSelected.push({ type: 'line', index: lineIdx });
       lineIdx++;
     }

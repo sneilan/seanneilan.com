@@ -22,8 +22,8 @@ function makeRecordingGrid() {
     move_rect: (idx, dr, dc) => calls.push(['move_rect', idx, dr, dc]),
     set_line: (idx, r1, c1, r2, c2) => calls.push(['set_line', idx, r1, c1, r2, c2]),
     set_rect: (idx, r1, c1, r2, c2) => calls.push(['set_rect', idx, r1, c1, r2, c2]),
-    insert_line: (idx, r1, c1, r2, c2, color) =>
-      calls.push(['insert_line', idx, r1, c1, r2, c2, color]),
+    insert_line: (idx, r1, c1, r2, c2, color, width) =>
+      calls.push(['insert_line', idx, r1, c1, r2, c2, color, width]),
     insert_rect: (idx, r1, c1, r2, c2, fill, outline) =>
       calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]),
     delete_line: (idx) => calls.push(['delete_line', idx]),
@@ -166,9 +166,9 @@ describe('invertEdit — exact round-trips', () => {
 
   it('addLine inverse deletes the same index', () => {
     expect(
-      roundTrip({ kind: 'addLine', idx: 3, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 2 } })
+      roundTrip({ kind: 'addLine', idx: 3, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 2, width: 10 } })
     ).toEqual([
-      ['insert_line', 3, 0, 0, 1, 1, 2],
+      ['insert_line', 3, 0, 0, 1, 1, 2, 10],
       ['delete_line', 3],
     ]);
   });
@@ -188,10 +188,10 @@ describe('invertEdit — exact round-trips', () => {
 
   it('deleteLine inverse re-inserts the captured line at its index', () => {
     expect(
-      roundTrip({ kind: 'deleteLine', idx: 1, line: { r1: 5, c1: 6, r2: 7, c2: 8, color: 3 } })
+      roundTrip({ kind: 'deleteLine', idx: 1, line: { r1: 5, c1: 6, r2: 7, c2: 8, color: 3, width: 10 } })
     ).toEqual([
       ['delete_line', 1],
-      ['insert_line', 1, 5, 6, 7, 8, 3],
+      ['insert_line', 1, 5, 6, 7, 8, 3, 10],
     ]);
   });
 
@@ -390,14 +390,14 @@ describe('applyEdit range guard', () => {
   it('allows an insert at one-past-the-end (append)', () => {
     const { grid } = makeCountingGrid(2, 0); // two lines: insert idx 2 = append
     expect(() =>
-      applyEdit(grid, { kind: 'addLine', idx: 2, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 0 } })
+      applyEdit(grid, { kind: 'addLine', idx: 2, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 0, width: 10 } })
     ).not.toThrow();
   });
 
   it('rejects an insert beyond one-past-the-end', () => {
     const { grid } = makeCountingGrid(2, 0);
     expect(() =>
-      applyEdit(grid, { kind: 'addLine', idx: 3, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 0 } })
+      applyEdit(grid, { kind: 'addLine', idx: 3, line: { r1: 0, c1: 0, r2: 1, c2: 1, color: 0, width: 10 } })
     ).toThrow(/out of range/);
   });
 

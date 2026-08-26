@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE, color_for_idx};
+use crate::{GridCanvas, CELL_SIZE, LINE_STRIDE, color_for_idx};
 
 // Everything draws through the camera: world-pixel coords are mapped to screen
 // via self.sx()/self.sy() and scaled by self.cell_px(). Only the visible window
@@ -91,22 +91,23 @@ impl GridCanvas {
             i += 6;
         }
 
-        // Committed lines.
+        // Committed lines. The +0.5 lands the stroke centered on the grid line
+        // (drawn at `boundary + 0.5`) instead of a half-pixel to its left.
         let mut i = 0;
-        while i + 4 < self.drawn_lines.len() {
-            let x1 = self.sx(self.drawn_lines[i + 1] as f64 * CELL_SIZE);
-            let y1 = self.sy(self.drawn_lines[i] as f64 * CELL_SIZE);
-            let x2 = self.sx(self.drawn_lines[i + 3] as f64 * CELL_SIZE);
-            let y2 = self.sy(self.drawn_lines[i + 2] as f64 * CELL_SIZE);
+        while i + 5 < self.drawn_lines.len() {
+            let x1 = self.sx(self.drawn_lines[i + 1] as f64 * CELL_SIZE) + 0.5;
+            let y1 = self.sy(self.drawn_lines[i] as f64 * CELL_SIZE) + 0.5;
+            let x2 = self.sx(self.drawn_lines[i + 3] as f64 * CELL_SIZE) + 0.5;
+            let y2 = self.sy(self.drawn_lines[i + 2] as f64 * CELL_SIZE) + 0.5;
             let color_idx = self.drawn_lines[i + 4] as u8;
             self.ctx.set_stroke_style_str(color_for_idx(color_idx));
-            self.ctx.set_line_width(2.0);
+            self.ctx.set_line_width(crate::line_px(self.drawn_lines[i + 5]));
             self.ctx.begin_path();
             self.ctx.move_to(x1, y1);
             self.ctx.line_to(x2, y2);
             self.ctx.stroke();
             self.ctx.set_line_width(1.0);
-            i += 5;
+            i += LINE_STRIDE;
         }
 
         // Committed texts (BigBlue Terminal). Baseline sits on grid row `r`.
@@ -124,10 +125,10 @@ impl GridCanvas {
     pub fn render_with_line(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.render();
         self.ctx.set_stroke_style_str("#4488ff");
-        self.ctx.set_line_width(2.0);
+        self.ctx.set_line_width(crate::line_px(self.line_width));
         self.ctx.begin_path();
-        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE), self.sy(r1 as f64 * CELL_SIZE));
-        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE), self.sy(r2 as f64 * CELL_SIZE));
+        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE) + 0.5, self.sy(r1 as f64 * CELL_SIZE) + 0.5);
+        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE) + 0.5, self.sy(r2 as f64 * CELL_SIZE) + 0.5);
         self.ctx.stroke();
         self.ctx.set_line_width(1.0);
     }
@@ -164,13 +165,13 @@ impl GridCanvas {
 
     /// Moving "ghost" of a line. Does NOT clear.
     #[wasm_bindgen]
-    pub fn preview_line(&self, r1: i32, c1: i32, r2: i32, c2: i32, color: u8) {
+    pub fn preview_line(&self, r1: i32, c1: i32, r2: i32, c2: i32, color: u8, width_x10: i32) {
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_stroke_style_str(color_for_idx(color));
-        self.ctx.set_line_width(2.0);
+        self.ctx.set_line_width(crate::line_px(width_x10));
         self.ctx.begin_path();
-        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE), self.sy(r1 as f64 * CELL_SIZE));
-        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE), self.sy(r2 as f64 * CELL_SIZE));
+        self.ctx.move_to(self.sx(c1 as f64 * CELL_SIZE) + 0.5, self.sy(r1 as f64 * CELL_SIZE) + 0.5);
+        self.ctx.line_to(self.sx(c2 as f64 * CELL_SIZE) + 0.5, self.sy(r2 as f64 * CELL_SIZE) + 0.5);
         self.ctx.stroke();
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_line_width(1.0);
@@ -241,8 +242,8 @@ impl GridCanvas {
             self.ctx.set_stroke_style_str("#ff8800");
             self.ctx.set_line_width(5.0);
             self.ctx.begin_path();
-            self.ctx.move_to(self.sx(self.drawn_lines[start + 1] as f64 * CELL_SIZE), self.sy(self.drawn_lines[start] as f64 * CELL_SIZE));
-            self.ctx.line_to(self.sx(self.drawn_lines[start + 3] as f64 * CELL_SIZE), self.sy(self.drawn_lines[start + 2] as f64 * CELL_SIZE));
+            self.ctx.move_to(self.sx(self.drawn_lines[start + 1] as f64 * CELL_SIZE) + 0.5, self.sy(self.drawn_lines[start] as f64 * CELL_SIZE) + 0.5);
+            self.ctx.line_to(self.sx(self.drawn_lines[start + 3] as f64 * CELL_SIZE) + 0.5, self.sy(self.drawn_lines[start + 2] as f64 * CELL_SIZE) + 0.5);
             self.ctx.stroke();
             self.ctx.set_line_width(1.0);
         }

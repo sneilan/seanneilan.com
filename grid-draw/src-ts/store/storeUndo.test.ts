@@ -123,7 +123,7 @@ describe('store undo/redo integration', () => {
       grid,
       clipboard: {
         cells: [],
-        lines: [{ relR1: 0, relC1: 0, relR2: 1, relC2: 1, color: 2 }],
+        lines: [{ relR1: 0, relC1: 0, relR2: 1, relC2: 1, color: 2, width: 10 }],
         rects: [],
         texts: [],
         originRow: 0,

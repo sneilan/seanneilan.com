@@ -11,7 +11,7 @@ import type { GridCanvasWasm } from '../../types/grid';
  * round-trip that holds here would hold against the Rust unless the Rust diverges
  * from these documented semantics.
  */
-const LINE_STRIDE = 5;
+const LINE_STRIDE = 6;
 const RECT_STRIDE = 6;
 const TRANSPARENT = 6;
 
@@ -64,6 +64,11 @@ export class FakeGrid {
     const s = idx * LINE_STRIDE;
     if (s + LINE_STRIDE <= this.lines.length) this.lines[s + 4] = color;
   }
+  set_line_width(idx: number, width: number) {
+    const s = idx * LINE_STRIDE;
+    if (s + LINE_STRIDE <= this.lines.length) this.lines[s + 5] = Math.max(1, width);
+  }
+  set_draw_line_width() {}
   set_rect_fill(idx: number, color: number) {
     const s = idx * RECT_STRIDE;
     if (s + RECT_STRIDE <= this.rects.length) this.rects[s + 4] = color;
@@ -94,9 +99,9 @@ export class FakeGrid {
     if (s + RECT_STRIDE > this.rects.length) return;
     this.rects[s] = r1; this.rects[s + 1] = c1; this.rects[s + 2] = r2; this.rects[s + 3] = c2;
   }
-  insert_line(idx: number, r1: number, c1: number, r2: number, c2: number, color: number) {
+  insert_line(idx: number, r1: number, c1: number, r2: number, c2: number, color: number, width = 10) {
     const at = Math.min(idx, this.get_line_count()) * LINE_STRIDE;
-    this.lines.splice(at, 0, r1, c1, r2, c2, color);
+    this.lines.splice(at, 0, r1, c1, r2, c2, color, width);
   }
   insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number) {
     const at = Math.min(idx, this.get_rect_count()) * RECT_STRIDE;
@@ -133,7 +138,7 @@ export class FakeGrid {
     this.rects[s + 2] = Math.max(minR, maxR);
     this.rects[s + 3] = Math.max(minC, maxC);
   }
-  add_line(r1: number, c1: number, r2: number, c2: number, color: number) { this.lines.push(r1, c1, r2, c2, color); }
+  add_line(r1: number, c1: number, r2: number, c2: number, color: number, width = 10) { this.lines.push(r1, c1, r2, c2, color, width); }
   add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number) { this.rects.push(r1, c1, r2, c2, fill, outline); }
 
   // --- no-op rendering / selection surface ---------------------------------

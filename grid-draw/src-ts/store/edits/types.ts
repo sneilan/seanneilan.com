@@ -3,8 +3,9 @@
 // the WASM mutators; everything else produces `Edit` data. Because each edit
 // carries both its old and new values, the inverse is a pure data transform.
 
-/** A line as stored in WASM: [r1, c1, r2, c2, color]. */
-export type LineData = { r1: number; c1: number; r2: number; c2: number; color: number };
+/** A line as stored in WASM: [r1, c1, r2, c2, color, width_x10]. `width` is in
+ * tenths of the base 2px stroke (10 = 1×, 15 = 1.5×, …). */
+export type LineData = { r1: number; c1: number; r2: number; c2: number; color: number; width: number };
 
 /** A rect as stored in WASM: [r1, c1, r2, c2, fill, outline]. */
 export type RectData = {
@@ -30,6 +31,7 @@ export type Edit =
   // moving colored cells (a bare set_cell can't restore a prior color).
   | { kind: 'setCellState'; row: number; col: number; from: CellState; to: CellState }
   | { kind: 'recolorLine'; idx: number; from: number; to: number }
+  | { kind: 'resizeLine'; idx: number; from: number; to: number }
   | { kind: 'recolorRectFill'; idx: number; from: number; to: number }
   | { kind: 'recolorRectOutline'; idx: number; from: number; to: number }
   | { kind: 'moveLine'; idx: number; dRow: number; dCol: number }

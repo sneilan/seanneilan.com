@@ -31,7 +31,7 @@ function randomEdit(g: FakeGrid, rand: () => number): Edit | null {
 
   const choices: Array<() => Edit | null> = [
     // add line
-    () => ({ kind: 'addLine', idx: lc, line: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), color: color() } }),
+    () => ({ kind: 'addLine', idx: lc, line: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), color: color(), width: 10 } }),
     // add rect
     () => ({ kind: 'addRect', idx: rc, rect: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), fill: rand() < 0.5 ? 6 : color(), outline: rand() < 0.5 ? 6 : color() } }),
     // cell on/off — capture the TRUE current state as `from`, like the store does
@@ -59,7 +59,7 @@ function randomEdit(g: FakeGrid, rand: () => number): Edit | null {
 
 function toLine(g: FakeGrid, idx: number) {
   const a = g.get_line(idx);
-  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4] };
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4], width: a[5] };
 }
 function toRect(g: FakeGrid, idx: number) {
   const a = g.get_rect(idx);
