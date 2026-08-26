@@ -4,3 +4,6 @@
 *.tfstate.*
 *.tfplan
 crash.log
+backend.tf
+provider.tf
+tfplan

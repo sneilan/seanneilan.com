@@ -17,7 +17,9 @@ import (
 // Uses VACUUM INTO for a consistent copy while the server keeps running;
 // credentials come from the EC2 instance role.
 func runBackups(db *sql.DB, dbPath, bucket string) {
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	// WithEC2IMDSRegion: on the instance there is no AWS_REGION env or config
+	// file; take the region from instance metadata.
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithEC2IMDSRegion())
 	if err != nil {
 		log.Printf("backup disabled, cannot load AWS config: %v", err)
 		return
