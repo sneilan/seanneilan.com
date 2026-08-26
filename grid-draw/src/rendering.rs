@@ -32,15 +32,21 @@ impl GridCanvas {
         self.ctx.set_fill_style_str(&self.empty_color);
         self.ctx.fill_rect(0.0, 0.0, self.view_w, self.view_h);
 
-        // Filled cells (sparse; cull to the visible window).
+        // Filled cells (sparse; cull to the visible window). Each edge is
+        // rounded to a whole pixel — a cell's right edge and its neighbour's
+        // left edge round identically, so adjacent fine cells tile exactly.
+        // Fractional edges antialias into hairline seams at fine-unit pitch,
+        // which makes a solid 1× block look subdivided into ⅛ cells.
         for ((row, col), color) in &self.cells {
             if *col < c0 || *col > c1 || *row < r0 || *row > r1 {
                 continue;
             }
             self.ctx.set_fill_style_str(color_for_idx(*color));
-            let x = self.sx(*col as f64 * CELL_SIZE);
-            let y = self.sy(*row as f64 * CELL_SIZE);
-            self.ctx.fill_rect(x, y, cp, cp);
+            let x0 = self.sx(*col as f64 * CELL_SIZE).round();
+            let y0 = self.sy(*row as f64 * CELL_SIZE).round();
+            let x1 = self.sx((*col + 1) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((*row + 1) as f64 * CELL_SIZE).round();
+            self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
         }
 
         // Grid lines. Coordinates are fine units (CELL_UNITS per cell), so most
@@ -176,16 +182,19 @@ impl GridCanvas {
     /// Does NOT clear the canvas, so callers render() once then layer previews.
     #[wasm_bindgen]
     pub fn preview_cell(&self, row: i32, col: i32, color: u8) {
-        let cp = self.cell_px();
-        let x = self.sx(col as f64 * CELL_SIZE);
-        let y = self.sy(row as f64 * CELL_SIZE);
+        // Same pixel-snapped edges as render()'s cell loop, so a dragged block
+        // of fine cells previews seamlessly too.
+        let x0 = self.sx(col as f64 * CELL_SIZE).round();
+        let y0 = self.sy(row as f64 * CELL_SIZE).round();
+        let x1 = self.sx((col + 1) as f64 * CELL_SIZE).round();
+        let y1 = self.sy((row + 1) as f64 * CELL_SIZE).round();
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_fill_style_str(color_for_idx(color));
-        self.ctx.fill_rect(x, y, cp, cp);
+        self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(2.0);
-        self.ctx.stroke_rect(x + 1.0, y + 1.0, cp - 2.0, cp - 2.0);
+        self.ctx.stroke_rect(x0 + 1.0, y0 + 1.0, (x1 - x0) - 2.0, (y1 - y0) - 2.0);
         self.ctx.set_line_width(1.0);
     }
 
