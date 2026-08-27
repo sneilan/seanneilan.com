@@ -1,0 +1,256 @@
+import type { GridCanvasWasm } from '../types/grid';
+import type { LineData, RectData, LineGeom, RectGeom, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
+import { CELL_UNITS, type DesignJSON, type SelectedItem } from './types';
+
+// --- Shape readers ----------------------------------------------------------
+
+export function readLine(grid: GridCanvasWasm, idx: number): LineData {
+  const a = grid.get_line(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], color: a[4], width: a[5] };
+}
+
+export function readRect(grid: GridCanvasWasm, idx: number): RectData {
+  const a = grid.get_rect(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5] };
+}
+
+export function lineGeom(grid: GridCanvasWasm, idx: number): LineGeom {
+  const a = grid.get_line(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
+
+export function rectGeom(grid: GridCanvasWasm, idx: number): RectGeom {
+  const a = grid.get_rect(idx);
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
+
+export function textFrame(grid: GridCanvasWasm, idx: number): TextFrame {
+  const a = grid.get_text(idx); // [r, c, color, boxW, boxH, ...]
+  return { r: a[0], c: a[1], boxW: a[3], boxH: a[4] };
+}
+
+export function readText(grid: GridCanvasWasm, idx: number): TextData {
+  const a = grid.get_text(idx); // [r, c, color, boxW, boxH, halign, valign]
+  return {
+    r: a[0], c: a[1], color: a[2], size: grid.get_text_size(idx),
+    boxW: a[3], boxH: a[4], halign: a[5], valign: a[6], text: grid.get_text_string(idx),
+  };
+}
+
+export function imageGeom(grid: GridCanvasWasm, idx: number): ImageGeom {
+  const a = grid.get_image(idx); // [r1, c1, r2, c2]
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3] };
+}
+
+export function readImage(grid: GridCanvasWasm, idx: number): ImageData {
+  const a = grid.get_image(idx); // [r1, c1, r2, c2]
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], url: grid.get_image_url(idx) };
+}
+
+// --- Selection helpers ------------------------------------------------------
+
+// Stable signature of a selection, so consecutive recolors of the SAME
+// selection coalesce into one undo step (but a different selection doesn't).
+export function selectionSignature(items: SelectedItem[]): string {
+  return items
+    .map(i => (i.type === 'cell' ? `c:${i.row},${i.col}` : `${i.type[0]}:${i.index}`))
+    .sort()
+    .join('|');
+}
+
+// Helper to check if two items are equal
+export function itemsEqual(a: SelectedItem, b: SelectedItem): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === 'cell' && b.type === 'cell') {
+    return a.row === b.row && a.col === b.col;
+  }
+  if (a.type === 'line' && b.type === 'line') {
+    return a.index === b.index;
+  }
+  if (a.type === 'rect' && b.type === 'rect') {
+    return a.index === b.index;
+  }
+  if (a.type === 'text' && b.type === 'text') {
+    return a.index === b.index;
+  }
+  if (a.type === 'image' && b.type === 'image') {
+    return a.index === b.index;
+  }
+  return false;
+}
+
+// Helper to check if item is in selection
+export function isItemSelected(item: SelectedItem, selection: SelectedItem[]): boolean {
+  return selection.some(s => itemsEqual(s, item));
+}
+
+// Helper to add item to selection (avoiding duplicates)
+export function addItemToSelectionArray(item: SelectedItem, selection: SelectedItem[]): SelectedItem[] {
+  if (isItemSelected(item, selection)) return selection;
+  return [...selection, item];
+}
+
+// Helper to remove item from selection
+export function removeItemFromSelectionArray(item: SelectedItem, selection: SelectedItem[]): SelectedItem[] {
+  return selection.filter(s => !itemsEqual(s, item));
+}
+
+// Get the full bounding box for all selected items
+export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWasm): { minRow: number; minCol: number; maxRow: number; maxCol: number } | null {
+  if (items.length === 0) return null;
+
+  let minRow = Infinity;
+  let minCol = Infinity;
+  let maxRow = -Infinity;
+  let maxCol = -Infinity;
+
+  for (const item of items) {
+    if (item.type === 'cell') {
+      minRow = Math.min(minRow, item.row);
+      minCol = Math.min(minCol, item.col);
+      maxRow = Math.max(maxRow, item.row);
+      maxCol = Math.max(maxCol, item.col);
+    } else if (item.type === 'line') {
+      const lineData = grid.get_line(item.index);
+      if (lineData.length >= 4) {
+        minRow = Math.min(minRow, lineData[0], lineData[2]);
+        minCol = Math.min(minCol, lineData[1], lineData[3]);
+        maxRow = Math.max(maxRow, lineData[0], lineData[2]);
+        maxCol = Math.max(maxCol, lineData[1], lineData[3]);
+      }
+    } else if (item.type === 'rect') {
+      const rectData = grid.get_rect(item.index);
+      if (rectData.length >= 4) {
+        minRow = Math.min(minRow, rectData[0], rectData[2]);
+        minCol = Math.min(minCol, rectData[1], rectData[3]);
+        maxRow = Math.max(maxRow, rectData[0], rectData[2]);
+        maxCol = Math.max(maxCol, rectData[1], rectData[3]);
+      }
+    } else if (item.type === 'text') {
+      const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, ...]
+      if (t.length >= 5) {
+        // Text occupies its frame: top-left (t[0], t[1]), size (t[4], t[3]).
+        minRow = Math.min(minRow, t[0]);
+        minCol = Math.min(minCol, t[1]);
+        maxRow = Math.max(maxRow, t[0] + t[4]);
+        maxCol = Math.max(maxCol, t[1] + t[3]);
+      }
+    } else if (item.type === 'image') {
+      const im = grid.get_image(item.index); // [r1, c1, r2, c2] (normalized box)
+      if (im.length >= 4) {
+        minRow = Math.min(minRow, im[0], im[2]);
+        minCol = Math.min(minCol, im[1], im[3]);
+        maxRow = Math.max(maxRow, im[0], im[2]);
+        maxCol = Math.max(maxCol, im[1], im[3]);
+      }
+    }
+  }
+
+  return minRow === Infinity ? null : { minRow, minCol, maxRow, maxCol };
+}
+
+// Get the bounding box origin for shapes (for copy/paste)
+export function getSelectionOrigin(items: SelectedItem[], grid: GridCanvasWasm): { minRow: number; minCol: number } | null {
+  const bounds = getSelectionBoundsAll(items, grid);
+  return bounds ? { minRow: bounds.minRow, minCol: bounds.minCol } : null;
+}
+
+/**
+ * Serialize the given selection into a DesignJSON, with all coordinates made
+ * relative to the selection's bounding box (so the same shape captured anywhere
+ * on the grid produces identical data). Returns null for an empty selection.
+ */
+export function serializeSelection(
+  grid: GridCanvasWasm,
+  items: SelectedItem[],
+  opts: { absolute?: boolean } = {},
+): DesignJSON | null {
+  const bounds = getSelectionBoundsAll(items, grid);
+  if (!bounds) return null;
+  const { minRow, minCol, maxRow, maxCol } = bounds;
+  // In absolute mode coordinates are kept as-is (origin 0,0) so a restored
+  // drawing lands where it was made; otherwise they're made bounding-box-
+  // relative (so the same shape captured anywhere serializes identically).
+  const oR = opts.absolute ? 0 : minRow;
+  const oC = opts.absolute ? 0 : minCol;
+
+  const cells: number[][] = [];
+  const lines: number[][] = [];
+  const rects: number[][] = [];
+  const texts: Array<[number, number, number, number, number, number, number, number, string]> = [];
+  const images: Array<[number, number, number, number, string]> = [];
+
+  for (const item of items) {
+    if (item.type === 'cell') {
+      cells.push([item.row - oR, item.col - oC, grid.get_cell_color(item.row, item.col)]);
+    } else if (item.type === 'line') {
+      const a = grid.get_line(item.index);
+      lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
+    } else if (item.type === 'rect') {
+      const a = grid.get_rect(item.index);
+      rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
+    } else if (item.type === 'text') {
+      const a = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
+      texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), a[3], a[4], a[5], a[6], grid.get_text_string(item.index)]);
+    } else if (item.type === 'image') {
+      const a = grid.get_image(item.index); // [r1, c1, r2, c2]
+      images.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, grid.get_image_url(item.index)]);
+    }
+  }
+
+  // Sort for stable, augmentation-friendly output (row-major, then by kind).
+  cells.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  return {
+    w: maxCol - oC + 1,
+    h: maxRow - oR + 1,
+    cells,
+    lines,
+    rects,
+    texts,
+    images,
+    sub: CELL_UNITS,
+  };
+}
+
+// --- Rotation math ----------------------------------------------------------
+
+/**
+ * Number of clockwise quarter-turns (0..3) a free pointer rotation snaps to.
+ * `theta` is the signed angle dragged from the gesture's start direction.
+ */
+export function snapQuarterTurns(theta: number): number {
+  return ((Math.round(theta / (Math.PI / 2)) % 4) + 4) % 4;
+}
+
+/**
+ * Apply `k` clockwise quarter-turns to a grid coordinate about an integer cell
+ * center (icr, icc). One turn: (r,c) → (icr+(c-icc), icc-(r-icr)). Integer in,
+ * integer out, so 90° steps map cells→cells exactly (lossless).
+ */
+export function rotateQuarter(r: number, c: number, k: number, icr: number, icc: number): { r: number; c: number } {
+  let rr = r;
+  let cc = c;
+  for (let n = 0; n < k; n++) {
+    const nr = icr + (cc - icc);
+    const nc = icc - (rr - icr);
+    rr = nr;
+    cc = nc;
+  }
+  return { r: rr, c: cc };
+}
+
+/** Every drawable item currently on the grid, as a selection list. */
+export function allItems(grid: GridCanvasWasm): SelectedItem[] {
+  const items: SelectedItem[] = [];
+  // The grid is infinite/sparse, so enumerate filled cells via the WASM buffer
+  // ([row, col, color, ...]) rather than scanning a bounded row×col range.
+  const cells = grid.get_filled_cells();
+  for (let i = 0; i + 2 < cells.length; i += 3) {
+    items.push({ type: 'cell', row: cells[i], col: cells[i + 1] });
+  }
+  for (let i = 0; i < grid.get_line_count(); i++) items.push({ type: 'line', index: i });
+  for (let i = 0; i < grid.get_rect_count(); i++) items.push({ type: 'rect', index: i });
+  for (let i = 0; i < grid.get_text_count(); i++) items.push({ type: 'text', index: i });
+  for (let i = 0; i < grid.get_image_count(); i++) items.push({ type: 'image', index: i });
+  return items;
+}
