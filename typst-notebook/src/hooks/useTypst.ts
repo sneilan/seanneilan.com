@@ -15,6 +15,17 @@ interface TypstWasm {
   compile_to_svg: (source: string) => string;
 }
 
+function isTypstWasm(mod: unknown): mod is TypstWasm {
+  return (
+    typeof mod === 'object' &&
+    mod !== null &&
+    'init' in mod &&
+    typeof mod.init === 'function' &&
+    'compile_to_svg' in mod &&
+    typeof mod.compile_to_svg === 'function'
+  );
+}
+
 let typstModule: TypstWasm | null = null;
 let initPromise: Promise<void> | null = null;
 let downloadProgressCallback: ((progress: number) => void) | null = null;
@@ -65,7 +76,11 @@ async function decompressBrotli(buffer: ArrayBuffer): Promise<ArrayBuffer> {
   const brotli = await brotliPromise;
   const input = new Uint8Array(buffer);
   const decompressed = brotli.decompress(input);
-  return decompressed.buffer as ArrayBuffer;
+  // Copy into a fresh ArrayBuffer so the return type is a plain ArrayBuffer
+  // (Uint8Array.buffer is ArrayBufferLike, which may be a SharedArrayBuffer).
+  const output = new ArrayBuffer(decompressed.byteLength);
+  new Uint8Array(output).set(decompressed);
+  return output;
 }
 
 async function initTypst(onProgress?: (progress: number) => void) {
@@ -97,7 +112,10 @@ async function initTypst(onProgress?: (progress: number) => void) {
     await wasm.default(wasmBuffer);
     wasm.init();
 
-    typstModule = wasm as TypstWasm;
+    if (!isTypstWasm(wasm)) {
+      throw new Error('Typst WASM module is missing expected exports');
+    }
+    typstModule = wasm;
     downloadProgressCallback = null;
   })();
 

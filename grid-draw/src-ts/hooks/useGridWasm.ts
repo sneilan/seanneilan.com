@@ -12,6 +12,15 @@ export type { GridCanvasWasm, GridWasmState };
  */
 const EXPECTED_SCHEMA_VERSION = 7;
 
+// Read Vite's `import.meta.env.DEV` without asserting import.meta's shape (the TS
+// lib types it as only `{ url }`); `'env' in meta` narrows it to read the flag.
+function isDevBuild(): boolean {
+  const meta: ImportMeta = import.meta;
+  if (!('env' in meta)) return false;
+  const env = meta.env;
+  return typeof env === 'object' && env !== null && 'DEV' in env && env.DEV === true;
+}
+
 function guardSchema(grid: GridCanvasWasm) {
   const version = grid.get_schema_version?.();
   if (version !== EXPECTED_SCHEMA_VERSION || !grid.rects_consistent?.()) {
@@ -56,8 +65,11 @@ export function useGridWasm(
         // rather than the component bridging it across with a useEffect.
         useGridStore.getState().setGrid(grid);
         // Dev-only handle for e2e/manual debugging (e.g. inspecting filled cells).
-        if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
-          (window as unknown as { __gridForTest?: unknown }).__gridForTest = grid;
+        if (isDevBuild()) {
+          // Window doesn't declare our test-only field; an optional-property view
+          // of the same object lets us assign it without an assertion.
+          const testWindow: Window & { __gridForTest?: unknown } = window;
+          testWindow.__gridForTest = grid;
         }
         setState({
           grid,

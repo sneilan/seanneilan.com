@@ -26,7 +26,7 @@ function normBox(r1: number, c1: number, r2: number, c2: number): [number, numbe
   return [minR, minC, Math.max(maxR, minR + 1), Math.max(maxC, minC + 1)];
 }
 
-export class FakeGrid {
+export class FakeGrid implements GridCanvasWasm {
   lines: number[] = [];
   rects: number[] = [];
   images: FakeImage[] = [];
@@ -53,8 +53,8 @@ export class FakeGrid {
   get_cell_size() { return 16; }
   get_line_count() { return this.lines.length / LINE_STRIDE; }
   get_rect_count() { return this.rects.length / RECT_STRIDE; }
-  get_line(idx: number) { return new Uint32Array(this.lines.slice(idx * LINE_STRIDE, idx * LINE_STRIDE + LINE_STRIDE)); }
-  get_rect(idx: number) { return new Uint32Array(this.rects.slice(idx * RECT_STRIDE, idx * RECT_STRIDE + RECT_STRIDE)); }
+  get_line(idx: number) { return new Int32Array(this.lines.slice(idx * LINE_STRIDE, idx * LINE_STRIDE + LINE_STRIDE)); }
+  get_rect(idx: number) { return new Int32Array(this.rects.slice(idx * RECT_STRIDE, idx * RECT_STRIDE + RECT_STRIDE)); }
   get_cell(row: number, col: number) { return this.cells.has(`${row},${col}`); }
   get_cell_color(row: number, col: number) { return this.cells.get(`${row},${col}`) ?? 0; }
 
@@ -203,9 +203,71 @@ export class FakeGrid {
   draw_handle() {}
   draw_selection_box() {}
   set_outline_color() {}
+
+  // --- interface members outside the modeled mutation subset ----------------
+  // FakeGrid models cells/lines/rects/images; text, camera, rendering and hit-
+  // testing are out of scope. These are inert so FakeGrid genuinely
+  // `implements GridCanvasWasm` (no cast) while staying faithful: it simply
+  // holds no text/camera state, so counts read 0 and getters read empty. The
+  // store's edit path probes some of these optionally (set_render_paused?.(),
+  // draw_rotate_handle), so they must be callable no-ops, not throw.
+  clear(): void {}
+  set_render_paused(): void {}
+  set_viewport(): void {}
+  set_camera(): void {}
+  get_cam_x(): number { return 0; }
+  get_cam_y(): number { return 0; }
+  get_zoom(): number { return 1; }
+  get_schema_version(): number { return 0; }
+  rects_consistent(): boolean { return true; }
+  move_cell(): void {}
+  get_cell_count(): number { return this.cells.size; }
+  get_filled_cells(): Int32Array {
+    const out: number[] = [];
+    for (const [k, color] of this.cells) {
+      const [r, c] = k.split(',').map(Number);
+      out.push(r, c, color);
+    }
+    return new Int32Array(out);
+  }
+  render_with_line(): void {}
+  draw_line(): void {}
+  render_with_rect(): void {}
+  draw_rect(): void {}
+  render_with_selection(): void {}
+  render_with_selection_box(): void {}
+  hit_test_line(): number { return -1; }
+  hit_test_rect(): number { return -1; }
+  draw_rotate_handle(): void {}
+  preview_cell(): void {}
+  preview_line(): void {}
+  preview_rect(): void {}
+  set_subdivision(): void {}
+  get_subdivision(): number { return 1; }
+  line_intersects_box(): boolean { return false; }
+  rect_intersects_box(): boolean { return false; }
+  get_text_count(): number { return 0; }
+  get_text(): Int32Array { return new Int32Array(); }
+  get_text_string(): string { return ''; }
+  get_text_size(): number { return 1; }
+  add_text(): void {}
+  insert_text(): void {}
+  delete_text(): void {}
+  move_text(): void {}
+  set_text_color(): void {}
+  set_text_size(): void {}
+  set_text_pos(): void {}
+  set_text_align(): void {}
+  set_text_frame(): void {}
+  resize_text(): void {}
+  hit_test_text(): number { return -1; }
+  text_intersects_box(): boolean { return false; }
+  highlight_text(): void {}
+  preview_text(): void {}
+  render_text_preview(): void {}
 }
 
-/** Cast helper: the FakeGrid implements the mutation subset the edit layer uses. */
+/** The FakeGrid faithfully implements the mutation subset the edit layer uses. */
 export function asWasm(g: FakeGrid): GridCanvasWasm {
-  return g as unknown as GridCanvasWasm;
+  return g;
 }

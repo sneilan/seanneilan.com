@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Integration tests for the edit/undo layer wired into the store. Every store
@@ -70,7 +71,7 @@ function makeGrid(opts?: {
     draw_handle: () => {},
     draw_selection_box: () => {},
   };
-  return { grid: g as unknown as GridCanvasWasm, calls };
+  return { grid: { ...stubWasm(), ...g }, calls };
 }
 
 function reset(grid: GridCanvasWasm) {

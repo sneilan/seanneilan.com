@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * pickColor recolors the fill of selected cells/rects and the stroke of lines;
@@ -23,10 +24,13 @@ function makeRecordingGrid() {
     draw_selection_box: () => {},
     get_line: () => new Int32Array([0, 0, 1, 1, 0]),
     get_rect: () => new Int32Array([0, 0, 2, 2, 0, 6]),
+    // One line + one rect exist; the edit-layer range guard reads these.
+    get_line_count: () => 1,
+    get_rect_count: () => 1,
     get_cell: () => false,
     get_cell_color: () => 0,
   };
-  return { grid: g as GridCanvasWasm, calls };
+  return { grid: { ...stubWasm(), ...g }, calls };
 }
 
 describe('recolor selection', () => {

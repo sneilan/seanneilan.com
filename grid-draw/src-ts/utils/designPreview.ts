@@ -14,6 +14,47 @@ function hex(idx: number): string | null {
   return COLOR_HEX[idx] ?? '#000000';
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+type NormalizedText = { r: number; c: number; color: number; size: number; text: string };
+
+// A stored text may be the full 9-tuple, a legacy [r,c,color,size,text] tuple, or
+// a plain object — narrow the untyped entry to the fields we draw, or null for
+// junk. Reads coords/color/size defensively (numbers only) with the same
+// fallbacks the previous cast-based code relied on.
+function normalizeText(t: unknown): NormalizedText | null {
+  let r: unknown;
+  let c: unknown;
+  let color: unknown;
+  let size: unknown;
+  let text: unknown;
+  if (Array.isArray(t)) {
+    r = t[0];
+    c = t[1];
+    color = t[2];
+    size = t[3];
+    text = t.length >= 9 ? t[8] : t[4];
+  } else if (isRecord(t)) {
+    r = t.r;
+    c = t.c;
+    color = t.color;
+    size = t.size;
+    text = t.text;
+  } else {
+    return null;
+  }
+  if (typeof r !== 'number' || typeof c !== 'number') return null;
+  return {
+    r,
+    c,
+    color: typeof color === 'number' ? color : 0,
+    size: typeof size === 'number' ? size : 1,
+    text: typeof text === 'string' ? text : String(text ?? ''),
+  };
+}
+
 export type PreviewOptions = {
   /** Target pixel box the design is scaled to fit (preserving aspect). */
   maxSize?: number;
@@ -109,16 +150,11 @@ export function renderDesignToCanvas(
   // tuple, a legacy [r,c,color,size,text] tuple, or an object; skip junk.
   ctx.textBaseline = 'alphabetic';
   for (const t of design.texts ?? []) {
-    const o = Array.isArray(t)
-      ? (t.length >= 9
-          ? { r: t[0], c: t[1], color: t[2], size: t[3], text: t[8] }
-          : { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] })
-      : (t as { r: number; c: number; color: number; size: number; text: string });
-    if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
+    const o = normalizeText(t);
+    if (!o) continue;
     ctx.fillStyle = hex(o.color) ?? '#000000';
-    const size = o.size ?? 1;
-    ctx.font = `${Math.max(6, size * cs * CELL_UNITS)}px 'BigBlue Terminal', monospace`;
-    ctx.fillText(String(o.text ?? ''), o.c * cs, (o.r + size * CELL_UNITS) * cs);
+    ctx.font = `${Math.max(6, o.size * cs * CELL_UNITS)}px 'BigBlue Terminal', monospace`;
+    ctx.fillText(o.text, o.c * cs, (o.r + o.size * CELL_UNITS) * cs);
   }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);

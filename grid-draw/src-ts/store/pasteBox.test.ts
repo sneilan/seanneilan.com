@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Repro for the "giant orange selection box after copy/paste" bug.
@@ -37,7 +38,7 @@ function makeMock() {
     draw_selection_box: (r1, c1, r2, c2) => draws.push(['draw_selection_box', r1, c1, r2, c2]),
     get_line: () => new Int32Array([]),
   };
-  return { grid: g as GridCanvasWasm, rects, draws };
+  return { grid: { ...stubWasm(), ...g }, rects, draws };
 }
 
 describe('copy/paste selection box', () => {

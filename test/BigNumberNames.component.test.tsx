@@ -8,6 +8,15 @@ import {
 } from '../themes/typo/assets/js/big-number-names';
 
 // Component definition for testing (extracted to avoid DOM execution)
+// Query the search input and narrow it to HTMLInputElement so tests can read `.value`.
+const getSearchInput = (): HTMLInputElement => {
+  const input = screen.getByPlaceholderText('Type any number...');
+  if (!(input instanceof HTMLInputElement)) {
+    throw new Error('Expected search box to be an <input> element');
+  }
+  return input;
+};
+
 const BigNumberNames: React.FC = () => {
   const [value, setValue] = useState<string>("");
   const [printedNumber, setPrintedNumber] = useState<string>("");
@@ -73,7 +82,7 @@ describe('BigNumberNames Component', () => {
   describe('User Interactions', () => {
     it('should update input value when user types', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
 
       await userEvent.type(input, '123');
 
@@ -82,7 +91,7 @@ describe('BigNumberNames Component', () => {
 
     it('should display number name when valid number is entered', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       await userEvent.type(input, '123');
@@ -94,7 +103,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle single digit numbers', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       await userEvent.type(input, '5');
@@ -106,7 +115,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle thousands correctly', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       await userEvent.type(input, '1000');
@@ -118,7 +127,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle millions correctly', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       await userEvent.type(input, '1000000');
@@ -130,7 +139,7 @@ describe('BigNumberNames Component', () => {
 
     it('should update output as user types progressively', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       // Type '1'
@@ -154,7 +163,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle clearing the input', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       // Type a number
@@ -171,7 +180,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle very large numbers without crashing', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       const largeNumber = '12345678901234567890';
@@ -187,7 +196,7 @@ describe('BigNumberNames Component', () => {
   describe('Error Handling', () => {
     it('should handle invalid input gracefully', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       // Type invalid characters (the component should handle this)
@@ -202,7 +211,7 @@ describe('BigNumberNames Component', () => {
 
     it('should handle rapid input changes', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
 
       // Rapidly change the input
       await userEvent.type(input, '12345');
@@ -215,7 +224,7 @@ describe('BigNumberNames Component', () => {
   describe('Integration with Core Functions', () => {
     it('should use printNumber function correctly', async () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
       const output = screen.getByTestId('output');
 
       const testNumber = '42';
@@ -237,7 +246,7 @@ describe('BigNumberNames Component', () => {
 
       for (const testCase of testCases) {
         const { unmount } = render(<BigNumberNames />);
-        const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+        const input = getSearchInput();
         const output = screen.getByTestId('output');
 
         await userEvent.type(input, testCase.input);
@@ -262,7 +271,7 @@ describe('BigNumberNames Component', () => {
 
     it('should maintain focus on input when autoFocus is set', () => {
       render(<BigNumberNames />);
-      const input = screen.getByPlaceholderText('Type any number...') as HTMLInputElement;
+      const input = getSearchInput();
 
       // AutoFocus should be present
       expect(input).toHaveAttribute('data-autofocus', 'true');

@@ -7,6 +7,15 @@ import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { toggleVariants } from "@/components/ui/toggle"
 
+// React 18's CSSProperties has no index signature for CSS custom properties, so
+// setting `--gap` inline would otherwise need a type assertion. Augment it to
+// accept custom properties honestly.
+declare module "react" {
+  interface CSSProperties {
+    [customProperty: `--${string}`]: string | number | undefined
+  }
+}
+
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
     spacing?: number
@@ -34,7 +43,7 @@ function ToggleGroup({
       data-variant={variant}
       data-size={size}
       data-spacing={spacing}
-      style={{ "--gap": spacing } as React.CSSProperties}
+      style={{ "--gap": spacing }}
       className={cn(
         "group/toggle-group flex w-fit items-center gap-[--spacing(var(--gap))] rounded-md data-[spacing=default]:data-[variant=outline]:shadow-xs",
         className

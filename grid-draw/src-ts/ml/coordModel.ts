@@ -17,6 +17,16 @@ import { COORD_MAX, buildPointPairs, inRange, type PointPair } from './frame';
 type TF = typeof import('@tensorflow/tfjs');
 // tf.LayersModel — kept loose to avoid importing tfjs types eagerly.
 type LayersModel = Awaited<ReturnType<TF['loadLayersModel']>>;
+type SymbolicTensor = import('@tensorflow/tfjs').SymbolicTensor;
+type Tensor = import('@tensorflow/tfjs').Tensor;
+
+// layer.apply() returns a symbolic tensor when given symbolic input, but its
+// static type is the wider SymbolicTensor|Tensor(|[]) union. Narrow it with a
+// runtime instanceof so tf.model() receives real SymbolicTensors (no casts).
+function asSymbolic(tf: TF, x: unknown): SymbolicTensor {
+  if (x instanceof tf.SymbolicTensor) return x;
+  throw new Error('expected a SymbolicTensor from layer.apply');
+}
 
 const N = COORD_MAX + 1;               // classes per axis
 const MODEL_URL = 'indexeddb://grid-draw-coord-model';
@@ -47,9 +57,9 @@ function buildModel(tf: TF): LayersModel {
   const input = tf.input({ shape: [2 * N] });
   let h = tf.layers.dense({ units: 128, activation: 'relu' }).apply(input);
   h = tf.layers.dense({ units: 128, activation: 'relu' }).apply(h);
-  const rOut = tf.layers.dense({ units: N, activation: 'softmax', name: 'r' }).apply(h);
-  const cOut = tf.layers.dense({ units: N, activation: 'softmax', name: 'c' }).apply(h);
-  return tf.model({ inputs: input, outputs: [rOut as never, cOut as never] });
+  const rOut = asSymbolic(tf, tf.layers.dense({ units: N, activation: 'softmax', name: 'r' }).apply(h));
+  const cOut = asSymbolic(tf, tf.layers.dense({ units: N, activation: 'softmax', name: 'c' }).apply(h));
+  return tf.model({ inputs: input, outputs: [rOut, cOut] });
 }
 
 // One-hot encode a batch of input points into an [n, 2N] Float32Array-backed tensor.
@@ -115,7 +125,8 @@ export async function trainModel(examples: SavedExample[], opts: TrainOpts = {})
     shuffle: true,
     callbacks: {
       onEpochEnd: async (epoch, logs) => {
-        finalLoss = (logs?.loss as number) ?? finalLoss;
+        const loss = logs?.loss;
+        if (typeof loss === 'number') finalLoss = loss;
         onEpoch?.(epoch + 1, epochs, finalLoss);
         await tf.nextFrame(); // yield so the UI (progress bar) stays responsive
       },
@@ -140,6 +151,7 @@ export async function trainModel(examples: SavedExample[], opts: TrainOpts = {})
  */
 export async function predictDesign(input: DesignJSON): Promise<DesignJSON> {
   if (!model) throw new Error('No model yet — train one first.');
+  const trained = model; // capture the non-null narrowing for use inside tf.tidy
   const tf = await tfjs();
   const cells = input.cells ?? [];
   if (cells.length === 0) return { w: 1, h: 1, cells: [], lines: [], rects: [], texts: [] };
@@ -151,7 +163,12 @@ export async function predictDesign(input: DesignJSON): Promise<DesignJSON> {
 
   const outCells: number[][] = tf.tidy(() => {
     const xs = encodeInputs(tf, pts);
-    const [rProbs, cProbs] = model!.predict(xs) as [import('@tensorflow/tfjs').Tensor, import('@tensorflow/tfjs').Tensor];
+    // The model has two output heads, so predict() returns a Tensor[]; guard the
+    // union it's statically typed as instead of asserting the tuple shape.
+    const out = trained.predict(xs);
+    const probs: Tensor[] = Array.isArray(out) ? out : [out];
+    const rProbs = probs[0];
+    const cProbs = probs[1];
     const rIdx = rProbs.argMax(1).dataSync();
     const cIdx = cProbs.argMax(1).dataSync();
     return cells.map(([, , color], i) => [rIdx[i], cIdx[i], color]);

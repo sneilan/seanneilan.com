@@ -6,6 +6,7 @@ import {
   allItems,
   getSelectionBoundsAll,
   isItemSelected,
+  isSelectedType,
   removeItemFromSelectionArray,
 } from '../gridHelpers';
 import type { GridStore, SelectActions, SelectedItem } from '../types';
@@ -223,28 +224,28 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
       }
 
       const lineEdits: Edit[] = [];
-      const linesToMove = selectedItems.filter(i => i.type === 'line') as Array<{ type: 'line'; index: number }>;
+      const linesToMove = selectedItems.filter(isSelectedType('line'));
       for (const item of linesToMove) {
         lineEdits.push({ kind: 'moveLine', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'line', index: item.index });
       }
 
       const rectEdits: Edit[] = [];
-      const rectsToMove = selectedItems.filter(i => i.type === 'rect') as Array<{ type: 'rect'; index: number }>;
+      const rectsToMove = selectedItems.filter(isSelectedType('rect'));
       for (const item of rectsToMove) {
         rectEdits.push({ kind: 'moveRect', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'rect', index: item.index });
       }
 
       const textEdits: Edit[] = [];
-      const textsToMove = selectedItems.filter(i => i.type === 'text') as Array<{ type: 'text'; index: number }>;
+      const textsToMove = selectedItems.filter(isSelectedType('text'));
       for (const item of textsToMove) {
         textEdits.push({ kind: 'moveText', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'text', index: item.index });
       }
 
       const imageEdits: Edit[] = [];
-      const imagesToMove = selectedItems.filter(i => i.type === 'image') as Array<{ type: 'image'; index: number }>;
+      const imagesToMove = selectedItems.filter(isSelectedType('image'));
       for (const item of imagesToMove) {
         imageEdits.push({ kind: 'moveImage', idx: item.index, dRow: deltaRow, dCol: deltaCol });
         newSelected.push({ type: 'image', index: item.index });
@@ -380,7 +381,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
   getSelectedCells: () => {
     const { selectedItems } = get();
     return selectedItems
-      .filter(i => i.type === 'cell')
-      .map(i => ({ row: (i as { type: 'cell'; row: number; col: number }).row, col: (i as { type: 'cell'; row: number; col: number }).col }));
+      .filter(isSelectedType('cell'))
+      .map(i => ({ row: i.row, col: i.col }));
   },
 });

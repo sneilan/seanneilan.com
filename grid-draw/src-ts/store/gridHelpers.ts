@@ -95,6 +95,18 @@ export function removeItemFromSelectionArray(item: SelectedItem, selection: Sele
   return selection.filter(s => !itemsEqual(s, item));
 }
 
+/**
+ * Type-guard factory for filtering a selection down to one variant. Because
+ * `SelectedItem` is a discriminated union, a bare `items.filter(i => i.type ===
+ * 'line')` still yields `SelectedItem[]`; passing this predicate instead yields
+ * the correctly-narrowed subset (e.g. `Array<{ type: 'line'; index: number }>`).
+ */
+export function isSelectedType<T extends SelectedItem['type']>(
+  type: T,
+): (item: SelectedItem) => item is Extract<SelectedItem, { type: T }> {
+  return (item): item is Extract<SelectedItem, { type: T }> => item.type === type;
+}
+
 // Get the full bounding box for all selected items
 export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWasm): { minRow: number; minCol: number; maxRow: number; maxCol: number } | null {
   if (items.length === 0) return null;
@@ -210,6 +222,63 @@ export function serializeSelection(
     images,
     sub: CELL_UNITS,
   };
+}
+
+// --- DesignJSON normalization -----------------------------------------------
+
+/** A single text entry from a DesignJSON, normalized to an object. `text` is
+ * left `unknown` (a stray prediction may put anything there) and coerced with
+ * `String(...)` at the call site; numeric fields are optional and defaulted. */
+export type DesignTextEntry = {
+  r: number; c: number;
+  color?: number; size?: number;
+  boxW?: number; boxH?: number; halign?: number; valign?: number;
+  text?: unknown;
+};
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function isUnknownArray(v: unknown): v is unknown[] {
+  return Array.isArray(v);
+}
+
+/** Coerce a value to a number, or drop it (so a later `?? default` applies). */
+function asNum(v: unknown): number | undefined {
+  return typeof v === 'number' ? v : undefined;
+}
+
+/**
+ * Normalize one text entry from a DesignJSON into an object with numeric coords.
+ * Accepts the full frame tuple [r,c,color,size,boxW,boxH,halign,valign,text],
+ * the legacy [r,c,color,size,text] tuple, or the loose object a model's JSON
+ * decoder emits. Returns null for anything missing numeric r/c so a malformed
+ * prediction is skipped rather than crashing the editor.
+ */
+export function normalizeDesignText(t: unknown): DesignTextEntry | null {
+  if (isUnknownArray(t)) {
+    const r = t[0];
+    const c = t[1];
+    if (typeof r !== 'number' || typeof c !== 'number') return null;
+    if (t.length >= 9) {
+      return {
+        r, c, color: asNum(t[2]), size: asNum(t[3]),
+        boxW: asNum(t[4]), boxH: asNum(t[5]), halign: asNum(t[6]), valign: asNum(t[7]),
+        text: t[8],
+      };
+    }
+    return { r, c, color: asNum(t[2]), size: asNum(t[3]), text: t[4] };
+  }
+  if (isRecord(t)) {
+    if (typeof t.r !== 'number' || typeof t.c !== 'number') return null;
+    return {
+      r: t.r, c: t.c, color: asNum(t.color), size: asNum(t.size),
+      boxW: asNum(t.boxW), boxH: asNum(t.boxH), halign: asNum(t.halign), valign: asNum(t.valign),
+      text: t.text,
+    };
+  }
+  return null;
 }
 
 // --- Rotation math ----------------------------------------------------------

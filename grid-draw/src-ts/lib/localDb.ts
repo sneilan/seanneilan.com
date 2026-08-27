@@ -37,9 +37,21 @@ export type SavedExample = {
   delta?: [number, number];
 };
 
+// On write the `id` is assigned by the store's autoIncrement keyPath, so it must
+// be absent from the value we hand to add(). These row types make `id` optional
+// for that purpose; reads bridge back to the id-required public types via
+// withId(), which asserts (at runtime) the key IndexedDB always populates.
+type DesignRow = Omit<SavedDesign, 'id'> & { id?: number };
+type ExampleRow = Omit<SavedExample, 'id'> & { id?: number };
+
 interface GridDrawDB extends DBSchema {
-  designs: { key: number; value: SavedDesign; indexes: { 'by-name': string } };
-  examples: { key: number; value: SavedExample };
+  designs: { key: number; value: DesignRow; indexes: { 'by-name': string } };
+  examples: { key: number; value: ExampleRow };
+}
+
+function withId<T extends { id?: number }>(row: T): T & { id: number } {
+  if (typeof row.id !== 'number') throw new Error('stored record is missing its id');
+  return { ...row, id: row.id };
 }
 
 let dbPromise: Promise<IDBPDatabase<GridDrawDB>> | undefined;
@@ -62,19 +74,19 @@ function nowIso(): string {
 // --- Designs (gallery) ------------------------------------------------------
 
 export async function listDesigns(): Promise<SavedDesign[]> {
-  return (await db()).getAll('designs'); // ascending id = insertion order
+  return (await (await db()).getAll('designs')).map(withId); // ascending id = insertion order
 }
 
 export async function getDesign(id: number): Promise<SavedDesign> {
   const d = await (await db()).get('designs', id);
   if (!d) throw new Error(`design ${id} not found`);
-  return d;
+  return withId(d);
 }
 
 export async function getDesignByName(name: string): Promise<SavedDesign> {
   const d = await (await db()).getFromIndex('designs', 'by-name', name);
   if (!d) throw new Error(`design "${name}" not found`);
-  return d;
+  return withId(d);
 }
 
 // Upsert by name (the autosave-critical semantic: repeated saves of the same
@@ -84,13 +96,14 @@ export async function saveDesign(name: string, design: DesignJSON, history?: His
   const tx = (await db()).transaction('designs', 'readwrite');
   const existing = await tx.store.index('by-name').get(name);
   if (existing) {
-    await tx.store.put({ ...existing, name, design, history }); // keep id + createdAt
+    const row = withId(existing);
+    await tx.store.put({ ...row, name, design, history }); // keep id + createdAt
     await tx.done;
-    return existing.id;
+    return row.id;
   }
-  const id = await tx.store.add({ createdAt: nowIso(), name, design, history } as SavedDesign);
+  const id = await tx.store.add({ createdAt: nowIso(), name, design, history });
   await tx.done;
-  return id as number;
+  return id;
 }
 
 export async function deleteDesign(id: number): Promise<void> {
@@ -101,12 +114,12 @@ export async function deleteDesign(id: number): Promise<void> {
 
 export async function listExamples(): Promise<SavedExample[]> {
   const all = await (await db()).getAll('examples');
-  return all.reverse(); // newest first (parity with the old server's ORDER BY id DESC)
+  return all.reverse().map(withId); // newest first (parity with the old server's ORDER BY id DESC)
 }
 
 export async function saveExample(input: DesignJSON, output: DesignJSON, delta?: [number, number]): Promise<number> {
-  const id = await (await db()).add('examples', { createdAt: nowIso(), input, output, delta } as SavedExample);
-  return id as number;
+  const id = await (await db()).add('examples', { createdAt: nowIso(), input, output, delta });
+  return id;
 }
 
 // Overwrite an existing example in place (used when an example's half is loaded

@@ -2,9 +2,20 @@ import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
-import { useGridStore, TEXT_SIZES, LINE_WIDTHS, type DesignJSON } from '../../store/gridStore';
+import { useGridStore, TEXT_SIZES, LINE_WIDTHS, type DesignJSON, type DrawTool } from '../../store/gridStore';
 import { HEADER_HEIGHT } from './constants';
 import { ColorRow } from './ColorRow';
+
+// Narrow the ToggleGroup's string value to the DrawTool union without asserting.
+function isDrawTool(value: string): value is DrawTool {
+  return (
+    value === 'draw' ||
+    value === 'line' ||
+    value === 'rect' ||
+    value === 'text' ||
+    value === 'select'
+  );
+}
 
 type ToolsPanelProps = {
   loading: boolean;
@@ -52,7 +63,7 @@ export function ToolsPanel({
           <ToggleGroup
             type="single"
             value={tool}
-            onValueChange={(val) => val && setTool(val as typeof tool)}
+            onValueChange={(val) => { if (isDrawTool(val)) setTool(val); }}
             variant="outline"
             className="flex-wrap"
           >

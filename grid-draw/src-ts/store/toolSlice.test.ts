@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, SUBDIVISIONS, widthToTenths } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Focused coverage for the tool slice's behaviors that the existing store tests
@@ -101,7 +102,7 @@ function makeGrid(opts?: {
     draw_handle: () => {},
     draw_selection_box: () => {},
   };
-  return { grid: g as unknown as GridCanvasWasm, calls };
+  return { grid: { ...stubWasm(), ...g }, calls };
 }
 
 /** Reset the slice's mutable state + history to a known baseline between tests. */

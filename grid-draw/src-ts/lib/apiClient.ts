@@ -7,9 +7,66 @@
 import type { DesignJSON } from '../store/gridStore';
 import type { SavedDesign, SavedExample, HistoryStacks } from './localDb';
 
-const BASE: string =
-  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_API_URL ??
-  'https://api.seanneilan.com';
+// --- Runtime validators (network boundary) ----------------------------------
+// Responses are untrusted JSON; narrow `unknown` to the expected shape with
+// type guards instead of asserting. Each guard checks the fields we actually
+// rely on and throws (via request) on mismatch, so malformed responses fail
+// loudly at the boundary rather than corrupting state downstream.
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null;
+}
+
+function isSavedDesign(v: unknown): v is SavedDesign {
+  return (
+    isRecord(v) &&
+    typeof v.id === 'number' &&
+    typeof v.createdAt === 'string' &&
+    typeof v.name === 'string' &&
+    isRecord(v.design)
+  );
+}
+
+function isSavedDesignArray(v: unknown): v is SavedDesign[] {
+  return Array.isArray(v) && v.every(isSavedDesign);
+}
+
+function isSavedExample(v: unknown): v is SavedExample {
+  return (
+    isRecord(v) &&
+    typeof v.id === 'number' &&
+    typeof v.createdAt === 'string' &&
+    isRecord(v.input) &&
+    isRecord(v.output)
+  );
+}
+
+function isSavedExampleArray(v: unknown): v is SavedExample[] {
+  return Array.isArray(v) && v.every(isSavedExample);
+}
+
+type PresignedUpload = { uploadUrl: string; publicUrl: string; key: string };
+
+function isPresignedUpload(v: unknown): v is PresignedUpload {
+  return (
+    isRecord(v) &&
+    typeof v.uploadUrl === 'string' &&
+    typeof v.publicUrl === 'string' &&
+    typeof v.key === 'string'
+  );
+}
+
+// Read a string-valued Vite env var without asserting the shape of import.meta
+// (which the TS lib types as only `{ url }`); `'env' in meta` narrows it.
+function envString(key: string): string | undefined {
+  const meta: ImportMeta = import.meta;
+  if (!('env' in meta)) return undefined;
+  const env = meta.env;
+  if (isRecord(env) && typeof env[key] === 'string') return env[key];
+  return undefined;
+}
+
+const BASE: string = envString('VITE_API_URL') ?? 'https://api.seanneilan.com';
 
 const TOKEN_KEY = 'grid-draw-token';
 
@@ -32,11 +89,16 @@ export async function login(username: string, password: string): Promise<void> {
   });
   if (res.status === 401) throw new Error('invalid username or password');
   if (!res.ok) throw new Error(`login failed (${res.status})`);
-  const { token } = (await res.json()) as { token: string };
-  localStorage.setItem(TOKEN_KEY, token);
+  const data: unknown = await res.json();
+  if (!isRecord(data) || typeof data.token !== 'string') {
+    throw new Error('login failed (malformed response)');
+  }
+  localStorage.setItem(TOKEN_KEY, data.token);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+// Send a request and handle the shared 401 / non-ok cases; returns the Response
+// for the caller to read (or ignore, for 204/no-content endpoints).
+async function send(method: string, path: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -53,25 +115,44 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error('session expired — please log in again');
   }
   if (!res.ok) {
-    const detail = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(detail?.error ?? `${method} ${path} failed (${res.status})`);
+    const detail: unknown = await res.json().catch(() => null);
+    const message = isRecord(detail) && typeof detail.error === 'string' ? detail.error : undefined;
+    throw new Error(message ?? `${method} ${path} failed (${res.status})`);
   }
-  if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  return res;
+}
+
+// Send a request and validate the JSON response against `guard`, throwing on a
+// shape mismatch so a T is only ever returned when the payload really is a T.
+async function request<T>(
+  method: string,
+  path: string,
+  guard: (d: unknown) => d is T,
+  body?: unknown,
+): Promise<T> {
+  const res = await send(method, path, body);
+  const data: unknown = await res.json();
+  if (!guard(data)) throw new Error(`${method} ${path}: unexpected response shape`);
+  return data;
+}
+
+// Send a request whose response body we don't read (204 No Content or ignored).
+async function requestVoid(method: string, path: string, body?: unknown): Promise<void> {
+  await send(method, path, body);
 }
 
 // --- Designs (gallery) ------------------------------------------------------
 
 export function listDesigns(): Promise<SavedDesign[]> {
-  return request('GET', '/api/designs');
+  return request('GET', '/api/designs', isSavedDesignArray);
 }
 
 export function getDesign(id: number): Promise<SavedDesign> {
-  return request('GET', `/api/designs/${id}`);
+  return request('GET', `/api/designs/${id}`, isSavedDesign);
 }
 
 export function getDesignByName(name: string): Promise<SavedDesign> {
-  return request('GET', `/api/designs?name=${encodeURIComponent(name)}`);
+  return request('GET', `/api/designs?name=${encodeURIComponent(name)}`, isSavedDesign);
 }
 
 /** Upsert by name (autosave-critical: same name updates one row). */
@@ -80,18 +161,18 @@ export async function saveDesign(
   design: DesignJSON,
   history?: HistoryStacks,
 ): Promise<number> {
-  const saved = await request<SavedDesign>('PUT', '/api/designs', { name, design, history });
+  const saved = await request('PUT', '/api/designs', isSavedDesign, { name, design, history });
   return saved.id;
 }
 
 export function deleteDesign(id: number): Promise<void> {
-  return request('DELETE', `/api/designs/${id}`);
+  return requestVoid('DELETE', `/api/designs/${id}`);
 }
 
 // --- Training examples ------------------------------------------------------
 
 export function listExamples(): Promise<SavedExample[]> {
-  return request('GET', '/api/examples'); // server returns newest first
+  return request('GET', '/api/examples', isSavedExampleArray); // server returns newest first
 }
 
 export async function saveExample(
@@ -99,7 +180,7 @@ export async function saveExample(
   output: DesignJSON,
   delta?: [number, number],
 ): Promise<number> {
-  const saved = await request<SavedExample>('POST', '/api/examples', { input, output, delta });
+  const saved = await request('POST', '/api/examples', isSavedExample, { input, output, delta });
   return saved.id;
 }
 
@@ -109,16 +190,14 @@ export function updateExample(
   output: DesignJSON,
   delta?: [number, number],
 ): Promise<void> {
-  return request('PUT', `/api/examples/${id}`, { input, output, delta }).then(() => undefined);
+  return requestVoid('PUT', `/api/examples/${id}`, { input, output, delta });
 }
 
 export function deleteExample(id: number): Promise<void> {
-  return request('DELETE', `/api/examples/${id}`);
+  return requestVoid('DELETE', `/api/examples/${id}`);
 }
 
 // --- Image objects (uploaded to public S3 via a presigned PUT) --------------
-
-type PresignedUpload = { uploadUrl: string; publicUrl: string; key: string };
 
 /**
  * Upload an image blob to the public bucket and return its public URL, which
@@ -129,7 +208,7 @@ type PresignedUpload = { uploadUrl: string; publicUrl: string; key: string };
  */
 export async function uploadImage(file: Blob): Promise<string> {
   const contentType = file.type || 'application/octet-stream';
-  const { uploadUrl, publicUrl } = await request<PresignedUpload>('POST', '/api/images/presign', {
+  const { uploadUrl, publicUrl } = await request('POST', '/api/images/presign', isPresignedUpload, {
     contentType,
     size: file.size,
   });

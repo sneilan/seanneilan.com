@@ -1,9 +1,10 @@
+/// <reference types="vite/client" />
 // World px per FINE unit; a whole cell is CELL_UNITS of these (see src/lib.rs).
 export const CELL_SIZE = 2;
 export const CELL_UNITS = 8;
 export const HEADER_HEIGHT = 48;
 
-export const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
+export const BASE = import.meta.env.BASE_URL ?? '/grid-draw/';
 
 export const COLORS = [
   { hex: '#000000', name: 'Black' },

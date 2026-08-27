@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Exercises the rotate gesture's commit path (finishRotate). The live preview is
@@ -31,7 +32,7 @@ function makeMockGrid() {
     highlight_rect: () => {},
     draw_handle: () => {},
   };
-  return { g: g as GridCanvasWasm, cells, rects };
+  return { g: { ...stubWasm(), ...g }, cells, rects };
 }
 
 describe('rotate: snaps to 90° and rotates about the cell center', () => {

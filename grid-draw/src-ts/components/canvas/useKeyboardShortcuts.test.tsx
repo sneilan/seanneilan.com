@@ -17,11 +17,10 @@ import type { GridCanvasWasm } from '../../types/grid';
  */
 function makePatchedGrid(opts?: Parameters<typeof makeGrid>[0]) {
   const { grid, calls } = makeGrid(opts);
-  const g = grid as GridCanvasWasm;
-  g.set_subdivision = () => {};
-  g.render_text_preview = () => {};
-  g.highlight_text = () => {};
-  return { grid: g, calls };
+  grid.set_subdivision = () => {};
+  grid.render_text_preview = () => {};
+  grid.highlight_text = () => {};
+  return { grid, calls };
 }
 
 /** Reset the store to a known baseline (like the store slice tests do). */

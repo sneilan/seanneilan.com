@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * A faithful JS model of the Rust `GridCanvas` cell logic (src/cells.rs).
@@ -38,7 +39,7 @@ function makeMockGrid(rows: number, cols: number): GridCanvasWasm {
     highlight_cell: () => {},
     draw_selection_box: () => {},
   };
-  return g as GridCanvasWasm;
+  return { ...stubWasm(), ...g };
 }
 
 function countFilled(grid: GridCanvasWasm, rows: number, cols: number): number {

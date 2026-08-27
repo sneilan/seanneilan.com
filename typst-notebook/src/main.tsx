@@ -15,11 +15,11 @@ const rootElement = document.getElementById('typst-notebook-root');
 
 if (rootElement) {
   // Check for mode attribute
-  const mode = rootElement.dataset.mode as 'full' | 'simple' | undefined;
+  const mode = rootElement.dataset.mode === 'simple' ? 'simple' : 'full';
 
   ReactDOM.createRoot(rootElement).render(
     <React.StrictMode>
-      <App mode={mode || 'full'} />
+      <App mode={mode} />
     </React.StrictMode>
   );
 }

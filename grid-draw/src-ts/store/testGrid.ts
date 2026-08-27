@@ -1,4 +1,5 @@
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * A recording mock of the WASM GridCanvas for store/action tests. It captures
@@ -105,5 +106,5 @@ export function makeGrid(opts?: {
     draw_handle: () => {},
     draw_selection_box: () => {},
   };
-  return { grid: g as unknown as GridCanvasWasm, calls };
+  return { grid: { ...stubWasm(), ...g }, calls };
 }

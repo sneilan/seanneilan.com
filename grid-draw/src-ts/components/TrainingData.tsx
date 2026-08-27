@@ -6,7 +6,7 @@ import { useServerStore } from '../store/serverStore';
 import type { SavedExample } from '../lib/localDb';
 import type { DesignJSON } from '../store/gridStore';
 
-const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
+const BASE = import.meta.env.BASE_URL ?? '/grid-draw/';
 
 type Props = {
   // Render as a draggable modal panel over the editor (like the Gallery), vs the

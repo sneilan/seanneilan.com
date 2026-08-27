@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, serializeSelection, CELL_UNITS, type SelectedItem, type DesignJSON } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Action-driven tests for the clipboard slice (copy/paste/deleteSelected) and
@@ -54,10 +55,10 @@ function makeFullGrid() {
     get_rect_count: () => rects.length,
 
     // texts (insert signature mirrors apply.ts: idx,r,c,color,size,boxW,boxH,halign,valign,text)
-    insert_text: ((idx: number, r: number, c: number, color: number, size: number, boxW: number, boxH: number, halign: number, valign: number, text: string) => {
+    insert_text: (idx, r, c, color, size, boxW, boxH, halign, valign, text) => {
       texts.splice(idx, 0, { r, c, color, size, boxW, boxH, halign, valign, text });
       calls.push(['insert_text', idx, r, c, color]);
-    }) as unknown as GridCanvasWasm['insert_text'],
+    },
     delete_text: (idx) => { texts.splice(idx, 1); calls.push(['delete_text', idx]); },
     get_text: (idx) => { const t = texts[idx]; return new Int32Array(t ? [t.r, t.c, t.color, t.boxW, t.boxH, t.halign, t.valign] : [1, 0, 0, 1, 1, 0, 0]); },
     get_text_string: (idx) => texts[idx]?.text ?? '',
@@ -65,10 +66,10 @@ function makeFullGrid() {
     get_text_count: () => texts.length,
 
     // images (insert signature: idx,r1,c1,r2,c2,url,el)
-    insert_image: ((idx: number, r1: number, c1: number, r2: number, c2: number, url: string) => {
+    insert_image: (idx, r1, c1, r2, c2, url) => {
       images.splice(idx, 0, { r1, c1, r2, c2, url });
       calls.push(['insert_image', idx, r1, c1, r2, c2]);
-    }) as unknown as GridCanvasWasm['insert_image'],
+    },
     delete_image: (idx) => { images.splice(idx, 1); calls.push(['delete_image', idx]); },
     get_image: (idx) => { const im = images[idx]; return new Int32Array(im ? [im.r1, im.c1, im.r2, im.c2] : [0, 0, 8, 8]); },
     get_image_url: (idx) => images[idx]?.url ?? '',
@@ -84,7 +85,7 @@ function makeFullGrid() {
     draw_selection_box: () => {},
     get_cell_size: () => 16,
   };
-  return { grid: g as unknown as GridCanvasWasm, calls, filled, lines, rects, texts, images };
+  return { grid: { ...stubWasm(), ...g }, calls, filled, lines, rects, texts, images };
 }
 
 /** Seed a filled cell without recording set_cell calls (bypasses drawColor). */
@@ -283,7 +284,10 @@ describe('placeDesign', () => {
   it('places valid texts/images and skips malformed ones without crashing', () => {
     const m = makeFullGrid();
     reset(m.grid);
-    const design = {
+    // Deliberately malformed entries exercise placeDesign's skip-without-crash
+    // path. JSON round-tripping yields `any`, so it lands in a DesignJSON slot
+    // without a type assertion — exactly how a bad payload arrives at runtime.
+    const design: DesignJSON = JSON.parse(JSON.stringify({
       w: 10, h: 10, cells: [], lines: [], rects: [],
       texts: [
         [1, 1, 2, 1, 'legacy'],                                   // legacy 5-tuple → valid
@@ -297,8 +301,7 @@ describe('placeDesign', () => {
         [0, 0, 8, 8, 123],                                        // non-string url → skip
       ],
       sub: CELL_UNITS,
-      // Deliberately mixed/malformed shapes to exercise the skip-without-crash path.
-    } as unknown as DesignJSON;
+    }));
 
     expect(() => useGridStore.getState().placeDesign(design, 0, 0)).not.toThrow();
     expect(m.grid.get_text_count()).toBe(2);

@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type React from 'react';
-import { useGridStore } from '../../store/gridStore';
+import { useGridStore, type GridStore } from '../../store/gridStore';
 import { useImageObjects } from './useImageObjects';
 import type { Camera } from './coords';
+import type { Mock } from 'vitest';
 
 // The three side-effecting deps are mocked so the hook's placement/upload logic
 // is testable without S3, canvas pixel work, or real image decoding.
@@ -24,16 +25,16 @@ const camRef: React.MutableRefObject<Camera> = { current: { x: 0, y: 0, zoom: 1 
 // box math depends only on the image aspect ratio.
 const viewport = { w: 0, h: 0 };
 
-let placeImage: ReturnType<typeof vi.fn>;
+let placeImage: Mock<GridStore['placeImage']>;
 
 beforeEach(() => {
   vi.clearAllMocks();
   // 2:1 natural size (200×100) → the placed box should be twice as wide as tall.
-  mockLoadSize.mockResolvedValue({ el: {} as HTMLImageElement, width: 200, height: 100 });
+  mockLoadSize.mockResolvedValue({ el: document.createElement('img'), width: 200, height: 100 });
   mockUpload.mockResolvedValue('https://s3.example/up.png');
   mockRemoveBg.mockImplementation(async (b) => b);
-  placeImage = vi.fn();
-  useGridStore.setState({ placeImage: placeImage as never, textEdit: null });
+  placeImage = vi.fn<GridStore['placeImage']>();
+  useGridStore.setState({ placeImage, textEdit: null });
 });
 
 describe('useImageObjects — addImageObject placement', () => {

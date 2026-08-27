@@ -9,6 +9,7 @@ import {
   removeItemFromSelectionArray,
 } from './gridHelpers';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Focused coverage for the selection slice (src-ts/store/slices/selectSlice.ts)
@@ -116,7 +117,7 @@ function makeGrid(opts: MockOpts = {}) {
     draw_handle: () => {},
     draw_selection_box: () => {},
   };
-  return g as unknown as GridCanvasWasm;
+  return { ...stubWasm(), ...g };
 }
 
 function resetStore(grid: GridCanvasWasm | null = null) {

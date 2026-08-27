@@ -13,14 +13,14 @@ import {
   textFrameCorners,
   calculateViewport,
 } from './constants';
+import { makeCanvas, makeCanvasMouseEvent } from './testEvents';
 
 // The pure coord helpers take a React.MouseEvent<HTMLCanvasElement>; grab that
-// param type so the test's minimal event mock stays in sync without importing React.
+// param type so the test's event mock stays in sync without importing React.
 type CanvasEvt = Parameters<typeof getCanvasXY>[0];
 
 /**
- * Minimal event mock: only the fields the coord helpers read (clientX/Y and a
- * currentTarget with getBoundingClientRect + intrinsic width/height). Passing a
+ * Event mock backed by a real jsdom <canvas> (see ./testEvents). Passing a
  * canvas width that differs from the CSS rect width exercises the DPR scale
  * factor (screen px = css px * canvas.width / rect.width).
  */
@@ -31,20 +31,8 @@ function makeEvent(
   canvasW: number = rect.width,
   canvasH: number = rect.height,
 ): CanvasEvt {
-  return {
-    clientX,
-    clientY,
-    currentTarget: {
-      width: canvasW,
-      height: canvasH,
-      getBoundingClientRect: () => ({
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-      }),
-    },
-  } as unknown as CanvasEvt;
+  const canvas = makeCanvas({ width: canvasW, height: canvasH, rect });
+  return makeCanvasMouseEvent(canvas, { clientX, clientY });
 }
 
 // An event on a 1:1 canvas anchored at the origin, so screen px === client px

@@ -8,6 +8,23 @@ import tseslint from 'typescript-eslint';
 // fetch() is banned everywhere else so ad-hoc requests can't creep in.
 // Run with `npm run lint`.
 export default [
+  // No type assertions anywhere: `as T` / `<T>expr` silence the checker instead
+  // of proving the type. Model the type properly or narrow with a type guard.
+  {
+    files: ['src-ts/**/*.{ts,tsx}'],
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    rules: {
+      '@typescript-eslint/consistent-type-assertions': [
+        'error',
+        { assertionStyle: 'never' },
+      ],
+    },
+  },
+
   // Only lib/apiClient.ts may call fetch().
   {
     files: ['src-ts/**/*.{ts,tsx}'],

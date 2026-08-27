@@ -13,7 +13,20 @@ import { useGridStore, type DesignJSON } from '../store/gridStore';
 import { useServerStore } from '../store/serverStore';
 
 const DEBOUNCE_MS = 600;
-const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
+
+// Read Vite's `import.meta.env.BASE_URL` without asserting import.meta's shape
+// (the TS lib types it as only `{ url }`); `'env' in meta` narrows it.
+function baseUrl(): string {
+  const meta: ImportMeta = import.meta;
+  if ('env' in meta) {
+    const env = meta.env;
+    if (typeof env === 'object' && env !== null && 'BASE_URL' in env && typeof env.BASE_URL === 'string') {
+      return env.BASE_URL;
+    }
+  }
+  return '/grid-draw/';
+}
+const BASE = baseUrl();
 let timer: ReturnType<typeof setTimeout> | undefined;
 
 // While a training-example half is loaded for editing, the canvas is

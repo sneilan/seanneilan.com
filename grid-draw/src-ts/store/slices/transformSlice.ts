@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand';
-import type { Edit, ImageGeom, LineGeom, RectGeom, TextFrame } from '../edits/types';
+import type { Edit } from '../edits/types';
 import { getImageEl } from '../../lib/imageCache';
 import {
   getSelectionBoundsAll,
@@ -47,25 +47,29 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     if (grid && resizeTarget) {
       // Apply the final live position, then read the resulting geometry and
       // record a single from(origin)→to(final) edit for undo.
+      // The captured origin matches resizeTarget.shape (both set together at
+      // startResize). The `*Geom` shapes are structurally {r1,c1,r2,c2}, so a
+      // `!('boxW' in ...)` check (which excludes only the text frame) narrows the
+      // origin to exactly the geometry the matching edit expects — no assertion.
       if (resizeTarget.shape === 'line') {
         grid.set_line_endpoint(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
-        if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setLineGeom', idx: resizeTarget.index, from: resizeOrigin as LineGeom, to: lineGeom(grid, resizeTarget.index) }]);
+        if (resizeOrigin && !('boxW' in resizeOrigin)) {
+          get().commitEdits([{ kind: 'setLineGeom', idx: resizeTarget.index, from: resizeOrigin, to: lineGeom(grid, resizeTarget.index) }]);
         }
       } else if (resizeTarget.shape === 'rect') {
         grid.resize_rect(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
-        if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin as RectGeom, to: rectGeom(grid, resizeTarget.index) }]);
+        if (resizeOrigin && !('boxW' in resizeOrigin)) {
+          get().commitEdits([{ kind: 'setRectGeom', idx: resizeTarget.index, from: resizeOrigin, to: rectGeom(grid, resizeTarget.index) }]);
         }
       } else if (resizeTarget.shape === 'image') {
         grid.resize_image(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
-        if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setImageGeom', idx: resizeTarget.index, from: resizeOrigin as ImageGeom, to: imageGeom(grid, resizeTarget.index) }]);
+        if (resizeOrigin && !('boxW' in resizeOrigin)) {
+          get().commitEdits([{ kind: 'setImageGeom', idx: resizeTarget.index, from: resizeOrigin, to: imageGeom(grid, resizeTarget.index) }]);
         }
       } else {
         grid.resize_text(resizeTarget.index, resizeTarget.handle, endCell.row, endCell.col);
-        if (resizeOrigin) {
-          get().commitEdits([{ kind: 'setTextFrame', idx: resizeTarget.index, from: resizeOrigin as TextFrame, to: textFrame(grid, resizeTarget.index) }]);
+        if (resizeOrigin && 'boxW' in resizeOrigin) {
+          get().commitEdits([{ kind: 'setTextFrame', idx: resizeTarget.index, from: resizeOrigin, to: textFrame(grid, resizeTarget.index) }]);
         }
       }
     }
@@ -78,14 +82,16 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     const { grid, resizeTarget, resizeOrigin } = get();
     // The live preview already mutated the shape; restore the captured geometry.
     if (grid && resizeTarget && resizeOrigin) {
-      if (resizeTarget.shape === 'text') {
-        const f = resizeOrigin as TextFrame;
+      // 'boxW' in origin ⇒ the text frame; otherwise a {r1,c1,r2,c2} geometry
+      // whose exact kind is picked by resizeTarget.shape (set together at start).
+      if ('boxW' in resizeOrigin) {
+        const f = resizeOrigin;
         grid.set_text_frame(resizeTarget.index, f.r, f.c, f.boxW, f.boxH);
       } else if (resizeTarget.shape === 'image') {
-        const g = resizeOrigin as ImageGeom;
+        const g = resizeOrigin;
         grid.set_image_geom(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
       } else {
-        const g = resizeOrigin as LineGeom;
+        const g = resizeOrigin;
         if (resizeTarget.shape === 'line') grid.set_line(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
         else grid.set_rect(resizeTarget.index, g.r1, g.c1, g.r2, g.c2);
       }

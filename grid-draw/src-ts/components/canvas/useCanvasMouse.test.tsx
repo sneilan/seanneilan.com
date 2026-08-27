@@ -5,6 +5,8 @@ import { useGridStore } from '../../store/gridStore';
 import { makeGrid } from '../../store/testGrid';
 import { useCanvasMouse } from './useCanvasMouse';
 import type { Camera } from './coords';
+import { makeCanvas, makeCanvasMouseEvent, type CanvasMouseInit } from './testEvents';
+import type { DrawTool } from '../../store/gridStore';
 
 /**
  * Behavioral coverage for the four canvas mouse handlers (useCanvasMouse). These
@@ -27,37 +29,21 @@ type Deps = {
   panRef: React.MutableRefObject<{ x: number; y: number; camX: number; camY: number } | null>;
 };
 
-// Minimal fake React.MouseEvent whose currentTarget behaves like the canvas the
-// coord helpers read (getBoundingClientRect + width/height + style.cursor).
-function mouseEvent(
-  over: Partial<{ button: number; clientX: number; clientY: number; shiftKey: boolean }> = {},
-): React.MouseEvent<HTMLCanvasElement> {
-  const target = {
-    width: 800,
-    height: 600,
-    style: { cursor: '' } as CSSStyleDeclaration,
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: 800, height: 600 }),
-  };
-  return {
-    button: 0,
-    clientX: 0,
-    clientY: 0,
-    shiftKey: false,
-    ...over,
-    currentTarget: target,
-    preventDefault: vi.fn(),
-  } as unknown as React.MouseEvent<HTMLCanvasElement>;
+// Minimal fake React.MouseEvent backed by a real jsdom <canvas> whose 1:1 rect
+// matches its buffer (so world x === clientX) and whose style.cursor the pan
+// handler can set for real. See ./testEvents for the honestly-typed factory.
+function mouseEvent(over: CanvasMouseInit = {}): React.MouseEvent<HTMLCanvasElement> {
+  const canvas = makeCanvas({ width: 800, height: 600, rect: { left: 0, top: 0, width: 800, height: 600 } });
+  return makeCanvasMouseEvent(canvas, over);
 }
 
 // testGrid omits the vector hit-test methods (they're canvas/WASM geometry).
 // The select tool always probes them first, so stub them as misses; a filled
 // cell (if any) then decides the hit via hitTestShapes' fallthrough.
 function withHitTests(grid: ReturnType<typeof makeGrid>['grid']) {
-  Object.assign(grid as unknown as Record<string, unknown>, {
-    hit_test_line: () => -1,
-    hit_test_text: () => -1,
-    hit_test_rect: () => -1,
-  });
+  grid.hit_test_line = () => -1;
+  grid.hit_test_text = () => -1;
+  grid.hit_test_rect = () => -1;
   return grid;
 }
 
@@ -72,11 +58,11 @@ function makeDeps(grid: ReturnType<typeof makeGrid>['grid']): Deps {
 }
 
 // Baseline store state for a mouse test: real actions, mock grid, chosen tool.
-function setupStore(grid: ReturnType<typeof makeGrid>['grid'], tool: string) {
+function setupStore(grid: ReturnType<typeof makeGrid>['grid'], tool: DrawTool) {
   useGridStore.getState().resetHistory();
   useGridStore.setState({
     grid,
-    tool: tool as never,
+    tool,
     colorIdx: 0,
     outlineIdx: 6,
     subdivision: 1,
@@ -176,7 +162,7 @@ describe('useCanvasMouse — line / rect commit on release', () => {
 
   it('line tool commits one line on mouseup at intersection-snapped coords', () => {
     const { grid, calls } = makeGrid();
-    (grid as unknown as { render_with_line: () => void }).render_with_line = () => {};
+    grid.render_with_line = () => {};
     setupStore(grid, 'line');
     const deps = makeDeps(grid);
     const { result } = renderHook(() => useCanvasMouse(deps));
@@ -197,7 +183,7 @@ describe('useCanvasMouse — line / rect commit on release', () => {
 
   it('rect tool commits one rect on mouseup at intersection-snapped coords', () => {
     const { grid, calls } = makeGrid();
-    (grid as unknown as { render_with_rect: () => void }).render_with_rect = () => {};
+    grid.render_with_rect = () => {};
     setupStore(grid, 'rect');
     const deps = makeDeps(grid);
     const { result } = renderHook(() => useCanvasMouse(deps));

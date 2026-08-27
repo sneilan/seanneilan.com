@@ -29,4 +29,5 @@ everything external code needs (`useGridStore`, `DesignJSON`, `SelectedItem`,
 - Every document mutation routes through `commitEdits` (history) — `applyEdit`
   in `edits/` is the only code that calls WASM mutators.
 - Repo-root `Makefile` has `make lint`: fails on any tracked source file over
-  500 lines (`make lint MAX_LINES=n` to override).
+  500 lines (`make lint MAX_LINES=n` to override) and on any TypeScript type
+  assertion (`as T` / `<T>expr` — banned repo-wide; use type guards instead).

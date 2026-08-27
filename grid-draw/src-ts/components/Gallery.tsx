@@ -5,7 +5,7 @@ import { DraggablePanel } from './DraggablePanel';
 import { useServerStore } from '../store/serverStore';
 import { logout } from '../lib/apiClient';
 
-const BASE = (import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL ?? '/grid-draw/';
+const BASE = import.meta.env.BASE_URL ?? '/grid-draw/';
 
 // Open a saved design via its shareable per-drawing URL (<base>design/<name>/).
 function openInEditor(name: string) {

@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { getSelectionOrigin, readImage, readLine, readRect, readText } from '../gridHelpers';
+import { getSelectionOrigin, isSelectedType, readImage, readLine, readRect, readText } from '../gridHelpers';
 import type {
   ClipboardCell,
   ClipboardImage,
@@ -181,23 +181,23 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
     // re-insert it. Lines/rects are deleted high-index-first so earlier indices
     // stay valid; the batch's reverse-order inverse re-inserts low-index-first.
     const lineIndices = selectedItems
-      .filter(i => i.type === 'line')
-      .map(i => (i as { type: 'line'; index: number }).index)
+      .filter(isSelectedType('line'))
+      .map(i => i.index)
       .sort((a, b) => b - a);
 
     const rectIndices = selectedItems
-      .filter(i => i.type === 'rect')
-      .map(i => (i as { type: 'rect'; index: number }).index)
+      .filter(isSelectedType('rect'))
+      .map(i => i.index)
       .sort((a, b) => b - a);
 
     const textIndices = selectedItems
-      .filter(i => i.type === 'text')
-      .map(i => (i as { type: 'text'; index: number }).index)
+      .filter(isSelectedType('text'))
+      .map(i => i.index)
       .sort((a, b) => b - a);
 
     const imageIndices = selectedItems
-      .filter(i => i.type === 'image')
-      .map(i => (i as { type: 'image'; index: number }).index)
+      .filter(isSelectedType('image'))
+      .map(i => i.index)
       .sort((a, b) => b - a);
 
     const edits: Edit[] = [];

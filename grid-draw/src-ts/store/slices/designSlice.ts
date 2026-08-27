@@ -4,6 +4,8 @@ import { getSelectionBounds } from '../../utils/selection';
 import {
   allItems,
   getSelectionBoundsAll,
+  isSelectedType,
+  normalizeDesignText,
   readImage,
   readLine,
   readRect,
@@ -105,20 +107,16 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
     for (const t of design.texts ?? []) {
       // Full frame tuple [r,c,color,size,boxW,boxH,halign,valign,text], a legacy
       // [r,c,color,size,text] tuple, or an object (a model's JSON decoder). Box
-      // dims of 0 mean "auto-fit" (WASM measures). Anything malformed is skipped.
-      const o = Array.isArray(t)
-        ? (t.length >= 9
-            ? { r: t[0], c: t[1], color: t[2], size: t[3], boxW: t[4], boxH: t[5], halign: t[6], valign: t[7], text: t[8] }
-            : { r: t[0], c: t[1], color: t[2], size: t[3], text: t[4] })
-        : (t as { r: number; c: number; color: number; size: number; boxW?: number; boxH?: number; halign?: number; valign?: number; text: string });
-      if (!o || typeof o.r !== 'number' || typeof o.c !== 'number') continue;
-      const oo = o as { r: number; c: number; color?: number; size?: number; boxW?: number; boxH?: number; halign?: number; valign?: number; text?: unknown };
+      // dims of 0 mean "auto-fit" (WASM measures). Anything malformed is skipped
+      // (normalizeDesignText returns null when numeric r/c are missing).
+      const o = normalizeDesignText(t);
+      if (!o) continue;
       edits.push({
         kind: 'addText', idx: textIdx,
         text: {
-          r: anchorRow + oo.r * f, c: anchorCol + oo.c * f, color: oo.color ?? 0, size: oo.size ?? 1,
-          boxW: (oo.boxW ?? 0) * f, boxH: (oo.boxH ?? 0) * f, halign: oo.halign ?? 0, valign: oo.valign ?? 0,
-          text: String(oo.text ?? ''),
+          r: anchorRow + o.r * f, c: anchorCol + o.c * f, color: o.color ?? 0, size: o.size ?? 1,
+          boxW: (o.boxW ?? 0) * f, boxH: (o.boxH ?? 0) * f, halign: o.halign ?? 0, valign: o.valign ?? 0,
+          text: String(o.text ?? ''),
         },
       });
       newSelected.push({ type: 'text', index: textIdx });
@@ -181,7 +179,7 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
   // Output actions - sparse format for cells
   updateOutputs: () => {
     const { grid, selectedItems } = get();
-    const selectedCells = selectedItems.filter(i => i.type === 'cell') as Array<{ type: 'cell'; row: number; col: number }>;
+    const selectedCells = selectedItems.filter(isSelectedType('cell'));
 
     if (!grid || selectedCells.length === 0) {
       set({ jsonOutput: '', tensorOutput: '' });

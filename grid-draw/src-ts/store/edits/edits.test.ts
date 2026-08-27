@@ -1,45 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { GridCanvasWasm } from '../../types/grid';
 import type { Edit } from './types';
-import { applyEdit, invertEdit, mergeEdits } from './apply';
-import { History } from './history';
-
-/**
- * Records every mutating call as a tuple so tests can assert the exact WASM
- * call sequence produced by applying an edit and its inverse. Read methods
- * return placeholder data; only mutations are asserted.
- */
-function makeRecordingGrid() {
-  const calls: Array<[string, ...number[]]> = [];
-  const g: Partial<GridCanvasWasm> = {
-    set_cell: (r, c, v) => calls.push(['set_cell', r, c, v ? 1 : 0]),
-    set_draw_color: (idx) => calls.push(['set_draw_color', idx]),
-    set_cell_color: (r, c, color) => calls.push(['set_cell_color', r, c, color]),
-    set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
-    set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
-    set_rect_outline: (idx, color) => calls.push(['set_rect_outline', idx, color]),
-    move_line: (idx, dr, dc) => calls.push(['move_line', idx, dr, dc]),
-    move_rect: (idx, dr, dc) => calls.push(['move_rect', idx, dr, dc]),
-    set_line: (idx, r1, c1, r2, c2) => calls.push(['set_line', idx, r1, c1, r2, c2]),
-    set_rect: (idx, r1, c1, r2, c2) => calls.push(['set_rect', idx, r1, c1, r2, c2]),
-    insert_line: (idx, r1, c1, r2, c2, color, width) =>
-      calls.push(['insert_line', idx, r1, c1, r2, c2, color, width]),
-    insert_rect: (idx, r1, c1, r2, c2, fill, outline) =>
-      calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]),
-    delete_line: (idx) => calls.push(['delete_line', idx]),
-    delete_rect: (idx) => calls.push(['delete_rect', idx]),
-    render: () => {},
-  };
-  return { grid: g as unknown as GridCanvasWasm, calls };
-}
-
-/** Apply an edit, then its inverse, returning the recorded call sequence. */
-function roundTrip(edit: Edit) {
-  const { grid, calls } = makeRecordingGrid();
-  applyEdit(grid, edit);
-  applyEdit(grid, invertEdit(edit));
-  return calls;
-}
+import { applyEdit, invertEdit } from './apply';
+import { makeCountingGrid, makeRecordingGrid, roundTrip } from './recordingGrid';
 
 describe('applyEdit — forward application', () => {
   it('setCell applies the target value', () => {
@@ -286,101 +248,6 @@ describe('batch edits', () => {
   });
 });
 
-describe('History', () => {
-  it('commit applies the edit and enables undo', () => {
-    const { grid, calls } = makeRecordingGrid();
-    const h = new History();
-    expect(h.canUndo()).toBe(false);
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 4 });
-    expect(calls).toEqual([['set_rect_fill', 0, 4]]);
-    expect(h.canUndo()).toBe(true);
-    expect(h.canRedo()).toBe(false);
-  });
-
-  it('undo applies the inverse, redo re-applies the edit', () => {
-    const { grid, calls } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 4 });
-    h.undoLast(grid);
-    h.redoLast(grid);
-    expect(calls).toEqual([
-      ['set_rect_fill', 0, 4],
-      ['set_rect_fill', 0, 0],
-      ['set_rect_fill', 0, 4],
-    ]);
-    expect(h.canUndo()).toBe(true);
-    expect(h.canRedo()).toBe(false);
-  });
-
-  it('a new commit clears the redo stack', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 1 });
-    h.undoLast(grid);
-    expect(h.canRedo()).toBe(true);
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 2 });
-    expect(h.canRedo()).toBe(false);
-  });
-
-  it('undo/redo on empty stacks are no-ops returning false', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    expect(h.undoLast(grid)).toBe(false);
-    expect(h.redoLast(grid)).toBe(false);
-  });
-
-  it('a batch gesture commits as a single undo step', () => {
-    const { grid, calls } = makeRecordingGrid();
-    const h = new History();
-    h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    h.commit(grid, { kind: 'setCell', row: 0, col: 1, from: false, to: true });
-    h.endBatch();
-    // Both edits applied during the gesture.
-    expect(calls).toEqual([
-      ['set_cell', 0, 0, 1],
-      ['set_cell', 0, 1, 1],
-    ]);
-    calls.length = 0;
-    // ...but a single undo reverts the whole stroke (reverse order).
-    h.undoLast(grid);
-    expect(calls).toEqual([
-      ['set_cell', 0, 1, 0],
-      ['set_cell', 0, 0, 0],
-    ]);
-    expect(h.canUndo()).toBe(false);
-  });
-
-  it('an empty batch records no history', () => {
-    const h = new History();
-    h.beginBatch();
-    h.endBatch();
-    expect(h.canUndo()).toBe(false);
-  });
-
-  it('multiple commits undo in LIFO order', () => {
-    const { grid, calls } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    h.commit(grid, { kind: 'setCell', row: 1, col: 1, from: false, to: true });
-    calls.length = 0;
-    h.undoLast(grid);
-    h.undoLast(grid);
-    expect(calls).toEqual([
-      ['set_cell', 1, 1, 0],
-      ['set_cell', 0, 0, 0],
-    ]);
-  });
-});
-
-/** A recording grid that also reports shape counts, for range-guard tests. */
-function makeCountingGrid(lineCount: number, rectCount: number) {
-  const { grid, calls } = makeRecordingGrid();
-  (grid as unknown as { get_line_count: () => number }).get_line_count = () => lineCount;
-  (grid as unknown as { get_rect_count: () => number }).get_rect_count = () => rectCount;
-  return { grid, calls };
-}
-
 describe('applyEdit range guard', () => {
   it('throws when a rect edit targets an out-of-range index', () => {
     const { grid } = makeCountingGrid(0, 1); // one rect: valid idx is 0
@@ -401,98 +268,11 @@ describe('applyEdit range guard', () => {
     ).toThrow(/out of range/);
   });
 
-  it('does not validate when the grid lacks count getters (minimal mocks)', () => {
+  it('does not reject an index the grid reports as in range', () => {
+    // The recording grid reports unbounded counts, so the range guard treats
+    // any non-negative index as valid — mirroring how the guard no-ops for
+    // grids that don't constrain their buffer size.
     const { grid } = makeRecordingGrid();
     expect(() => applyEdit(grid, { kind: 'recolorRectFill', idx: 99, from: 0, to: 1 })).not.toThrow();
-  });
-});
-
-describe('batch hygiene', () => {
-  it('beginBatch auto-finalizes a previously-open batch', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    // A second beginBatch (e.g. a new stroke after one was interrupted) must
-    // not strand the first batch's edit — it should already be recorded.
-    h.beginBatch();
-    expect(h.canUndo()).toBe(true);
-    h.commit(grid, { kind: 'setCell', row: 0, col: 1, from: false, to: true });
-    h.endBatch();
-    // Two separate undo steps now.
-    h.undoLast(grid);
-    expect(h.canUndo()).toBe(true);
-    h.undoLast(grid);
-    expect(h.canUndo()).toBe(false);
-  });
-
-  it('cancelBatch discards bookkeeping without recording a step', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    h.cancelBatch();
-    expect(h.canUndo()).toBe(false);
-    expect(h.isBatching()).toBe(false);
-  });
-});
-
-describe('coalescing', () => {
-  it('merges same-key recolors within the window into one step', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 2 }, { coalesceKey: 'fill:0', now: 0 });
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 2, to: 3 }, { coalesceKey: 'fill:0', now: 100 });
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 3, to: 5 }, { coalesceKey: 'fill:0', now: 200 });
-    // All three merged → a single undo restores the ORIGINAL fill (0).
-    const { grid: g2, calls } = makeRecordingGrid();
-    h.undoLast(g2);
-    expect(calls).toEqual([['set_rect_fill', 0, 0]]);
-    expect(h.canUndo()).toBe(false);
-  });
-
-  it('does NOT merge once the time window has passed', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 2 }, { coalesceKey: 'fill:0', now: 0 });
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 2, to: 3 }, { coalesceKey: 'fill:0', now: 5000 });
-    // Two separate steps.
-    h.undoLast(grid);
-    expect(h.canUndo()).toBe(true);
-  });
-
-  it('does NOT merge across a different key', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 2 }, { coalesceKey: 'fill:0', now: 0 });
-    h.commit(grid, { kind: 'recolorRectFill', idx: 1, from: 0, to: 2 }, { coalesceKey: 'fill:1', now: 10 });
-    h.undoLast(grid);
-    expect(h.canUndo()).toBe(true);
-  });
-
-  it('does not coalesce across an undo', () => {
-    const { grid } = makeRecordingGrid();
-    const h = new History();
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 2 }, { coalesceKey: 'fill:0', now: 0 });
-    h.undoLast(grid);
-    h.commit(grid, { kind: 'recolorRectFill', idx: 0, from: 0, to: 3 }, { coalesceKey: 'fill:0', now: 10 });
-    // The post-undo commit must be its own step, not merged into the undone one.
-    expect(h.canUndo()).toBe(true);
-    expect(h.canRedo()).toBe(false); // new commit cleared redo
-  });
-
-  it('mergeEdits sums move deltas and keeps original from for recolors', () => {
-    expect(
-      mergeEdits({ kind: 'moveRect', idx: 0, dRow: 1, dCol: 2 }, { kind: 'moveRect', idx: 0, dRow: 3, dCol: -1 })
-    ).toEqual({ kind: 'moveRect', idx: 0, dRow: 4, dCol: 1 });
-
-    expect(
-      mergeEdits({ kind: 'recolorLine', idx: 0, from: 0, to: 2 }, { kind: 'recolorLine', idx: 0, from: 2, to: 5 })
-    ).toEqual({ kind: 'recolorLine', idx: 0, from: 0, to: 5 });
-
-    // Different targets don't merge.
-    expect(
-      mergeEdits({ kind: 'moveRect', idx: 0, dRow: 1, dCol: 0 }, { kind: 'moveRect', idx: 1, dRow: 1, dCol: 0 })
-    ).toBeNull();
   });
 });

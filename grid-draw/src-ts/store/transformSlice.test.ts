@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type ResizeTarget } from './gridStore';
 import { snapQuarterTurns, rotateQuarter } from './gridHelpers';
 import type { GridCanvasWasm } from '../types/grid';
+import { stubWasm } from './wasmStub';
 
 /**
  * Covers the transform slice's RESIZE lifecycle (start/update/finish/cancel for
@@ -71,7 +72,7 @@ function makeResizeGrid(opts?: {
     highlight_image: () => {},
     draw_handle: () => {},
   };
-  return { g: g as GridCanvasWasm, lines, rects, texts, images };
+  return { g: { ...stubWasm(), ...g }, lines, rects, texts, images };
 }
 
 function resetStore(grid: GridCanvasWasm | null) {
