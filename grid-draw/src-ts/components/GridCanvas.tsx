@@ -41,7 +41,11 @@ function GridCanvas() {
     const handleResize = () => {
       const v = calculateViewport();
       setViewport(v);
-      grid?.set_viewport(v.w, v.h);
+      if (!grid) return;
+      grid.set_viewport(v.w, v.h);
+      // set_viewport re-rendered without highlights; restore any selection.
+      const store = useGridStore.getState();
+      if (store.selectedItems.length > 0) store.renderSelection();
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);

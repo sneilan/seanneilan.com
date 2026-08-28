@@ -412,8 +412,8 @@ let __tla = (async ()=>{
             var E = N.length;
             N.push(b);
             e: for(; 0 < E;){
-                var Q = E - 1 >>> 1, Z = N[Q];
-                if (0 < o(Z, b)) N[Q] = b, N[E] = Z, E = Q;
+                var q = E - 1 >>> 1, Z = N[q];
+                if (0 < o(Z, b)) N[q] = b, N[E] = Z, E = q;
                 else break e;
             }
         }
@@ -425,10 +425,10 @@ let __tla = (async ()=>{
             var b = N[0], E = N.pop();
             if (E !== b) {
                 N[0] = E;
-                e: for(var Q = 0, Z = N.length, pe = Z >>> 1; Q < pe;){
-                    var Fe = 2 * (Q + 1) - 1, de = N[Fe], J = Fe + 1, Je = N[J];
-                    if (0 > o(de, E)) J < Z && 0 > o(Je, de) ? (N[Q] = Je, N[J] = E, Q = J) : (N[Q] = de, N[Fe] = E, Q = Fe);
-                    else if (J < Z && 0 > o(Je, E)) N[Q] = Je, N[J] = E, Q = J;
+                e: for(var q = 0, Z = N.length, pe = Z >>> 1; q < pe;){
+                    var Fe = 2 * (q + 1) - 1, de = N[Fe], J = Fe + 1, Je = N[J];
+                    if (0 > o(de, E)) J < Z && 0 > o(Je, de) ? (N[q] = Je, N[J] = E, q = J) : (N[q] = de, N[Fe] = E, q = Fe);
+                    else if (J < Z && 0 > o(Je, E)) N[q] = Je, N[J] = E, q = J;
                     else break e;
                 }
             }
@@ -471,10 +471,10 @@ let __tla = (async ()=>{
             var E = h;
             try {
                 for(m(b), c = n(a); c !== null && (!(c.expirationTime > b) || N && !te());){
-                    var Q = c.callback;
-                    if (typeof Q == "function") {
+                    var q = c.callback;
+                    if (typeof q == "function") {
                         c.callback = null, h = c.priorityLevel;
-                        var Z = Q(c.expirationTime <= b);
+                        var Z = q(c.expirationTime <= b);
                         b = e.unstable_now(), typeof Z == "function" ? c.callback = Z : c === n(a) && r(a), m(b);
                     } else r(a);
                     c = n(a);
@@ -571,8 +571,8 @@ let __tla = (async ()=>{
                 h = E;
             }
         }, e.unstable_scheduleCallback = function(N, b, E) {
-            var Q = e.unstable_now();
-            switch(typeof E == "object" && E !== null ? (E = E.delay, E = typeof E == "number" && 0 < E ? Q + E : Q) : E = Q, N){
+            var q = e.unstable_now();
+            switch(typeof E == "object" && E !== null ? (E = E.delay, E = typeof E == "number" && 0 < E ? q + E : q) : E = q, N){
                 case 1:
                     var Z = -1;
                     break;
@@ -595,7 +595,7 @@ let __tla = (async ()=>{
                 startTime: E,
                 expirationTime: Z,
                 sortIndex: -1
-            }, E > Q ? (N.sortIndex = E, t(u, N), n(a) === null && N === n(u) && (y ? (f(k), k = -1) : y = !0, P(S, E - Q))) : (N.sortIndex = Z, t(a, N), g || w || (g = !0, X(_))), N;
+            }, E > q ? (N.sortIndex = E, t(u, N), n(a) === null && N === n(u) && (y ? (f(k), k = -1) : y = !0, P(S, E - q))) : (N.sortIndex = Z, t(a, N), g || w || (g = !0, X(_))), N;
         }, e.unstable_shouldYield = te, e.unstable_wrapCallback = function(N) {
             var b = h;
             return function() {
@@ -8914,7 +8914,7 @@ sparse = sparse.coalesce()`;
         currentName: null,
         saveState: "idle",
         saveMessage: ""
-    }, q = If()((...e)=>({
+    }, Q = If()((...e)=>({
             ...Ag,
             ...Pg(...e),
             ...Og(...e),
@@ -8922,7 +8922,7 @@ sparse = sparse.coalesce()`;
             ...Dg(...e),
             ...Cg(...e),
             ...Mg(...e)
-        })), Fg = ()=>q((e)=>e.grid), $g = ()=>q((e)=>e.tool), Ug = ()=>q((e)=>e.colorIdx), Bg = ()=>q((e)=>e.outlineIdx), Wg = ()=>q((e)=>e.selectedItems), Vg = ()=>q((e)=>e.clipboard), Gg = ()=>q((e)=>e.jsonOutput), Hg = ()=>q((e)=>e.tensorOutput), Kg = ()=>q((e)=>e.selectMode), Qg = Object.freeze(Object.defineProperty({
+        })), Fg = ()=>Q((e)=>e.grid), $g = ()=>Q((e)=>e.tool), Ug = ()=>Q((e)=>e.colorIdx), Bg = ()=>Q((e)=>e.outlineIdx), Wg = ()=>Q((e)=>e.selectedItems), Vg = ()=>Q((e)=>e.clipboard), Gg = ()=>Q((e)=>e.jsonOutput), Hg = ()=>Q((e)=>e.tensorOutput), Kg = ()=>Q((e)=>e.selectMode), Qg = Object.freeze(Object.defineProperty({
         __proto__: null,
         CELL_UNITS: mt,
         LINE_WIDTHS: Rf,
@@ -8934,7 +8934,7 @@ sparse = sparse.coalesce()`;
         useClipboard: Vg,
         useColorIdx: Ug,
         useGrid: Fg,
-        useGridStore: q,
+        useGridStore: Q,
         useJsonOutput: Gg,
         useOutlineIdx: Bg,
         useSelectMode: Kg,
@@ -8970,7 +8970,7 @@ sparse = sparse.coalesce()`;
                     const s = await ma(()=>import("./grid_draw_wasm.js"), []);
                     await s.default();
                     const a = s.GridCanvas.from_canvas(i, t, n);
-                    if (Yg(a), q.getState().setGrid(a), qg()) {
+                    if (Yg(a), Q.getState().setGrid(a), qg()) {
                         const u = window;
                         u.__gridForTest = a;
                     }
@@ -10042,7 +10042,7 @@ sparse = sparse.coalesce()`;
                 e,
                 M,
                 j
-            ], Q = ()=>[
+            ], q = ()=>[
                 ...S(),
                 ec,
                 Ju,
@@ -11265,7 +11265,7 @@ sparse = sparse.coalesce()`;
                 ],
                 "bg-position": [
                     {
-                        bg: Q()
+                        bg: q()
                     }
                 ],
                 "bg-repeat": [
@@ -11990,7 +11990,7 @@ sparse = sparse.coalesce()`;
                 ],
                 "mask-position": [
                     {
-                        mask: Q()
+                        mask: q()
                     }
                 ],
                 "mask-repeat": [
@@ -14109,7 +14109,10 @@ sparse = sparse.coalesce()`;
         }), o = C.useRef(n);
         o.current = n;
         const l = C.useRef(!1), [i, s] = C.useState(!1), a = C.useRef(null), u = C.useCallback((c)=>{
-            r(c), e?.set_camera(c.x, c.y, c.zoom);
+            if (r(c), !e) return;
+            e.set_camera(c.x, c.y, c.zoom);
+            const h = Q.getState();
+            h.selectedItems.length > 0 && h.renderSelection();
         }, [
             e
         ]), d = C.useCallback(()=>u({
@@ -14141,7 +14144,7 @@ sparse = sparse.coalesce()`;
             t
         ]), C.useEffect(()=>{
             const c = (w)=>{
-                w.code !== "Space" || q.getState().textEdit || (w.preventDefault(), l.current = !0, s(!0));
+                w.code !== "Space" || Q.getState().textEdit || (w.preventDefault(), l.current = !0, s(!0));
             }, h = (w)=>{
                 w.code === "Space" && (l.current = !1, s(!1));
             };
@@ -14183,7 +14186,7 @@ sparse = sparse.coalesce()`;
         };
     }
     function nv({ grid: e, camRef: t, applyCamera: n, isSpaceDown: r, panRef: o }) {
-        const { tool: l, colorIdx: i, outlineIdx: s, isDrawing: a, drawMode: u, startDrawing: d, stopDrawing: c, lineStart: h, startLine: w, finishLine: g, rectStart: y, startRect: x, finishRect: f, subdivision: p, beginTextEdit: m, selectedItems: S, setSelectedItems: _, selectMode: T, isSelecting: z, selectBoxStart: k, selectDragStart: O, startBoxSelection: D, updateBoxSelection: te, finishBoxSelection: ye, cancelBoxSelection: Te, startDragSelection: L, finishDragSelection: ce, cancelDragSelection: X, startResize: P, updateResize: N, finishResize: b, cancelResize: E, startRotate: Q, updateRotate: Z, finishRotate: pe, cancelRotate: Fe, setMousePos: de, addItemToSelection: J, removeItemFromSelection: Je, hitTestShapes: fn, updateOutputs: ie, renderSelection: On, beginDrawStroke: pn, drawCellAt: Ct, endDrawStroke: Dn, commitLine: mn, commitRect: _a } = q(), bp = C.useCallback((W)=>{
+        const { tool: l, colorIdx: i, outlineIdx: s, isDrawing: a, drawMode: u, startDrawing: d, stopDrawing: c, lineStart: h, startLine: w, finishLine: g, rectStart: y, startRect: x, finishRect: f, subdivision: p, beginTextEdit: m, selectedItems: S, setSelectedItems: _, selectMode: T, isSelecting: z, selectBoxStart: k, selectDragStart: O, startBoxSelection: D, updateBoxSelection: te, finishBoxSelection: ye, cancelBoxSelection: Te, startDragSelection: L, finishDragSelection: ce, cancelDragSelection: X, startResize: P, updateResize: N, finishResize: b, cancelResize: E, startRotate: q, updateRotate: Z, finishRotate: pe, cancelRotate: Fe, setMousePos: de, addItemToSelection: J, removeItemFromSelection: Je, hitTestShapes: fn, updateOutputs: ie, renderSelection: On, beginDrawStroke: pn, drawCellAt: Ct, endDrawStroke: Dn, commitLine: mn, commitRect: _a } = Q(), bp = C.useCallback((W)=>{
             if (e) {
                 if (W.button === 1 || W.button === 0 && r.current) {
                     W.preventDefault(), o.current = {
@@ -14222,7 +14225,7 @@ sparse = sparse.coalesce()`;
                         if (Re) {
                             const go = ms(Re), xo = 10 / t.current.zoom;
                             if (Math.hypot(K - go.c * wt, ve - go.r * wt) <= xo) {
-                                Q(K, ve);
+                                q(K, ve);
                                 return;
                             }
                         }
@@ -14273,7 +14276,7 @@ sparse = sparse.coalesce()`;
             D,
             L,
             P,
-            Q,
+            q,
             J,
             Je,
             _,
@@ -14478,10 +14481,10 @@ sparse = sparse.coalesce()`;
         };
     }
     function rv() {
-        const { tool: e, setTool: t, setColorIdx: n, selectedItems: r, deleteSelected: o, selectAll: l, clipboard: i, copy: s, paste: a, cycleSubdivision: u, undo: d, redo: c, typeTextChar: h, backspaceText: w, commitTextEdit: g, cancelTextEdit: y } = q();
+        const { tool: e, setTool: t, setColorIdx: n, selectedItems: r, deleteSelected: o, selectAll: l, clipboard: i, copy: s, paste: a, cycleSubdivision: u, undo: d, redo: c, typeTextChar: h, backspaceText: w, commitTextEdit: g, cancelTextEdit: y } = Q();
         C.useEffect(()=>{
             const x = (f)=>{
-                if (q.getState().textEdit) return;
+                if (Q.getState().textEdit) return;
                 f.key === "\\" && t(e === "line" ? "draw" : "line"), f.key === "m" && t(e === "rect" ? "draw" : "rect"), f.key === "t" && t(e === "text" ? "draw" : "text"), f.key === "s" && t(e === "select" ? "draw" : "select"), (f.key === "Delete" || f.key === "Backspace") && r.length > 0 && (f.preventDefault(), o()), (f.ctrlKey || f.metaKey) && f.key.toLowerCase() === "a" && (f.preventDefault(), l()), (f.ctrlKey || f.metaKey) && f.key === "c" && r.length > 0 && (f.preventDefault(), s()), (f.ctrlKey || f.metaKey) && f.key === "v" && i && (f.preventDefault(), a()), (f.ctrlKey || f.metaKey) && f.key.toLowerCase() === "g" && (f.preventDefault(), u()), (f.ctrlKey || f.metaKey) && !f.shiftKey && f.key.toLowerCase() === "z" && (f.preventDefault(), d()), (f.ctrlKey || f.metaKey) && (f.shiftKey && f.key.toLowerCase() === "z" || f.key.toLowerCase() === "y") && (f.preventDefault(), c());
                 const p = parseInt(f.key);
                 p >= 1 && p <= 7 && n(p - 1);
@@ -14502,7 +14505,7 @@ sparse = sparse.coalesce()`;
             u
         ]), C.useEffect(()=>{
             const x = (f)=>{
-                if (q.getState().textEdit) {
+                if (Q.getState().textEdit) {
                     if (f.key === "Enter") {
                         f.preventDefault(), g();
                         return;
@@ -14573,7 +14576,7 @@ sparse = sparse.coalesce()`;
     }
     const uc = 16;
     function iv(e, t) {
-        const n = q((u)=>u.placeImage), r = C.useRef(null), [o, l] = C.useState(""), [i, s] = C.useState(!1), a = C.useCallback(async (u)=>{
+        const n = Q((u)=>u.placeImage), r = C.useRef(null), [o, l] = C.useState(""), [i, s] = C.useState(!1), a = C.useCallback(async (u)=>{
             try {
                 let d;
                 if (typeof u == "string") d = u;
@@ -14601,7 +14604,7 @@ sparse = sparse.coalesce()`;
         ]);
         return C.useEffect(()=>{
             const u = (d)=>{
-                if (q.getState().textEdit) return;
+                if (Q.getState().textEdit) return;
                 const c = d.clipboardData?.items;
                 if (c) {
                     for (const h of c)if (h.kind === "file" && h.type.startsWith("image/")) {
@@ -14649,7 +14652,7 @@ sparse = sparse.coalesce()`;
         clearTimeout(cc), cc = setTimeout(pv, sv);
     }
     async function pv() {
-        const e = q.getState();
+        const e = Q.getState();
         if (!e.grid) return;
         const t = e.serializeWholeGrid();
         if (!t) return;
@@ -14660,16 +14663,16 @@ sparse = sparse.coalesce()`;
         }
         e.setSaveState("saving");
         try {
-            await he.getState().saveDrawing(n, t, e.exportHistory()), q.getState().setSaveState("saved");
+            await he.getState().saveDrawing(n, t, e.exportHistory()), Q.getState().setSaveState("saved");
         } catch (r) {
-            q.getState().setSaveState("error", r instanceof Error ? r.message : String(r));
+            Q.getState().setSaveState("error", r instanceof Error ? r.message : String(r));
         }
     }
-    q.subscribe((e, t)=>{
+    Q.subscribe((e, t)=>{
         e.historyTick !== t.historyTick && fv();
     });
     function mv(e) {
-        const { clear: t, resetHistory: n, setSaveState: r, buildTrainingExample: o, finishTrainingCapture: l, serializeWholeGrid: i, loadDesignWithHistory: s, setCurrentName: a } = q(), u = he((P)=>P.getDrawing), d = he((P)=>P.getDrawingById), c = he((P)=>P.saveExamplePair), h = he((P)=>P.updateExamplePair), w = he((P)=>P.runPredict), g = he((P)=>P.trainModel), y = he((P)=>P.initModel), x = he((P)=>P.modelStatus), f = he((P)=>P.training), [p, m] = C.useState(""), [S, _] = C.useState(!1), [T, z] = C.useState(!1), [k, O] = C.useState(null);
+        const { clear: t, resetHistory: n, setSaveState: r, buildTrainingExample: o, finishTrainingCapture: l, serializeWholeGrid: i, loadDesignWithHistory: s, setCurrentName: a } = Q(), u = he((P)=>P.getDrawing), d = he((P)=>P.getDrawingById), c = he((P)=>P.saveExamplePair), h = he((P)=>P.updateExamplePair), w = he((P)=>P.runPredict), g = he((P)=>P.trainModel), y = he((P)=>P.initModel), x = he((P)=>P.modelStatus), f = he((P)=>P.training), [p, m] = C.useState(""), [S, _] = C.useState(!1), [T, z] = C.useState(!1), [k, O] = C.useState(null);
         C.useEffect(()=>{
             if (!e) return;
             let P = !1;
@@ -14724,18 +14727,18 @@ sparse = sparse.coalesce()`;
         }, [
             g
         ]), ye = C.useCallback(async ()=>{
-            const { grid: P, selectedItems: N } = q.getState();
+            const { grid: P, selectedItems: N } = Q.getState();
             if (!P) return;
             const b = Wr(P, N);
             if (!b) {
                 m("Select an input region to predict from.");
                 return;
             }
-            const E = We(N, P), Q = E ? E.minRow : 0, Z = E ? E.minCol : 0;
+            const E = We(N, P), q = E ? E.minRow : 0, Z = E ? E.minCol : 0;
             m("Predicting…");
             try {
                 const pe = await w(b);
-                q.getState().placeDesign(pe, Q, Z), m(Zy(pe) ? "Model returned nothing — capture more examples and train again." : "Prediction placed.");
+                Q.getState().placeDesign(pe, q, Z), m(Zy(pe) ? "Model returned nothing — capture more examples and train again." : "Prediction placed.");
             } catch (pe) {
                 m(`Predict failed: ${pe instanceof Error ? pe.message : String(pe)}`);
             }
@@ -14765,10 +14768,10 @@ sparse = sparse.coalesce()`;
                 m("Nothing to save — draw something first.");
                 return;
             }
-            const { id: N, half: b, otherHalf: E } = k, Q = b === "input" ? P : E, Z = b === "output" ? P : E;
+            const { id: N, half: b, otherHalf: E } = k, q = b === "input" ? P : E, Z = b === "output" ? P : E;
             m(`Updating example #${N}…`);
             try {
-                await h(N, Q, Z), m(`Example #${N} (${b}) updated.`);
+                await h(N, q, Z), m(`Example #${N} (${b}) updated.`);
             } catch (pe) {
                 m(`Update failed: ${pe instanceof Error ? pe.message : String(pe)}`);
             }
@@ -14959,7 +14962,7 @@ sparse = sparse.coalesce()`;
         return e === "draw" || e === "line" || e === "rect" || e === "text" || e === "select";
     }
     function Tv({ loading: e, imageInputRef: t, imgStatus: n, removeBg: r, setRemoveBg: o, addImageObject: l, editingExample: i, saveExampleUpdate: s, newDrawing: a, onOpenGallery: u }) {
-        const d = q(), { tool: c, setTool: h, colorIdx: w, pickColor: g, outlineIdx: y, pickOutline: x, textSize: f, pickTextSize: p, lineWidth: m, pickLineWidth: S, pickTextAlign: _, subdivision: T, setSubdivision: z, selectedItems: k, clear: O, undo: D, redo: te, canUndo: ye, canRedo: Te } = d;
+        const d = Q(), { tool: c, setTool: h, colorIdx: w, pickColor: g, outlineIdx: y, pickOutline: x, textSize: f, pickTextSize: p, lineWidth: m, pickLineWidth: S, pickTextAlign: _, subdivision: T, setSubdivision: z, selectedItems: k, clear: O, undo: D, redo: te, canUndo: ye, canRedo: Te } = d;
         return d.historyTick, v.jsx(gr, {
             title: "Tools",
             defaultPosition: {
@@ -15321,7 +15324,7 @@ sparse = sparse.coalesce()`;
         });
     }
     function Nv() {
-        const { selectedItems: e, getSelectedCells: t, jsonOutput: n, tensorOutput: r, importJson: o, importTensor: l } = q(), i = t();
+        const { selectedItems: e, getSelectedCells: t, jsonOutput: n, tensorOutput: r, importJson: o, importTensor: l } = Q(), i = t();
         return v.jsx(gr, {
             title: "Selection Data",
             defaultPosition: {
@@ -15372,7 +15375,7 @@ sparse = sparse.coalesce()`;
         });
     }
     function Iv({ loading: e, trainStatus: t, modelStatus: n, training: r, saveTrainingExample: o, startTraining: l, predictFromSelection: i, onViewTrainingData: s }) {
-        const { selectedItems: a, captureMode: u, captureInput: d, startTrainingCapture: c, captureSetInput: h, cancelTrainingCapture: w } = q();
+        const { selectedItems: a, captureMode: u, captureInput: d, startTrainingCapture: c, captureSetInput: h, cancelTrainingCapture: w } = Q();
         return v.jsx(gr, {
             title: "Training Data",
             defaultPosition: {
@@ -15556,7 +15559,7 @@ sparse = sparse.coalesce()`;
         });
     }
     function Rv() {
-        const [e, t] = C.useState(()=>ac()), n = C.useRef(null), { grid: r, loading: o, error: l } = Xg(n, e.w, e.h), i = q((_)=>_.currentName), s = q((_)=>_.saveState), { cam: a, camRef: u, applyCamera: d, resetView: c, spaceHeld: h, isSpaceDown: w, panRef: g } = tv(r, n), { handleMouseDown: y, handleMouseMove: x, handleMouseUp: f, handleMouseLeave: p } = nv({
+        const [e, t] = C.useState(()=>ac()), n = C.useRef(null), { grid: r, loading: o, error: l } = Xg(n, e.w, e.h), i = Q((_)=>_.currentName), s = Q((_)=>_.saveState), { cam: a, camRef: u, applyCamera: d, resetView: c, spaceHeld: h, isSpaceDown: w, panRef: g } = tv(r, n), { handleMouseDown: y, handleMouseMove: x, handleMouseUp: f, handleMouseLeave: p } = nv({
             grid: r,
             camRef: u,
             applyCamera: d,
@@ -15568,7 +15571,10 @@ sparse = sparse.coalesce()`;
         return C.useEffect(()=>{
             const _ = ()=>{
                 const T = ac();
-                t(T), r?.set_viewport(T.w, T.h);
+                if (t(T), !r) return;
+                r.set_viewport(T.w, T.h);
+                const z = Q.getState();
+                z.selectedItems.length > 0 && z.renderSelection();
             };
             return window.addEventListener("resize", _), ()=>window.removeEventListener("resize", _);
         }, [

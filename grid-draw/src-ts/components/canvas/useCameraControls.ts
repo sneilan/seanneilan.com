@@ -36,7 +36,12 @@ export function useCameraControls(grid: GridCanvasWasm | null, canvasRef: React.
   // (which re-renders). The single chokepoint for moving/zooming the view.
   const applyCamera = useCallback((next: Camera) => {
     setCam(next);
-    grid?.set_camera(next.x, next.y, next.zoom);
+    if (!grid) return;
+    grid.set_camera(next.x, next.y, next.zoom);
+    // set_camera re-rendered the scene without selection highlights; put them
+    // back. Skipped when nothing is selected so panning stays one render/frame.
+    const store = useGridStore.getState();
+    if (store.selectedItems.length > 0) store.renderSelection();
   }, [grid]);
 
   const resetView = useCallback(() => applyCamera({ x: 0, y: 0, zoom: 1 }), [applyCamera]);
