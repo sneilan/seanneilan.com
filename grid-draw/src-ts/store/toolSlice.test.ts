@@ -231,6 +231,23 @@ describe('toolSlice: text tool restyle picks', () => {
     expect(useGridStore.getState().canUndo()).toBe(false);
   });
 
+  it('pickTextAlign while typing sticks to the text edit and the commit carries it', () => {
+    const { grid } = makeGrid();
+    reset(grid);
+    useGridStore.getState().beginTextEdit({ row: 1, col: 1 });
+    useGridStore.getState().typeTextChar('a');
+
+    // Align picked mid-typing: nothing commits yet, the edit remembers it.
+    useGridStore.getState().pickTextAlign(1, null); // center horizontally
+    useGridStore.getState().pickTextAlign(null, 2); // bottom vertically
+    expect(grid.get_text_count()).toBe(0);
+    expect(useGridStore.getState().textEdit).toMatchObject({ halign: 1, valign: 2 });
+
+    useGridStore.getState().commitTextEdit();
+    const t = grid.get_text(0);
+    expect([t[5], t[6]]).toEqual([1, 2]);
+  });
+
   it('pickTextAlign sets the given axis and keeps the unspecified one', () => {
     const { grid, calls } = makeGrid({ texts: [{ r: 0, c: 0, color: 0, size: 1, boxW: 0, boxH: 0, halign: 2, valign: 1, text: 'hi' }] });
     reset(grid);
@@ -331,7 +348,7 @@ describe('toolSlice: text edit lifecycle', () => {
     // Previous non-empty text committed; a fresh empty edit is now open.
     expect(grid.get_text_count()).toBe(1);
     expect(grid.get_text_string(0)).toBe('a');
-    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '' });
+    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '', halign: 0, valign: 0 });
   });
 });
 

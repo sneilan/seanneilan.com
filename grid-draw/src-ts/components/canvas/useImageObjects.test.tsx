@@ -118,7 +118,7 @@ describe('useImageObjects — OS clipboard paste', () => {
   });
 
   it('ignores paste while a text edit is active (typing owns the clipboard)', async () => {
-    useGridStore.setState({ textEdit: { row: 0, col: 0, size: 1, text: 'hi' } });
+    useGridStore.setState({ textEdit: { row: 0, col: 0, size: 1, text: 'hi', halign: 0, valign: 0 } });
     renderHook(() => useImageObjects(camRef, viewport));
     const file = new File(['x'], 'pic.png', { type: 'image/png' });
 

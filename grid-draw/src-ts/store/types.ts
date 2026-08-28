@@ -41,7 +41,7 @@ export type SelectedItem =
 
 // An in-progress text being typed (before it's committed as a shape). `row`/
 // `col` are the text frame's TOP-LEFT grid coords (fine units).
-export type TextEditState = { row: number; col: number; size: number; text: string };
+export type TextEditState = { row: number; col: number; size: number; text: string; halign: number; valign: number };
 
 // Clipboard data types
 export type ClipboardCell = { relRow: number; relCol: number; color: number; size: number };

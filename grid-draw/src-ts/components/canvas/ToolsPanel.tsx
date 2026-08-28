@@ -2,7 +2,7 @@ import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
-import { useGridStore, TEXT_SIZES, LINE_WIDTHS, type DesignJSON, type DrawTool } from '../../store/gridStore';
+import { useGridStore, TEXT_SIZES, LINE_WIDTHS, tenthsToWidth, type DesignJSON, type DrawTool } from '../../store/gridStore';
 import { HEADER_HEIGHT } from './constants';
 import { ColorRow } from './ColorRow';
 
@@ -54,6 +54,38 @@ export function ToolsPanel({
   // historyTick re-renders the panel on any commit/undo/redo so the undo/redo
   // buttons' enabled state stays in sync with the history stacks.
   void store.historyTick;
+
+  // Each style section shows when it APPLIES: while its tool is active (so the
+  // controls are there as soon as you start drawing/typing) or while an item
+  // it styles is selected. With a selection, the controls reflect the selected
+  // items' own values ('' / -1 = mixed, nothing highlighted).
+  const { grid } = store;
+  const selTexts = store.selectedItems.filter((i) => i.type === 'text');
+  const selLines = store.selectedItems.filter((i) => i.type === 'line');
+  const selRects = store.selectedItems.filter((i) => i.type === 'rect');
+  const uniform = (vals: number[]) => (vals.every((v) => v === vals[0]) ? String(vals[0]) : '');
+  const textSizeValue = grid && selTexts.length > 0
+    ? uniform(selTexts.map((i) => grid.get_text_size(i.index)))
+    : String(textSize);
+  const lineWidthValue = grid && selLines.length > 0
+    ? uniform(selLines.map((i) => tenthsToWidth(grid.get_line(i.index)[5])))
+    : String(lineWidth);
+  const styleableSel = grid
+    ? store.selectedItems.filter((i) => i.type !== 'image')
+    : [];
+  const fillOf = (i: { type: string; index: number }): number => {
+    if (!grid) return -1;
+    if (i.type === 'cell') return grid.get_square(i.index)[2];
+    if (i.type === 'line') return grid.get_line(i.index)[4];
+    if (i.type === 'rect') return grid.get_rect(i.index)[4];
+    return grid.get_text(i.index)[2]; // text
+  };
+  const colorValue = styleableSel.length > 0
+    ? (uniform(styleableSel.map(fillOf)) === '' ? -1 : fillOf(styleableSel[0]))
+    : colorIdx;
+  const outlineValue = grid && selRects.length > 0
+    ? (uniform(selRects.map((i) => grid.get_rect(i.index)[5])) === '' ? -1 : grid.get_rect(selRects[0].index)[5])
+    : outlineIdx;
 
   return (
     <DraggablePanel title="Tools" defaultPosition={{ x: 20, y: HEADER_HEIGHT + 20 }}>
@@ -142,12 +174,12 @@ export function ToolsPanel({
           />
         </div>
 
-        {tool === 'text' && (
+        {(tool === 'text' || selTexts.length > 0) && (
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">Text size</label>
             <ToggleGroup
               type="single"
-              value={String(textSize)}
+              value={textSizeValue}
               onValueChange={(val) => val && pickTextSize(Number(val))}
               variant="outline"
               className="flex-wrap"
@@ -159,7 +191,7 @@ export function ToolsPanel({
           </div>
         )}
 
-        {selectedItems.some((i) => i.type === 'text') && (
+        {(tool === 'text' || selTexts.length > 0) && (
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">Text align (drag the box to resize)</label>
             <div className="flex gap-1 mb-1">
@@ -175,12 +207,12 @@ export function ToolsPanel({
           </div>
         )}
 
-        {tool === 'line' && (
+        {(tool === 'line' || selLines.length > 0) && (
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">Line width</label>
             <ToggleGroup
               type="single"
-              value={String(lineWidth)}
+              value={lineWidthValue}
               onValueChange={(val) => val && pickLineWidth(Number(val))}
               variant="outline"
               className="flex-wrap"
@@ -192,15 +224,19 @@ export function ToolsPanel({
           </div>
         )}
 
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
-          <ColorRow activeIdx={colorIdx} onPick={pickColor} titleFor={(i, name) => `${i + 1}: ${name}`} />
-        </div>
+        {(selectedItems.length === 0 || styleableSel.length > 0) && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Color</label>
+            <ColorRow activeIdx={colorValue} onPick={pickColor} titleFor={(i, name) => `${i + 1}: ${name}`} />
+          </div>
+        )}
 
-        <div>
-          <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
-          <ColorRow activeIdx={outlineIdx} onPick={pickOutline} titleFor={(i, name) => (i === 6 ? 'No outline' : name)} />
-        </div>
+        {(tool === 'rect' || selRects.length > 0) && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
+            <ColorRow activeIdx={outlineValue} onPick={pickOutline} titleFor={(i, name) => (i === 6 ? 'No outline' : name)} />
+          </div>
+        )}
 
         <div className="flex gap-1">
           <Button

@@ -129,7 +129,13 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   },
 
   pickTextAlign: (halign, valign) => {
-    const { grid, selectedItems } = get();
+    const { grid, selectedItems, textEdit } = get();
+    // Text being typed: remember the pick so the commit carries it. (Alignment
+    // has no visible effect until the auto-fit box is resized, so no preview.)
+    if (textEdit) {
+      set({ textEdit: { ...textEdit, halign: halign ?? textEdit.halign, valign: valign ?? textEdit.valign } });
+      return;
+    }
     if (!grid || selectedItems.length === 0) return;
     const edits: Edit[] = [];
     for (const item of selectedItems) {
@@ -165,7 +171,7 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     if (get().textEdit) get().commitTextEdit();
     const { grid, colorIdx, textSize } = get();
     // The text frame's top-left is the clicked cell, so a 1-cell text fills it.
-    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '' }, selectedItems: [] });
+    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '', halign: 0, valign: 0 }, selectedItems: [] });
     if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '');
   },
 
@@ -195,8 +201,9 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     get().commitEdits([{
       kind: 'addText',
       idx: grid.get_text_count(),
-      // box 0/0 → WASM auto-fits the frame to the text; align defaults to top-left.
-      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, boxW: 0, boxH: 0, halign: 0, valign: 0, text: textEdit.text },
+      // box 0/0 → WASM auto-fits the frame to the text; align picked while
+      // typing takes effect once the box is resized.
+      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, boxW: 0, boxH: 0, halign: textEdit.halign, valign: textEdit.valign, text: textEdit.text },
     }]);
     grid.render();
   },
