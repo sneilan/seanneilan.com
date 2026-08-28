@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE, CELL_UNITS, LINE_STRIDE, color_for_idx};
+use crate::{GridCanvas, CELL_SIZE, CELL_UNITS, LINE_STRIDE, SQUARE_STRIDE, color_for_idx};
 
 /// Sub-grid lines (½/¼/⅛ boundaries) are drawn fainter than the whole-cell grid.
 const SUBLINE_COLOR: &str = "#e8e8e8";
@@ -32,20 +32,25 @@ impl GridCanvas {
         self.ctx.set_fill_style_str(&self.empty_color);
         self.ctx.fill_rect(0.0, 0.0, self.view_w, self.view_h);
 
-        // Filled cells (sparse; cull to the visible window). Each edge is
-        // rounded to a whole pixel — a cell's right edge and its neighbour's
-        // left edge round identically, so adjacent fine cells tile exactly.
-        // Fractional edges antialias into hairline seams at fine-unit pitch,
-        // which makes a solid 1× block look subdivided into ⅛ cells.
-        for ((row, col), color) in &self.cells {
-            if *col < c0 || *col > c1 || *row < r0 || *row > r1 {
+        // Drawn squares, in z-order (cull to the visible window). One record is
+        // one solid quad at its native size — nothing tiles, so there are no
+        // fine-pitch seams by construction. Edges are still rounded to whole
+        // pixels so neighbouring squares butt together exactly.
+        let mut i = 0;
+        while i + SQUARE_STRIDE <= self.squares.len() {
+            let r = self.squares[i];
+            let c = self.squares[i + 1];
+            let color = self.squares[i + 2] as u8;
+            let size = self.squares[i + 3];
+            i += SQUARE_STRIDE;
+            if c + size <= c0 || c > c1 || r + size <= r0 || r > r1 {
                 continue;
             }
-            self.ctx.set_fill_style_str(color_for_idx(*color));
-            let x0 = self.sx(*col as f64 * CELL_SIZE).round();
-            let y0 = self.sy(*row as f64 * CELL_SIZE).round();
-            let x1 = self.sx((*col + 1) as f64 * CELL_SIZE).round();
-            let y1 = self.sy((*row + 1) as f64 * CELL_SIZE).round();
+            self.ctx.set_fill_style_str(color_for_idx(color));
+            let x0 = self.sx(c as f64 * CELL_SIZE).round();
+            let y0 = self.sy(r as f64 * CELL_SIZE).round();
+            let x1 = self.sx((c + size) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((r + size) as f64 * CELL_SIZE).round();
             self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
         }
 
@@ -178,16 +183,15 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
-    /// Moving "ghost" of a cell, in its color, with an orange selected outline.
-    /// Does NOT clear the canvas, so callers render() once then layer previews.
+    /// Moving "ghost" of a square record at its native size, in its color, with
+    /// an orange selected outline. Does NOT clear the canvas, so callers
+    /// render() once then layer previews.
     #[wasm_bindgen]
-    pub fn preview_cell(&self, row: i32, col: i32, color: u8) {
-        // Same pixel-snapped edges as render()'s cell loop, so a dragged block
-        // of fine cells previews seamlessly too.
+    pub fn preview_square(&self, row: i32, col: i32, size: i32, color: u8) {
         let x0 = self.sx(col as f64 * CELL_SIZE).round();
         let y0 = self.sy(row as f64 * CELL_SIZE).round();
-        let x1 = self.sx((col + 1) as f64 * CELL_SIZE).round();
-        let y1 = self.sy((row + 1) as f64 * CELL_SIZE).round();
+        let x1 = self.sx((col + size) as f64 * CELL_SIZE).round();
+        let y1 = self.sy((row + size) as f64 * CELL_SIZE).round();
         self.ctx.set_global_alpha(0.7);
         self.ctx.set_fill_style_str(color_for_idx(color));
         self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
@@ -195,41 +199,6 @@ impl GridCanvas {
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(2.0);
         self.ctx.stroke_rect(x0 + 1.0, y0 + 1.0, (x1 - x0) - 2.0, (y1 - y0) - 2.0);
-        self.ctx.set_line_width(1.0);
-    }
-
-    /// Moving "ghosts" of a set of cells: translucent per-cell fills plus ONE
-    /// merged orange outline around the set (only edges not shared within it),
-    /// so a dragged 1x block previews as one square, not an 8x8 lattice.
-    /// `cells` is flat [r, c, color, ...]. Does NOT clear.
-    #[wasm_bindgen]
-    pub fn preview_cells(&self, cells: &[i32]) {
-        let set: std::collections::HashSet<(i32, i32)> =
-            cells.chunks_exact(3).map(|p| (p[0], p[1])).collect();
-        self.ctx.set_global_alpha(0.7);
-        for p in cells.chunks_exact(3) {
-            let x0 = self.sx(p[1] as f64 * CELL_SIZE).round();
-            let y0 = self.sy(p[0] as f64 * CELL_SIZE).round();
-            let x1 = self.sx((p[1] + 1) as f64 * CELL_SIZE).round();
-            let y1 = self.sy((p[0] + 1) as f64 * CELL_SIZE).round();
-            self.ctx.set_fill_style_str(color_for_idx(p[2] as u8));
-            self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
-        }
-        self.ctx.set_global_alpha(1.0);
-        self.ctx.set_stroke_style_str("#ff8800");
-        self.ctx.set_line_width(2.0);
-        self.ctx.begin_path();
-        for &(r, c) in &set {
-            let x0 = self.sx(c as f64 * CELL_SIZE).round();
-            let y0 = self.sy(r as f64 * CELL_SIZE).round();
-            let x1 = self.sx((c + 1) as f64 * CELL_SIZE).round();
-            let y1 = self.sy((r + 1) as f64 * CELL_SIZE).round();
-            if !set.contains(&(r - 1, c)) { self.ctx.move_to(x0, y0 + 1.0); self.ctx.line_to(x1, y0 + 1.0); }
-            if !set.contains(&(r + 1, c)) { self.ctx.move_to(x0, y1 - 1.0); self.ctx.line_to(x1, y1 - 1.0); }
-            if !set.contains(&(r, c - 1)) { self.ctx.move_to(x0 + 1.0, y0); self.ctx.line_to(x0 + 1.0, y1); }
-            if !set.contains(&(r, c + 1)) { self.ctx.move_to(x1 - 1.0, y0); self.ctx.line_to(x1 - 1.0, y1); }
-        }
-        self.ctx.stroke();
         self.ctx.set_line_width(1.0);
     }
 
@@ -274,14 +243,6 @@ impl GridCanvas {
     }
 
     #[wasm_bindgen]
-    pub fn render_with_selection(&self, row: i32, col: i32) {
-        self.render();
-        if self.cells.contains_key(&(row, col)) {
-            self.highlight_cell(row, col);
-        }
-    }
-
-    #[wasm_bindgen]
     pub fn render_with_selection_box(&self, r1: i32, c1: i32, r2: i32, c2: i32) {
         self.render();
         let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
@@ -294,49 +255,30 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
+    /// Highlight one square record: one orange outline around the whole square
+    /// (a drawn square is one atomic unit, like a selected rect).
     #[wasm_bindgen]
-    pub fn highlight_cell(&self, row: i32, col: i32) {
-        let cp = self.cell_px();
-        let x = self.sx(col as f64 * CELL_SIZE);
-        let y = self.sy(row as f64 * CELL_SIZE);
-        self.ctx.set_stroke_style_str("#ff8800");
-        self.ctx.set_line_width(3.0);
-        self.ctx.stroke_rect(x + 1.5, y + 1.5, cp - 3.0, cp - 3.0);
-        self.ctx.set_line_width(1.0);
-    }
-
-    /// Highlight a set of selected fine cells as one merged region: stroke only
-    /// the edges NOT shared with another cell in the set. A 1x square (8x8 fine
-    /// cells) reads as one selected square, not an 8x8 lattice of tiny outlines.
-    /// `cells` is flat [r, c, r, c, ...].
-    #[wasm_bindgen]
-    pub fn highlight_cells(&self, cells: &[i32]) {
-        let set: std::collections::HashSet<(i32, i32)> =
-            cells.chunks_exact(2).map(|p| (p[0], p[1])).collect();
-        self.ctx.set_stroke_style_str("#ff8800");
-        self.ctx.set_line_width(3.0);
-        self.ctx.begin_path();
-        for &(r, c) in &set {
-            // Same pixel-snapped edges as render()'s cell loop, so the outline
-            // hugs the fill exactly; each exposed edge is inset 1.5px inward so
-            // the 3px stroke sits inside the region (like highlight_cell).
+    pub fn highlight_square(&self, idx: usize) {
+        let start = idx * SQUARE_STRIDE;
+        if start + SQUARE_STRIDE <= self.squares.len() {
+            let r = self.squares[start];
+            let c = self.squares[start + 1];
+            let size = self.squares[start + 3];
             let x0 = self.sx(c as f64 * CELL_SIZE).round();
             let y0 = self.sy(r as f64 * CELL_SIZE).round();
-            let x1 = self.sx((c + 1) as f64 * CELL_SIZE).round();
-            let y1 = self.sy((r + 1) as f64 * CELL_SIZE).round();
-            if !set.contains(&(r - 1, c)) { self.ctx.move_to(x0, y0 + 1.5); self.ctx.line_to(x1, y0 + 1.5); }
-            if !set.contains(&(r + 1, c)) { self.ctx.move_to(x0, y1 - 1.5); self.ctx.line_to(x1, y1 - 1.5); }
-            if !set.contains(&(r, c - 1)) { self.ctx.move_to(x0 + 1.5, y0); self.ctx.line_to(x0 + 1.5, y1); }
-            if !set.contains(&(r, c + 1)) { self.ctx.move_to(x1 - 1.5, y0); self.ctx.line_to(x1 - 1.5, y1); }
+            let x1 = self.sx((c + size) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((r + size) as f64 * CELL_SIZE).round();
+            self.ctx.set_stroke_style_str("#ff8800");
+            self.ctx.set_line_width(3.0);
+            self.ctx.stroke_rect(x0 + 1.5, y0 + 1.5, (x1 - x0) - 3.0, (y1 - y0) - 3.0);
+            self.ctx.set_line_width(1.0);
         }
-        self.ctx.stroke();
-        self.ctx.set_line_width(1.0);
     }
 
     #[wasm_bindgen]
     pub fn highlight_line(&self, idx: usize) {
-        let start = idx * 5;
-        if start + 5 <= self.drawn_lines.len() {
+        let start = idx * LINE_STRIDE;
+        if start + LINE_STRIDE <= self.drawn_lines.len() {
             self.ctx.set_stroke_style_str("#ff8800");
             self.ctx.set_line_width(5.0);
             self.ctx.begin_path();

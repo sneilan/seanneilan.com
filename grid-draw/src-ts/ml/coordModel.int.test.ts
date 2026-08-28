@@ -49,7 +49,9 @@ describe('coordModel end-to-end (headless)', () => {
     // Every predicted cell should be shifted +2 columns from its input rel coord.
     const cols = out.cells.map((c) => c[1]).sort((a, b) => a - b);
     expect(cols).toEqual([2, 3]); // input cols {0,1} -> {2,3}
-    expect(out.cells.every((c) => c.length === 3)).toBe(true);
+    // Each predicted square is a 4-tuple [r, c, color, size]; size passes through
+    // from the input (the legacy 3-tuple inputs here default to size 1).
+    expect(out.cells.every((c) => c.length === 4)).toBe(true);
     // Predictions are fine-unit coordinates; without the `sub` stamp,
     // placeDesign scales them up 8x (a 1x square became an 8x8-cell cube).
     expect(out.sub).toBe(8);

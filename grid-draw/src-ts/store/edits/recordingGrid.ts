@@ -11,9 +11,11 @@ import { applyEdit, invertEdit } from './apply';
 export function makeRecordingGrid() {
   const calls: Array<[string, ...number[]]> = [];
   const g: Partial<GridCanvasWasm> = {
-    set_cell: (r, c, v) => calls.push(['set_cell', r, c, v ? 1 : 0]),
+    insert_square: (idx, r, c, color, size) => calls.push(['insert_square', idx, r, c, color, size]),
+    delete_square: (idx) => calls.push(['delete_square', idx]),
+    set_square_color: (idx, color) => calls.push(['set_square_color', idx, color]),
+    move_square: (idx, dr, dc) => calls.push(['move_square', idx, dr, dc]),
     set_draw_color: (idx) => calls.push(['set_draw_color', idx]),
-    set_cell_color: (r, c, color) => calls.push(['set_cell_color', r, c, color]),
     set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
     set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
     set_rect_outline: (idx, color) => calls.push(['set_rect_outline', idx, color]),
@@ -41,6 +43,7 @@ export function makeRecordingGrid() {
       ...g,
       get_line_count: () => UNBOUNDED,
       get_rect_count: () => UNBOUNDED,
+      get_square_count: () => UNBOUNDED,
     },
     calls,
   };

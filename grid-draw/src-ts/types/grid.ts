@@ -21,17 +21,23 @@ export type GridCanvasWasm = {
   rects_consistent(): boolean;
   get_cell_size(): number;
 
-  // Cell operations
+  // Square records: one atomic [r, c, color, size] record per drawn square at
+  // its native resolution. Index-stable like lines/rects; insertion = z-order.
+  insert_square(idx: number, r: number, c: number, color: number, size: number): void;
+  add_square(r: number, c: number, color: number, size: number): number;
+  delete_square(idx: number): void;
+  get_square(idx: number): Int32Array; // [r, c, color, size]
+  get_square_count(): number;
+  get_squares(): Int32Array; // flat [r, c, color, size, ...] in z-order
+  set_square_color(idx: number, color: number): void;
+  move_square(idx: number, dr: number, dc: number): void;
+  square_at(row: number, col: number): number; // topmost covering index or -1
+  squares_in_box(r1: number, c1: number, r2: number, c2: number): Uint32Array;
+  // Coverage queries at a fine coordinate (topmost square wins).
   get_cell(row: number, col: number): boolean;
   get_cell_color(row: number, col: number): number;
-  set_cell(row: number, col: number, value: boolean): void;
-  set_cell_color(row: number, col: number, color: number): void;
   set_draw_color(idx: number): void;
   set_outline_color(idx: number): void;
-  move_cell(from_row: number, from_col: number, to_row: number, to_col: number): void;
-  delete_cell(row: number, col: number): void;
-  get_cell_count(): number;
-  get_filled_cells(): Int32Array; // flat [row, col, color, ...] of all filled cells
 
   // Drawing tools
   render_with_line(r1: number, c1: number, r2: number, c2: number): void;
@@ -40,11 +46,8 @@ export type GridCanvasWasm = {
   draw_rect(r1: number, c1: number, r2: number, c2: number): void;
 
   // Selection
-  render_with_selection(row: number, col: number): void;
   render_with_selection_box(r1: number, c1: number, r2: number, c2: number): void;
-  highlight_cell(row: number, col: number): void;
-  /** Merged-region highlight for a cell set; flat [r, c, r, c, ...]. */
-  highlight_cells(cells: Int32Array): void;
+  highlight_square(idx: number): void;
   draw_selection_box(r1: number, c1: number, r2: number, c2: number): void;
 
   // Shape selection (lines and rects)
@@ -65,9 +68,7 @@ export type GridCanvasWasm = {
   draw_handle(r: number, c: number): void;
   // Rotate affordance: round handle on a stalk above the selection's top edge.
   draw_rotate_handle(handle_r: number, handle_c: number, stalk_r: number, stalk_c: number): void;
-  preview_cell(row: number, col: number, color: number): void;
-  /** Merged-outline drag ghost for a cell set; flat [r, c, color, ...]. */
-  preview_cells(cells: Int32Array): void;
+  preview_square(row: number, col: number, size: number, color: number): void;
   preview_line(r1: number, c1: number, r2: number, c2: number, color: number, width_x10: number): void;
   preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
   set_line_color(idx: number, color: number): void;

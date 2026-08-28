@@ -19,10 +19,13 @@ import { stubWasm } from './wasmStub';
  * cancel restoring the previous selection, the dragStartedOnEmpty
  * deselect-on-release rule, hitTestShapes priority order, selectAll across all
  * item kinds, mixed-type selection bounds, and signature order-independence.
+ *
+ * A drawn square is ONE atomic record [r, c, color, size] (size in fine units),
+ * index-addressed like every other shape — so a selected 'cell' is { type:
+ * 'cell', index } and box selection picks WHOLE squares that touch the box.
  */
-
 type MockOpts = {
-  cells?: Array<[number, number, number?]>; // [row, col, color?]
+  squares?: Array<[number, number, number?, number?]>; // [row, col, color?, size?]
   lines?: number[][]; // [r1, c1, r2, c2, color, width]
   rects?: number[][]; // [r1, c1, r2, c2, fill, outline]
   texts?: number[][]; // [r, c, color, boxW, boxH, halign, valign]
@@ -43,8 +46,19 @@ function bboxOverlaps(
 }
 
 function makeGrid(opts: MockOpts = {}) {
-  const cellColor = new Map<string, number>();
-  for (const [r, c, color] of opts.cells ?? []) cellColor.set(`${r},${c}`, color ?? 0);
+  // Square records tracked in-memory as a flat [r, c, color, size, ...] buffer,
+  // z-ordered (topmost = last), exactly like testGrid.ts / the real grid.
+  const STRIDE = 4;
+  const squares: number[] = (opts.squares ?? []).flatMap(([r, c, color, size]) => [r, c, color ?? 0, size ?? 1]);
+  const squareCount = () => squares.length / STRIDE;
+  const squareAt = (row: number, col: number) => {
+    for (let i = squareCount() - 1; i >= 0; i--) {
+      const s = i * STRIDE;
+      const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+      if (row >= r && row < r + size && col >= c && col < c + size) return i;
+    }
+    return -1;
+  };
   const lines = opts.lines ?? [];
   const rects = opts.rects ?? [];
   const texts = opts.texts ?? [];
@@ -53,16 +67,25 @@ function makeGrid(opts: MockOpts = {}) {
   const cellSize = opts.cellSize ?? 16;
 
   const g: Partial<GridCanvasWasm> = {
-    // Cells
-    get_cell: (r, c) => cellColor.has(`${r},${c}`),
-    get_cell_color: (r, c) => cellColor.get(`${r},${c}`) ?? 0,
-    get_filled_cells: () => {
+    // Square records + coverage queries.
+    get_square: (idx) => new Int32Array(squares.slice(idx * STRIDE, idx * STRIDE + STRIDE)),
+    get_square_count: squareCount,
+    square_at: squareAt,
+    squares_in_box: (r1, c1, r2, c2) => {
+      const [rLo, rHi] = [Math.min(r1, r2), Math.max(r1, r2)];
+      const [cLo, cHi] = [Math.min(c1, c2), Math.max(c1, c2)];
       const out: number[] = [];
-      for (const [k, color] of cellColor) {
-        const [r, c] = k.split(',').map(Number);
-        out.push(r, c, color);
+      for (let i = 0; i < squareCount(); i++) {
+        const s = i * STRIDE;
+        const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+        if (r <= rHi && r + size - 1 >= rLo && c <= cHi && c + size - 1 >= cLo) out.push(i);
       }
-      return new Int32Array(out);
+      return new Uint32Array(out);
+    },
+    get_cell: (r, c) => squareAt(r, c) >= 0,
+    get_cell_color: (r, c) => {
+      const idx = squareAt(r, c);
+      return idx >= 0 ? squares[idx * STRIDE + 2] : 0;
     },
     get_cell_size: () => cellSize,
 
@@ -105,11 +128,11 @@ function makeGrid(opts: MockOpts = {}) {
     hit_test_rect: () => hit.rect ?? -1,
     hit_test_image: () => hit.image ?? -1,
 
-    // Rendering / highlight: no-ops (draw_rotate_handle intentionally absent so
-    // renderSelection skips the rotate-handle branch).
+    // Rendering / highlight: no-ops (draw_rotate_handle from the stub is a no-op,
+    // so renderSelection's rotate-handle branch runs harmlessly).
     render: () => {},
     render_with_selection_box: () => {},
-    highlight_cell: () => {},
+    highlight_square: () => {},
     highlight_line: () => {},
     highlight_rect: () => {},
     highlight_text: () => {},
@@ -139,36 +162,36 @@ function resetStore(grid: GridCanvasWasm | null = null) {
 describe('selection helpers (gridHelpers)', () => {
   it('selectionSignature is order-independent and stable', () => {
     const a: SelectedItem[] = [
-      { type: 'cell', row: 1, col: 2 },
+      { type: 'cell', index: 2 },
       { type: 'line', index: 3 },
       { type: 'rect', index: 0 },
     ];
     const b: SelectedItem[] = [
       { type: 'rect', index: 0 },
-      { type: 'cell', row: 1, col: 2 },
+      { type: 'cell', index: 2 },
       { type: 'line', index: 3 },
     ];
     // Same set, different insertion order → identical signature.
     expect(selectionSignature(a)).toBe(selectionSignature(b));
     // A genuinely different selection → different signature.
-    const c: SelectedItem[] = [{ type: 'cell', row: 1, col: 2 }];
+    const c: SelectedItem[] = [{ type: 'cell', index: 2 }];
     expect(selectionSignature(c)).not.toBe(selectionSignature(a));
   });
 
   it('itemsEqual / isItemSelected distinguish type and identity', () => {
     // Same index but different kind must not be equal.
     expect(itemsEqual({ type: 'line', index: 0 }, { type: 'rect', index: 0 })).toBe(false);
-    expect(itemsEqual({ type: 'cell', row: 2, col: 3 }, { type: 'cell', row: 2, col: 3 })).toBe(true);
-    expect(itemsEqual({ type: 'cell', row: 2, col: 3 }, { type: 'cell', row: 2, col: 4 })).toBe(false);
+    expect(itemsEqual({ type: 'cell', index: 5 }, { type: 'cell', index: 5 })).toBe(true);
+    expect(itemsEqual({ type: 'cell', index: 5 }, { type: 'cell', index: 6 })).toBe(false);
 
-    const sel: SelectedItem[] = [{ type: 'image', index: 1 }, { type: 'cell', row: 0, col: 0 }];
+    const sel: SelectedItem[] = [{ type: 'image', index: 1 }, { type: 'cell', index: 0 }];
     expect(isItemSelected({ type: 'image', index: 1 }, sel)).toBe(true);
     expect(isItemSelected({ type: 'image', index: 2 }, sel)).toBe(false);
   });
 
   it('add/removeItemFromSelectionArray dedupe and remove without mutating', () => {
-    const sel: SelectedItem[] = [{ type: 'cell', row: 0, col: 0 }];
-    const added = addItemToSelectionArray({ type: 'cell', row: 0, col: 0 }, sel);
+    const sel: SelectedItem[] = [{ type: 'cell', index: 0 }];
+    const added = addItemToSelectionArray({ type: 'cell', index: 0 }, sel);
     // Duplicate is a no-op (returns the same array reference, unchanged length).
     expect(added).toHaveLength(1);
 
@@ -176,19 +199,21 @@ describe('selection helpers (gridHelpers)', () => {
     expect(added2).toHaveLength(2);
     expect(sel).toHaveLength(1); // original untouched
 
-    const removed = removeItemFromSelectionArray({ type: 'cell', row: 0, col: 0 }, added2);
+    const removed = removeItemFromSelectionArray({ type: 'cell', index: 0 }, added2);
     expect(removed).toEqual([{ type: 'line', index: 4 }]);
   });
 
-  it('getSelectionBoundsAll spans mixed item kinds (text uses boxW/boxH, image uses box)', () => {
+  it('getSelectionBoundsAll spans mixed item kinds (square block, text boxW/boxH, image box)', () => {
     const grid = makeGrid({
+      // one eighth square (size 1) at (1,1) — covers exactly fine cell (1,1).
+      squares: [[1, 1, 0, 1]],
       // text frame: top-left (2,3), boxW=4, boxH=5 → extends to (7,7).
       texts: [[2, 3, 0, 4, 5, 0, 0]],
       // image box rows 10..12, cols 10..15.
       images: [[10, 10, 12, 15]],
     });
     const items: SelectedItem[] = [
-      { type: 'cell', row: 1, col: 1 },
+      { type: 'cell', index: 0 },
       { type: 'text', index: 0 },
       { type: 'image', index: 0 },
     ];
@@ -215,10 +240,10 @@ describe('box selection (additive / replace / cancel)', () => {
   });
 
   it('additive box selection merges box items with the previous selection', () => {
-    // A pre-selected rect (idx 0, far from the box) plus a filled cell in the box.
+    // A pre-selected rect (idx 0, far from the box) plus a square inside the box.
     const grid = makeGrid({
       rects: [[50, 50, 52, 52, 0, 6]],
-      cells: [[2, 2, 0]],
+      squares: [[2, 2, 0, 1]],
     });
     resetStore(grid);
     useGridStore.setState({ selectedItems: [{ type: 'rect', index: 0 }] });
@@ -230,7 +255,7 @@ describe('box selection (additive / replace / cancel)', () => {
 
     const sel = useGridStore.getState().selectedItems;
     expect(sel).toContainEqual({ type: 'rect', index: 0 });
-    expect(sel).toContainEqual({ type: 'cell', row: 2, col: 2 });
+    expect(sel).toContainEqual({ type: 'cell', index: 0 });
     expect(sel).toHaveLength(2);
     // Transient box state is fully cleared on finish.
     expect(useGridStore.getState().selectMode).toBeNull();
@@ -240,7 +265,7 @@ describe('box selection (additive / replace / cancel)', () => {
   it('non-additive box selection returns only the box contents', () => {
     const grid = makeGrid({
       rects: [[50, 50, 52, 52, 0, 6]], // pre-selected, but outside the box
-      cells: [[3, 4, 0]],
+      squares: [[3, 4, 0, 1]],
     });
     resetStore(grid);
     useGridStore.setState({ selectedItems: [{ type: 'rect', index: 0 }] });
@@ -248,12 +273,12 @@ describe('box selection (additive / replace / cancel)', () => {
     useGridStore.getState().startBoxSelection({ row: 3, col: 4 }, false);
     useGridStore.getState().finishBoxSelection({ row: 3, col: 4 });
 
-    expect(useGridStore.getState().selectedItems).toEqual([{ type: 'cell', row: 3, col: 4 }]);
+    expect(useGridStore.getState().selectedItems).toEqual([{ type: 'cell', index: 0 }]);
   });
 
   it('finishBoxSelection collects every intersecting item kind', () => {
     const grid = makeGrid({
-      cells: [[1, 1, 0]],
+      squares: [[1, 1, 0, 1]],
       lines: [[0, 0, 3, 3, 0, 10]],
       rects: [[0, 0, 2, 2, 0, 6]],
       texts: [[1, 1, 0, 2, 2, 0, 0]],
@@ -269,7 +294,7 @@ describe('box selection (additive / replace / cancel)', () => {
   });
 
   it('cancelBoxSelection restores the pre-drag (additive) selection', () => {
-    const grid = makeGrid({ cells: [[5, 5, 0]] });
+    const grid = makeGrid({ squares: [[5, 5, 0, 1]] });
     resetStore(grid);
     const original: SelectedItem[] = [{ type: 'rect', index: 0 }];
     useGridStore.setState({ selectedItems: original });
@@ -288,9 +313,9 @@ describe('drag-select zero-movement release (dragStartedOnEmpty)', () => {
   beforeEach(() => resetStore());
 
   it('pressing empty space inside the selection and releasing without moving deselects', () => {
-    const grid = makeGrid({ cells: [[0, 0, 0]] });
+    const grid = makeGrid({ squares: [[0, 0, 0, 1]] });
     resetStore(grid);
-    useGridStore.setState({ selectedItems: [{ type: 'cell', row: 0, col: 0 }] });
+    useGridStore.setState({ selectedItems: [{ type: 'cell', index: 0 }] });
 
     useGridStore.getState().startDragSelection({ row: 0, col: 0 }, true); // onEmpty = true
     useGridStore.getState().finishDragSelection({ row: 0, col: 0 }); // no movement
@@ -301,9 +326,9 @@ describe('drag-select zero-movement release (dragStartedOnEmpty)', () => {
   });
 
   it('pressing on a shape and releasing without moving keeps the selection', () => {
-    const grid = makeGrid({ cells: [[0, 0, 0]] });
+    const grid = makeGrid({ squares: [[0, 0, 0, 1]] });
     resetStore(grid);
-    const sel: SelectedItem[] = [{ type: 'cell', row: 0, col: 0 }];
+    const sel: SelectedItem[] = [{ type: 'cell', index: 0 }];
     useGridStore.setState({ selectedItems: sel });
 
     useGridStore.getState().startDragSelection({ row: 0, col: 0 }, false); // onEmpty = false
@@ -318,10 +343,10 @@ describe('hitTestShapes priority order', () => {
   beforeEach(() => resetStore());
 
   it('prefers line > text > rect > image > cell at the same point', () => {
-    // All four shape hit-tests report a hit AND a cell is filled under the point.
+    // All four shape hit-tests report a hit AND a square covers the point.
     // cellSize 16, point (8,8) → row 0, col 0.
     const base: MockOpts = {
-      cells: [[0, 0, 0]],
+      squares: [[0, 0, 0, 1]],
       hit: { line: 0, text: 1, rect: 2, image: 3 },
     };
 
@@ -338,7 +363,7 @@ describe('hitTestShapes priority order', () => {
     expect(useGridStore.getState().hitTestShapes(8, 8)).toEqual({ type: 'image', index: 3 });
 
     resetStore(makeGrid({ ...base, hit: {} }));
-    expect(useGridStore.getState().hitTestShapes(8, 8)).toEqual({ type: 'cell', row: 0, col: 0 });
+    expect(useGridStore.getState().hitTestShapes(8, 8)).toEqual({ type: 'cell', index: 0 });
   });
 
   it('returns null when nothing is hit', () => {
@@ -352,7 +377,7 @@ describe('selectAll', () => {
 
   it('switches to the select tool and enumerates every item kind', () => {
     const grid = makeGrid({
-      cells: [[0, 0, 0], [1, 2, 3]],
+      squares: [[0, 0, 0, 1], [1, 2, 3, 1]],
       lines: [[0, 0, 1, 1, 0, 10]],
       rects: [[0, 0, 2, 2, 0, 6]],
       texts: [[0, 0, 0, 1, 1, 0, 0]],

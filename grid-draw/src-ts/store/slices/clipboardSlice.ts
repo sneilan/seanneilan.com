@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { getSelectionOrigin, isSelectedType, readImage, readLine, readRect, readText } from '../gridHelpers';
+import { getSelectionOrigin, isSelectedType, readImage, readLine, readRect, readSquare, readText } from '../gridHelpers';
 import type {
   ClipboardCell,
   ClipboardImage,
@@ -28,10 +28,12 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
 
     for (const item of selectedItems) {
       if (item.type === 'cell') {
+        const s = grid.get_square(item.index); // [r, c, color, size]
         cells.push({
-          relRow: item.row - origin.minRow,
-          relCol: item.col - origin.minCol,
-          color: grid.get_cell_color(item.row, item.col),
+          relRow: s[0] - origin.minRow,
+          relCol: s[1] - origin.minCol,
+          color: s[2],
+          size: s[3],
         });
       } else if (item.type === 'line') {
         const lineData = grid.get_line(item.index);
@@ -101,25 +103,27 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
       col: clipboard.originCol + PASTE_OFFSET,
     };
 
-    // Build one batch so a paste is a single undo step. New lines/rects append,
+    // Build one batch so a paste is a single undo step. New shapes append,
     // so their index is the current count plus however many we've added so far.
     const edits: Edit[] = [];
+    let squareIdx = grid.get_square_count();
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
     let imageIdx = grid.get_image_count();
 
-    // Paste cells. Infinite canvas: any coordinate is valid (incl. negative).
+    // Paste squares (atomic records; they stack over whatever is underneath).
+    // Infinite canvas: any coordinate is valid (incl. negative).
     for (const cell of clipboard.cells) {
-      const newRow = anchor.row + cell.relRow;
-      const newCol = anchor.col + cell.relCol;
       edits.push({
-        kind: 'setCellState',
-        row: newRow, col: newCol,
-        from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
-        to: { filled: true, color: cell.color },
+        kind: 'addSquare', idx: squareIdx,
+        square: {
+          r: anchor.row + cell.relRow, c: anchor.col + cell.relCol,
+          color: cell.color, size: cell.size ?? 1,
+        },
       });
-      newSelected.push({ type: 'cell', row: newRow, col: newCol });
+      newSelected.push({ type: 'cell', index: squareIdx });
+      squareIdx++;
     }
 
     // Paste lines
@@ -178,8 +182,13 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
     if (!grid || selectedItems.length === 0) return;
 
     // Build one batch. Capture each shape's data BEFORE any deletion so undo can
-    // re-insert it. Lines/rects are deleted high-index-first so earlier indices
+    // re-insert it. Every kind is deleted high-index-first so earlier indices
     // stay valid; the batch's reverse-order inverse re-inserts low-index-first.
+    const squareIndices = selectedItems
+      .filter(isSelectedType('cell'))
+      .map(i => i.index)
+      .sort((a, b) => b - a);
+
     const lineIndices = selectedItems
       .filter(isSelectedType('line'))
       .map(i => i.index)
@@ -202,16 +211,8 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
 
     const edits: Edit[] = [];
 
-    for (const item of selectedItems) {
-      if (item.type === 'cell') {
-        const color = grid.get_cell_color(item.row, item.col);
-        edits.push({
-          kind: 'setCellState',
-          row: item.row, col: item.col,
-          from: { filled: true, color },
-          to: { filled: false, color },
-        });
-      }
+    for (const idx of squareIndices) {
+      edits.push({ kind: 'deleteSquare', idx, square: readSquare(grid, idx) });
     }
     for (const idx of lineIndices) {
       edits.push({ kind: 'deleteLine', idx, line: readLine(grid, idx) });

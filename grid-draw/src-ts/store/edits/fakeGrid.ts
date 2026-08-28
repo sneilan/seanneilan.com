@@ -13,6 +13,7 @@ import type { GridCanvasWasm } from '../../types/grid';
  */
 const LINE_STRIDE = 6;
 const RECT_STRIDE = 6;
+const SQUARE_STRIDE = 4;
 const TRANSPARENT = 6;
 
 type FakeImage = { r1: number; c1: number; r2: number; c2: number; url: string };
@@ -30,46 +31,76 @@ export class FakeGrid implements GridCanvasWasm {
   lines: number[] = [];
   rects: number[] = [];
   images: FakeImage[] = [];
-  // Filled cells keyed "r,c" → color index. Absence = empty.
-  cells = new Map<string, number>();
-  private drawColor = 0;
-  private rows: number;
-  private cols: number;
+  // Square records, flat [r, c, color, size, ...] — insertion order = z-order.
+  squares: number[] = [];
 
-  constructor(rows = 32, cols = 32) {
-    this.rows = rows;
-    this.cols = cols;
-  }
-
-  /** Stable serialization of the whole document, for equality assertions. */
+  /** Stable serialization of the whole document, for equality assertions.
+   *  Squares are compared IN ORDER — z-order is part of document identity. */
   snapshot(): string {
-    const cells = [...this.cells.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return JSON.stringify({ lines: this.lines, rects: this.rects, images: this.images, cells });
+    return JSON.stringify({ lines: this.lines, rects: this.rects, images: this.images, squares: this.squares });
   }
 
   // --- reads ---------------------------------------------------------------
-  get_rows() { return this.rows; }
-  get_cols() { return this.cols; }
-  get_cell_size() { return 16; }
+  get_cell_size() { return 2; }
   get_line_count() { return this.lines.length / LINE_STRIDE; }
   get_rect_count() { return this.rects.length / RECT_STRIDE; }
   get_line(idx: number) { return new Int32Array(this.lines.slice(idx * LINE_STRIDE, idx * LINE_STRIDE + LINE_STRIDE)); }
   get_rect(idx: number) { return new Int32Array(this.rects.slice(idx * RECT_STRIDE, idx * RECT_STRIDE + RECT_STRIDE)); }
-  get_cell(row: number, col: number) { return this.cells.has(`${row},${col}`); }
-  get_cell_color(row: number, col: number) { return this.cells.get(`${row},${col}`) ?? 0; }
 
-  // --- cell mutators (mirror cells.rs) -------------------------------------
-  set_draw_color(idx: number) { this.drawColor = idx; }
-  set_cell(row: number, col: number, value: boolean) {
-    if (row >= this.rows || col >= this.cols) return;
-    if (value && this.drawColor < TRANSPARENT) this.cells.set(`${row},${col}`, this.drawColor);
-    else this.cells.delete(`${row},${col}`);
+  // --- square mutators (mirror cells.rs) -----------------------------------
+  set_draw_color() {}
+  insert_square(idx: number, r: number, c: number, color: number, size: number) {
+    const at = Math.min(idx, this.get_square_count()) * SQUARE_STRIDE;
+    this.squares.splice(at, 0, r, c, color, Math.max(1, size));
   }
-  set_cell_color(row: number, col: number, color: number) {
-    const k = `${row},${col}`;
-    if (this.cells.has(k) && color < TRANSPARENT) this.cells.set(k, color);
+  add_square(r: number, c: number, color: number, size: number) {
+    const idx = this.get_square_count();
+    this.insert_square(idx, r, c, color, size);
+    return idx;
   }
-  delete_cell(row: number, col: number) { this.cells.delete(`${row},${col}`); }
+  delete_square(idx: number) {
+    const s = idx * SQUARE_STRIDE;
+    if (s + SQUARE_STRIDE <= this.squares.length) this.squares.splice(s, SQUARE_STRIDE);
+  }
+  get_square(idx: number) {
+    return new Int32Array(this.squares.slice(idx * SQUARE_STRIDE, idx * SQUARE_STRIDE + SQUARE_STRIDE));
+  }
+  get_square_count() { return this.squares.length / SQUARE_STRIDE; }
+  get_squares() { return new Int32Array(this.squares); }
+  set_square_color(idx: number, color: number) {
+    const s = idx * SQUARE_STRIDE;
+    if (color < TRANSPARENT && s + SQUARE_STRIDE <= this.squares.length) this.squares[s + 2] = color;
+  }
+  move_square(idx: number, dr: number, dc: number) {
+    const s = idx * SQUARE_STRIDE;
+    if (s + SQUARE_STRIDE > this.squares.length) return;
+    this.squares[s] += dr;
+    this.squares[s + 1] += dc;
+  }
+  square_at(row: number, col: number) {
+    for (let i = this.get_square_count() - 1; i >= 0; i--) {
+      const s = i * SQUARE_STRIDE;
+      const [r, c, , size] = [this.squares[s], this.squares[s + 1], 0, this.squares[s + 3]];
+      if (row >= r && row < r + size && col >= c && col < c + size) return i;
+    }
+    return -1;
+  }
+  squares_in_box(r1: number, c1: number, r2: number, c2: number) {
+    const [rLo, rHi] = [Math.min(r1, r2), Math.max(r1, r2)];
+    const [cLo, cHi] = [Math.min(c1, c2), Math.max(c1, c2)];
+    const out: number[] = [];
+    for (let i = 0; i < this.get_square_count(); i++) {
+      const s = i * SQUARE_STRIDE;
+      const [r, c, size] = [this.squares[s], this.squares[s + 1], this.squares[s + 3]];
+      if (r <= rHi && r + size - 1 >= rLo && c <= cHi && c + size - 1 >= cLo) out.push(i);
+    }
+    return new Uint32Array(out);
+  }
+  get_cell(row: number, col: number) { return this.square_at(row, col) >= 0; }
+  get_cell_color(row: number, col: number) {
+    const idx = this.square_at(row, col);
+    return idx >= 0 ? this.squares[idx * SQUARE_STRIDE + 2] : 0;
+  }
 
   // --- shape mutators (mirror shapes.rs) -----------------------------------
   set_line_color(idx: number, color: number) {
@@ -193,8 +224,7 @@ export class FakeGrid implements GridCanvasWasm {
 
   // --- no-op rendering / selection surface ---------------------------------
   render() {}
-  highlight_cell() {}
-  highlight_cells() {}
+  highlight_square() {}
   highlight_line() {}
   highlight_rect() {}
   highlight_image() {}
@@ -221,27 +251,15 @@ export class FakeGrid implements GridCanvasWasm {
   get_zoom(): number { return 1; }
   get_schema_version(): number { return 0; }
   rects_consistent(): boolean { return true; }
-  move_cell(): void {}
-  get_cell_count(): number { return this.cells.size; }
-  get_filled_cells(): Int32Array {
-    const out: number[] = [];
-    for (const [k, color] of this.cells) {
-      const [r, c] = k.split(',').map(Number);
-      out.push(r, c, color);
-    }
-    return new Int32Array(out);
-  }
   render_with_line(): void {}
   draw_line(): void {}
   render_with_rect(): void {}
   draw_rect(): void {}
-  render_with_selection(): void {}
   render_with_selection_box(): void {}
   hit_test_line(): number { return -1; }
   hit_test_rect(): number { return -1; }
   draw_rotate_handle(): void {}
-  preview_cell(): void {}
-  preview_cells(): void {}
+  preview_square(): void {}
   preview_line(): void {}
   preview_rect(): void {}
   set_subdivision(): void {}

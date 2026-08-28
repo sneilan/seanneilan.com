@@ -153,11 +153,30 @@ export class History {
   /**
    * Replace the stacks with previously-exported ones (e.g. on reopening a saved
    * drawing). Resets coalescing/batch bookkeeping so the next edit starts fresh.
+   * Stacks persisted before the square-record architecture contain per-fine-cell
+   * edit kinds that no longer exist; importing them would corrupt the document,
+   * so such stacks are dropped (the drawing itself still loads — only its
+   * undo/redo history is lost, once, at migration).
    */
   importStacks(stacks: { undo?: Edit[]; redo?: Edit[] } | null | undefined): void {
-    this.undoStack = (stacks?.undo ?? []).slice();
-    this.redoStack = (stacks?.redo ?? []).slice();
+    const undo = (stacks?.undo ?? []).slice();
+    const redo = (stacks?.redo ?? []).slice();
+    if (undo.some(containsLegacyCellEdit) || redo.some(containsLegacyCellEdit)) {
+      this.clear();
+      return;
+    }
+    this.undoStack = undo;
+    this.redoStack = redo;
     this.pending = null;
     this.lastCoalesceKey = null;
   }
+}
+
+/** Edit kinds from the pre-square (per-fine-cell) architecture. Persisted JSON
+ * may still carry them, so the check is on the raw kind string. */
+const LEGACY_CELL_KINDS = new Set(['setCell', 'setCellColor', 'setCellState']);
+
+function containsLegacyCellEdit(e: Edit): boolean {
+  if (LEGACY_CELL_KINDS.has(String(e.kind))) return true;
+  return e.kind === 'batch' && e.edits.some(containsLegacyCellEdit);
 }

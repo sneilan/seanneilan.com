@@ -102,23 +102,23 @@ describe('useKeyboardShortcuts: undo / redo', () => {
   it('Ctrl+Z undoes and Ctrl+Shift+Z redoes the last commit', () => {
     const { grid } = makePatchedGrid();
     reset(grid);
-    useGridStore.setState({ colorIdx: 2, subdivision: 8 }); // 1 fine cell per draw
+    useGridStore.setState({ colorIdx: 2, subdivision: 8 }); // size-1 squares
 
-    // Create one undoable edit (a single painted cell).
+    // Create one undoable edit (a single drawn square).
     store().beginDrawStroke();
     store().drawCellAt(0, 0, true);
     store().endDrawStroke();
-    expect(grid.get_cell_count()).toBe(1);
+    expect(grid.get_square_count()).toBe(1);
     expect(store().canUndo()).toBe(true);
 
     mount();
     press('z', { ctrlKey: true });
-    expect(grid.get_cell_count()).toBe(0);
+    expect(grid.get_square_count()).toBe(0);
     expect(store().canUndo()).toBe(false);
     expect(store().canRedo()).toBe(true);
 
     press('z', { ctrlKey: true, shiftKey: true });
-    expect(grid.get_cell_count()).toBe(1);
+    expect(grid.get_square_count()).toBe(1);
     expect(store().canRedo()).toBe(false);
   });
 });

@@ -1,7 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
-use std::collections::HashMap;
 
 mod buffers;
 mod cells;
@@ -34,6 +33,7 @@ pub(crate) fn text_font(size: f64) -> String {
 /// call site (which is exactly what caused the rect corruption bug).
 pub(crate) const LINE_STRIDE: usize = 6; // [r1, c1, r2, c2, color, width_x10]
 pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
+pub(crate) const SQUARE_STRIDE: usize = 4; // [r, c, color, size]
 
 /// Bump whenever the shape packing or coordinate model changes. Exposed to JS so
 /// the host can detect a stale/mismatched WASM instance and reset rather than
@@ -47,7 +47,11 @@ pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
 /// and it carries box_w/box_h + halign/valign.
 /// v8 = image objects: a grid-snapped box referencing a bitmap by URL (decoded
 /// by the browser into an HtmlImageElement); only box + URL are serialized.
-pub const SCHEMA_VERSION: u32 = 8;
+/// v9 = atomic square records: a drawn square is ONE index-addressable record
+/// [r, c, color, size] at the resolution it was drawn (size in fine units:
+/// 1x=8, ½=4, ¼=2, ⅛=1), never an expansion into fine cells. Insertion order
+/// is z-order; overlap resolves topmost-wins.
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// An image object: a bitmap placed in a grid-snapped box. `(r1,c1)` is the box
 /// top-left and `(r2,c2)` the bottom-right, in fine units (normalized so r1≤r2,
@@ -163,9 +167,11 @@ pub struct GridCanvas {
     /// Lets the host apply a whole batch of edits and paint once at the end —
     /// e.g. dragging many shapes is one render instead of one per shape.
     pub(crate) render_enabled: bool,
-    /// Filled cells, sparse: (row, col) -> color index (0..=5). Absence = empty.
-    /// Sparse + signed keys is what makes the canvas infinite in all directions.
-    pub(crate) cells: HashMap<(i32, i32), u8>,
+    /// Drawn squares, flat (stride SQUARE_STRIDE): [r, c, color, size, ...].
+    /// One atomic record per drawn square at its native resolution; insertion
+    /// order is z-order. Signed coords make the canvas infinite; index-stable
+    /// like lines/rects so undo/select reuse the same machinery.
+    pub(crate) squares: Vec<i32>,
     pub(crate) draw_color: u8,
     pub(crate) outline_color: u8, // for new rects; index 6 = no outline
     /// Stroke width for NEW lines, in tenths of the base 2px stroke (10 = 1×,
@@ -222,7 +228,7 @@ impl GridCanvas {
             cam_y: 0.0,
             zoom: 1.0,
             render_enabled: true,
-            cells: HashMap::new(),
+            squares: Vec::new(),
             draw_color: 0,
             outline_color: 6, // default: no outline
             line_width: 10,   // default: 1× (2px)

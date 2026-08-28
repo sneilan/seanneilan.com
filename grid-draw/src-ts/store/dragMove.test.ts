@@ -1,47 +1,20 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
-import { stubWasm } from './wasmStub';
+import { makeGrid } from './testGrid';
 
 /**
- * A faithful JS model of the Rust `GridCanvas` cell logic (src/cells.rs).
+ * Regression coverage for the old "squares disappear after a select-drag-move"
+ * bug. In the pre-square architecture the grid bits were mutated in-place one
+ * cell at a time, so a move whose delta overlapped the selection's own
+ * footprint clobbered a not-yet-moved source and silently lost filled cells.
  *
- * The point of these tests is to reproduce the "squares disappear after a
- * select-drag-move" bug. The selection outlines track the *intended*
- * destinations (newSelected), but the actual grid bits are mutated in-place
- * one cell at a time, in selection-insertion order, with no scratch buffer.
- * When the move delta overlaps the selection's own footprint, a destination
- * write clobbers a not-yet-moved source (or a later read picks up a bit a
- * previous move just wrote), so filled cells are silently lost.
+ * Under the square-record architecture each drawn square is ONE atomic,
+ * index-stable record; a drag-move emits one moveSquare edit per selected
+ * square (identity preserved), so overlapping moves can never clobber. These
+ * tests pin that: the count of records — and of selection outlines — is
+ * conserved across moves that overlap their own footprint.
  */
-function makeMockGrid(rows: number, cols: number): GridCanvasWasm {
-  const filled: boolean[][] = Array.from({ length: rows }, () => new Array(cols).fill(false));
-  const colors: number[][] = Array.from({ length: rows }, () => new Array(cols).fill(0));
-
-  let drawColor = 0;
-  const g: Partial<GridCanvasWasm> = {
-    get_cell: (r, c) => (r < rows && c < cols ? filled[r][c] : false),
-    get_cell_color: (r, c) => (r < rows && c < cols && filled[r][c] ? colors[r][c] : 0),
-    set_draw_color: (idx) => { drawColor = idx; },
-    set_cell: (r, c, v) => { if (r < rows && c < cols) { filled[r][c] = v; if (v) colors[r][c] = drawColor; } },
-    delete_cell: (r, c) => { if (r < rows && c < cols) filled[r][c] = false; },
-    // Mirrors src/cells.rs move_cell exactly: clear source, then set dest.
-    move_cell: (fr, fc, tr, tc) => {
-      if (fr < rows && fc < cols && tr < rows && tc < cols && filled[fr][fc]) {
-        const color = colors[fr][fc];
-        filled[fr][fc] = false;
-        filled[tr][tc] = true;
-        colors[tr][tc] = color;
-      }
-    },
-    // Rendering / highlight calls are no-ops for the test.
-    render: () => {},
-    highlight_cell: () => {},
-    draw_selection_box: () => {},
-  };
-  return { ...stubWasm(), ...g };
-}
-
 function countFilled(grid: GridCanvasWasm, rows: number, cols: number): number {
   let n = 0;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (grid.get_cell(r, c)) n++;
@@ -58,17 +31,17 @@ describe('select-drag-move: squares should not disappear', () => {
       selectDragStart: null,
       isSelecting: false,
     });
+    useGridStore.getState().resetHistory();
   });
 
-  it('moving two adjacent cells right by 1 keeps both filled', () => {
+  it('moving two adjacent squares right by 1 keeps both records', () => {
     const rows = 8, cols = 8;
-    const grid = makeMockGrid(rows, cols);
-    grid.set_cell(0, 0, true);
-    grid.set_cell(0, 1, true);
+    // Two adjacent unit squares.
+    const { grid } = makeGrid({ squares: [[0, 0, 0, 1], [0, 1, 0, 1]] });
 
     const selectedItems: SelectedItem[] = [
-      { type: 'cell', row: 0, col: 0 },
-      { type: 'cell', row: 0, col: 1 },
+      { type: 'cell', index: 0 },
+      { type: 'cell', index: 1 },
     ];
 
     useGridStore.setState({
@@ -79,30 +52,27 @@ describe('select-drag-move: squares should not disappear', () => {
       isSelecting: true,
     });
 
-    // Drag start (0,0) -> end (0,1): delta = (0, +1)
+    // Drag start (0,0) -> end (0,1): delta = (0, +1). Square 0's destination
+    // (0,1) overlaps square 1's source, but records are atomic so both survive.
     useGridStore.getState().finishDragSelection({ row: 0, col: 1 });
 
-    // Two cells went in, two cells should remain.
+    // Two squares went in, two squares should remain.
     expect(countFilled(grid, rows, cols)).toBe(2);
     // Specifically the destinations (0,1) and (0,2) should both be filled.
     expect(grid.get_cell(0, 1)).toBe(true);
     expect(grid.get_cell(0, 2)).toBe(true);
   });
 
-  it('selection outline count matches actual filled cells after move', () => {
+  it('selection outline count matches actual filled squares after move', () => {
     const rows = 8, cols = 8;
-    const grid = makeMockGrid(rows, cols);
-    // A 2x2 block.
-    grid.set_cell(0, 0, true);
-    grid.set_cell(0, 1, true);
-    grid.set_cell(1, 0, true);
-    grid.set_cell(1, 1, true);
+    // A 2x2 block of unit squares.
+    const { grid } = makeGrid({ squares: [[0, 0, 0, 1], [0, 1, 0, 1], [1, 0, 0, 1], [1, 1, 0, 1]] });
 
     const selectedItems: SelectedItem[] = [
-      { type: 'cell', row: 0, col: 0 },
-      { type: 'cell', row: 0, col: 1 },
-      { type: 'cell', row: 1, col: 0 },
-      { type: 'cell', row: 1, col: 1 },
+      { type: 'cell', index: 0 },
+      { type: 'cell', index: 1 },
+      { type: 'cell', index: 2 },
+      { type: 'cell', index: 3 },
     ];
 
     useGridStore.setState({
@@ -126,17 +96,14 @@ describe('select-drag-move: squares should not disappear', () => {
 
   it('moving down by 1 (vertical overlap) keeps a column intact', () => {
     const rows = 8, cols = 8;
-    const grid = makeMockGrid(rows, cols);
-    grid.set_cell(0, 0, true);
-    grid.set_cell(1, 0, true);
-    grid.set_cell(2, 0, true);
+    const { grid } = makeGrid({ squares: [[0, 0, 0, 1], [1, 0, 0, 1], [2, 0, 0, 1]] });
 
     useGridStore.setState({
       grid,
       selectedItems: [
-        { type: 'cell', row: 0, col: 0 },
-        { type: 'cell', row: 1, col: 0 },
-        { type: 'cell', row: 2, col: 0 },
+        { type: 'cell', index: 0 },
+        { type: 'cell', index: 1 },
+        { type: 'cell', index: 2 },
       ],
       selectMode: 'drag',
       selectDragStart: { row: 0, col: 0 },

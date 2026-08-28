@@ -35,6 +35,38 @@ pub(crate) fn set_geom(buf: &mut [i32], stride: usize, idx: usize, r1: i32, c1: 
     }
 }
 
+/// Topmost square record covering fine coordinate (row, col), or -1. `buf` is
+/// the flat squares buffer [r, c, color, size, ...]; later records are on top
+/// (insertion order = z-order), so search back-to-front.
+pub(crate) fn topmost_square_at(buf: &[i32], row: i32, col: i32) -> i32 {
+    let count = buf.len() / crate::SQUARE_STRIDE;
+    for i in (0..count).rev() {
+        let p = &buf[i * crate::SQUARE_STRIDE..];
+        let (r, c, size) = (p[0], p[1], p[3]);
+        if row >= r && row < r + size && col >= c && col < c + size {
+            return i as i32;
+        }
+    }
+    -1
+}
+
+/// Indices of every square intersecting the inclusive fine-unit box. Whole
+/// squares are atomic: touching any part selects the square.
+pub(crate) fn squares_in_box(buf: &[i32], r1: i32, c1: i32, r2: i32, c2: i32) -> Vec<u32> {
+    let (r1, r2) = (r1.min(r2), r1.max(r2));
+    let (c1, c2) = (c1.min(c2), c1.max(c2));
+    let count = buf.len() / crate::SQUARE_STRIDE;
+    let mut out = Vec::new();
+    for i in 0..count {
+        let p = &buf[i * crate::SQUARE_STRIDE..];
+        let (r, c, size) = (p[0], p[1], p[3]);
+        if r <= r2 && r + size - 1 >= r1 && c <= c2 && c + size - 1 >= c1 {
+            out.push(i as u32);
+        }
+    }
+    out
+}
+
 /// Compute the new normalized corners of a rect after dragging `handle` to
 /// (r, c). Handle indices (clockwise from top-left): 0=TL,1=top,2=TR,3=right,
 /// 4=BR,5=bottom,6=BL,7=left. Returns (min_r, min_c, max_r, max_c).
@@ -127,5 +159,26 @@ mod tests {
     fn resize_top_left_handle_moves_min_corner() {
         let (r1, c1, r2, c2) = resize_corners(2, 2, 6, 6, 0, 3, 4);
         assert_eq!((r1, c1, r2, c2), (3, 4, 6, 6));
+    }
+
+    // Squares buffer: [r, c, color, size, ...]. A black 1x square at the origin
+    // with a red eighth square stacked on top of its (2,2) fine coordinate.
+    const SQ: &[i32] = &[0, 0, 0, 8, /*|*/ 2, 2, 2, 1];
+
+    #[test]
+    fn topmost_square_wins_where_records_overlap() {
+        assert_eq!(topmost_square_at(SQ, 2, 2), 1); // the eighth square is on top
+        assert_eq!(topmost_square_at(SQ, 0, 0), 0); // elsewhere the 1x square covers
+        assert_eq!(topmost_square_at(SQ, 9, 9), -1); // empty space
+    }
+
+    #[test]
+    fn box_intersection_selects_whole_squares() {
+        // A box over one quarter of the 1x square touches both records.
+        assert_eq!(squares_in_box(SQ, 0, 0, 3, 3), vec![0, 1]);
+        // A box entirely outside touches nothing.
+        assert!(squares_in_box(SQ, 20, 20, 30, 30).is_empty());
+        // Reversed corners normalize.
+        assert_eq!(squares_in_box(SQ, 3, 3, 0, 0), vec![0, 1]);
     }
 }

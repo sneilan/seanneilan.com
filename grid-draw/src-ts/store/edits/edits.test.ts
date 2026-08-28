@@ -4,10 +4,28 @@ import { applyEdit, invertEdit } from './apply';
 import { makeCountingGrid, makeRecordingGrid, roundTrip } from './recordingGrid';
 
 describe('applyEdit — forward application', () => {
-  it('setCell applies the target value', () => {
+  it('addSquare inserts the record at the given index', () => {
     const { grid, calls } = makeRecordingGrid();
-    applyEdit(grid, { kind: 'setCell', row: 2, col: 3, from: false, to: true });
-    expect(calls).toEqual([['set_cell', 2, 3, 1]]);
+    applyEdit(grid, { kind: 'addSquare', idx: 2, square: { r: 0, c: 8, color: 3, size: 8 } });
+    expect(calls).toEqual([['insert_square', 2, 0, 8, 3, 8]]);
+  });
+
+  it('deleteSquare removes at the given index', () => {
+    const { grid, calls } = makeRecordingGrid();
+    applyEdit(grid, { kind: 'deleteSquare', idx: 2, square: { r: 0, c: 8, color: 3, size: 8 } });
+    expect(calls).toEqual([['delete_square', 2]]);
+  });
+
+  it('recolorSquare applies the new color', () => {
+    const { grid, calls } = makeRecordingGrid();
+    applyEdit(grid, { kind: 'recolorSquare', idx: 1, from: 0, to: 4 });
+    expect(calls).toEqual([['set_square_color', 1, 4]]);
+  });
+
+  it('moveSquare applies the delta', () => {
+    const { grid, calls } = makeRecordingGrid();
+    applyEdit(grid, { kind: 'moveSquare', idx: 0, dRow: 2, dCol: -3 });
+    expect(calls).toEqual([['move_square', 0, 2, -3]]);
   });
 
   it('recolorRectFill applies the new fill', () => {
@@ -49,17 +67,37 @@ describe('applyEdit — forward application', () => {
 });
 
 describe('invertEdit — exact round-trips', () => {
-  it('setCell round-trips to original value', () => {
-    expect(roundTrip({ kind: 'setCell', row: 2, col: 3, from: false, to: true })).toEqual([
-      ['set_cell', 2, 3, 1],
-      ['set_cell', 2, 3, 0],
+  it('addSquare inverse deletes the same index', () => {
+    expect(
+      roundTrip({ kind: 'addSquare', idx: 3, square: { r: 8, c: 0, color: 2, size: 4 } })
+    ).toEqual([
+      ['insert_square', 3, 8, 0, 2, 4],
+      ['delete_square', 3],
     ]);
   });
 
-  it('setCellColor round-trips', () => {
-    expect(roundTrip({ kind: 'setCellColor', row: 1, col: 1, from: 0, to: 3 })).toEqual([
-      ['set_cell_color', 1, 1, 3],
-      ['set_cell_color', 1, 1, 0],
+  it('deleteSquare inverse re-inserts the captured square at its index', () => {
+    // The captured record (color/size/pos) is restored at its original z-index,
+    // so undoing an erase brings the square back exactly where it was stacked.
+    expect(
+      roundTrip({ kind: 'deleteSquare', idx: 1, square: { r: 5, c: 6, color: 3, size: 2 } })
+    ).toEqual([
+      ['delete_square', 1],
+      ['insert_square', 1, 5, 6, 3, 2],
+    ]);
+  });
+
+  it('recolorSquare round-trips to the original color', () => {
+    expect(roundTrip({ kind: 'recolorSquare', idx: 0, from: 2, to: 5 })).toEqual([
+      ['set_square_color', 0, 5],
+      ['set_square_color', 0, 2],
+    ]);
+  });
+
+  it('moveSquare inverse negates the delta', () => {
+    expect(roundTrip({ kind: 'moveSquare', idx: 1, dRow: -1, dCol: 4 })).toEqual([
+      ['move_square', 1, -1, 4],
+      ['move_square', 1, 1, -4],
     ]);
   });
 
@@ -171,45 +209,25 @@ describe('invertEdit — exact round-trips', () => {
   });
 });
 
-describe('setCellState', () => {
-  it('placing a colored cell sets draw color then fills', () => {
-    const { grid, calls } = makeRecordingGrid();
-    applyEdit(grid, {
-      kind: 'setCellState',
-      row: 2, col: 3,
-      from: { filled: false, color: 0 },
-      to: { filled: true, color: 4 },
-    });
-    expect(calls).toEqual([
-      ['set_draw_color', 4],
-      ['set_cell', 2, 3, 1],
+describe('square records', () => {
+  it('a re-colored square undo restores its prior color', () => {
+    // A square is one atomic record: recoloring is a single set_square_color,
+    // and undo puts the exact prior color back (no per-fine-cell fan-out).
+    expect(roundTrip({ kind: 'recolorSquare', idx: 2, from: 1, to: 4 })).toEqual([
+      ['set_square_color', 2, 4],
+      ['set_square_color', 2, 1],
     ]);
   });
 
-  it('erasing a cell clears it (no draw color needed)', () => {
+  it('drawing then erasing the same square is a no-op round-trip', () => {
+    // add at end, then the inverse delete removes it — the buffer is unchanged.
     const { grid, calls } = makeRecordingGrid();
-    applyEdit(grid, {
-      kind: 'setCellState',
-      row: 0, col: 0,
-      from: { filled: true, color: 2 },
-      to: { filled: false, color: 2 },
-    });
-    expect(calls).toEqual([['set_cell', 0, 0, 0]]);
-  });
-
-  it('round-trips: undo restores the prior fill and color', () => {
-    expect(
-      roundTrip({
-        kind: 'setCellState',
-        row: 1, col: 1,
-        from: { filled: true, color: 2 },
-        to: { filled: true, color: 5 },
-      })
-    ).toEqual([
-      ['set_draw_color', 5],
-      ['set_cell', 1, 1, 1],
-      ['set_draw_color', 2],
-      ['set_cell', 1, 1, 1],
+    const add: Edit = { kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 2, size: 8 } };
+    applyEdit(grid, add);
+    applyEdit(grid, invertEdit(add));
+    expect(calls).toEqual([
+      ['insert_square', 0, 0, 0, 2, 8],
+      ['delete_square', 0],
     ]);
   });
 });
@@ -244,6 +262,24 @@ describe('batch edits', () => {
     expect(calls).toEqual([
       ['insert_rect', 3, 2, 2, 3, 3, 0, 6],
       ['insert_rect', 1, 0, 0, 1, 1, 0, 6],
+    ]);
+  });
+
+  it('inverts a batch of square deletes in REVERSE order (z-order restore)', () => {
+    // Erasing squares idx 1 then idx 3 undoes by re-inserting idx 3 first, then
+    // idx 1 — so each square lands back at its original stacking position.
+    const batch: Edit = {
+      kind: 'batch',
+      edits: [
+        { kind: 'deleteSquare', idx: 1, square: { r: 0, c: 0, color: 1, size: 8 } },
+        { kind: 'deleteSquare', idx: 3, square: { r: 8, c: 8, color: 2, size: 4 } },
+      ],
+    };
+    const { grid, calls } = makeRecordingGrid();
+    applyEdit(grid, invertEdit(batch));
+    expect(calls).toEqual([
+      ['insert_square', 3, 8, 8, 2, 4],
+      ['insert_square', 1, 0, 0, 1, 8],
     ]);
   });
 });

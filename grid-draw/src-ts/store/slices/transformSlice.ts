@@ -7,6 +7,7 @@ import {
   lineGeom,
   rectGeom,
   rotateQuarter,
+  rotateSquareQuarter,
   snapQuarterTurns,
   textFrame,
 } from '../gridHelpers';
@@ -134,12 +135,12 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     if (!bounds) return;
     const icr = Math.round((bounds.minRow + bounds.maxRow) / 2);
     const icc = Math.round((bounds.minCol + bounds.maxCol) / 2);
-    // Cells batched so a contiguous block ghosts as one region, not a lattice.
-    const cellGhosts: number[] = [];
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        const p = rotateQuarter(item.row, item.col, k, icr, icc);
-        cellGhosts.push(p.r, p.c, grid.get_cell_color(item.row, item.col));
+        const s = grid.get_square(item.index); // [r, c, color, size]
+        if (s.length < 4) continue;
+        const p = rotateSquareQuarter(s[0], s[1], s[3], k, icr, icc);
+        grid.preview_square(p.r, p.c, s[3], s[2]);
       } else if (item.type === 'line') {
         const l = grid.get_line(item.index);
         if (l.length >= 6) {
@@ -170,7 +171,6 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
         }
       }
     }
-    if (cellGhosts.length > 0) grid.preview_cells(new Int32Array(cellGhosts));
   },
 
   finishRotate: (x, y) => {
@@ -195,28 +195,18 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     const icc = Math.round((bounds.minCol + bounds.maxCol) / 2);
     const quarter = (r: number, c: number) => rotateQuarter(r, c, k, icr, icc);
 
-    // Cells: clear every source first, then write every destination, so an
-    // overlapping source/dest footprint never clobbers (mirrors the drag move).
-    const clears: Edit[] = [];
-    const writes: Edit[] = [];
     const geomEdits: Edit[] = [];
     const newSelected: SelectedItem[] = [];
 
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        if (!grid.get_cell(item.row, item.col)) continue;
-        const color = grid.get_cell_color(item.row, item.col);
-        const np = quarter(item.row, item.col);
-        clears.push({
-          kind: 'setCellState', row: item.row, col: item.col,
-          from: { filled: true, color }, to: { filled: false, color },
-        });
-        writes.push({
-          kind: 'setCellState', row: np.r, col: np.c,
-          from: { filled: grid.get_cell(np.r, np.c), color: grid.get_cell_color(np.r, np.c) },
-          to: { filled: true, color },
-        });
-        newSelected.push({ type: 'cell', row: np.r, col: np.c });
+        // A square is one record: rotating its block just moves its top-left
+        // (the block stays an axis-aligned square of the same size).
+        const s = grid.get_square(item.index);
+        if (s.length < 4) continue;
+        const np = rotateSquareQuarter(s[0], s[1], s[3], k, icr, icc);
+        geomEdits.push({ kind: 'moveSquare', idx: item.index, dRow: np.r - s[0], dCol: np.c - s[1] });
+        newSelected.push({ type: 'cell', index: item.index });
       } else if (item.type === 'line') {
         const l = grid.get_line(item.index);
         if (l.length < 5) continue;
@@ -258,7 +248,7 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     }
 
     set({ selectMode: null, rotateOrigin: null, isSelecting: false });
-    get().commitEdits([...clears, ...writes, ...geomEdits]);
+    get().commitEdits(geomEdits);
     set({ selectedItems: newSelected });
     get().renderSelection();
     get().updateOutputs();

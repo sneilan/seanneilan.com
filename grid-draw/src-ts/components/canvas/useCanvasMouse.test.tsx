@@ -97,8 +97,8 @@ describe('useCanvasMouse — pan gesture', () => {
     expect(deps.panRef.current).toEqual({ x: 100, y: 100, camX: 0, camY: 0 });
     expect(ev.preventDefault).toHaveBeenCalled();
     expect(ev.currentTarget.style.cursor).toBe('grabbing');
-    // Pan must not touch the document (no draw color / cell writes).
-    expect(calls.some(([name]) => name === 'set_cell' || name === 'set_draw_color')).toBe(false);
+    // Pan must not touch the document (no draw color / square writes).
+    expect(calls.some(([name]) => name === 'insert_square' || name === 'add_square' || name === 'set_draw_color')).toBe(false);
   });
 
   it('active pan: mousemove moves the camera via applyCamera, not the store', () => {
@@ -112,7 +112,7 @@ describe('useCanvasMouse — pan gesture', () => {
 
     // world delta = screen delta / zoom, camera moves opposite the cursor.
     expect(deps.applyCamera).toHaveBeenCalledWith({ x: -50, y: -20, zoom: 1 });
-    expect(calls.some(([name]) => name === 'set_cell')).toBe(false);
+    expect(calls.some(([name]) => name === 'insert_square' || name === 'add_square')).toBe(false);
     expect(useGridStore.getState().isDrawing).toBe(false);
   });
 
@@ -134,16 +134,17 @@ describe('useCanvasMouse — pan gesture', () => {
 describe('useCanvasMouse — draw tool', () => {
   beforeEach(() => useGridStore.getState().resetHistory());
 
-  it('wraps a down→up stroke in a single undo batch (one undo restores every painted cell)', () => {
+  it('wraps a down→up stroke in a single undo batch (one undo removes the drawn square)', () => {
     const { grid } = makeGrid();
     setupStore(grid, 'draw');
     const deps = makeDeps(grid);
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));
-    // A whole-cell block at subdivision 1 fills CELL_UNITS² = 64 fine cells.
-    const painted = grid.get_cell_count();
-    expect(painted).toBe(64);
+    // A whole-cell block at subdivision 1 is ONE atomic square record (size 8),
+    // never an expansion into CELL_UNITS² = 64 fine cells.
+    const painted = grid.get_square_count();
+    expect(painted).toBe(1);
     expect(useGridStore.getState().isDrawing).toBe(true);
 
     act(() => result.current.handleMouseUp(mouseEvent({ clientX: 8, clientY: 8 })));
@@ -152,7 +153,7 @@ describe('useCanvasMouse — draw tool', () => {
     // Exactly one undo step for the whole stroke.
     expect(useGridStore.getState().canUndo()).toBe(true);
     act(() => useGridStore.getState().undo());
-    expect(grid.get_cell_count()).toBe(0);
+    expect(grid.get_square_count()).toBe(0);
     expect(useGridStore.getState().canUndo()).toBe(false);
   });
 });
@@ -220,9 +221,10 @@ describe('useCanvasMouse — select tool', () => {
   });
 
   it('mousedown on a shape selects it and starts a drag', () => {
-    // A filled cell at (0,0) is the hit target (testGrid has no vector hit-tests,
-    // so hitTestShapes falls through to the filled-cell check).
-    const { grid } = makeGrid({ cell: (r, c) => r === 0 && c === 0 });
+    // A 1x square (size 8) at (0,0) is the hit target (testGrid has no vector
+    // hit-tests, so hitTestShapes falls through to square_at). clientX/Y 8 →
+    // fine coord (4,4), which lands inside the square's 0..7 block.
+    const { grid } = makeGrid({ squares: [[0, 0, 0, 8]] });
     withHitTests(grid);
     setupStore(grid, 'select');
     const deps = makeDeps(grid);
@@ -230,7 +232,7 @@ describe('useCanvasMouse — select tool', () => {
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));
 
-    expect(useGridStore.getState().selectedItems).toEqual([{ type: 'cell', row: 0, col: 0 }]);
+    expect(useGridStore.getState().selectedItems).toEqual([{ type: 'cell', index: 0 }]);
     expect(useGridStore.getState().selectMode).toBe('drag');
     expect(useGridStore.getState().isSelecting).toBe(true);
   });

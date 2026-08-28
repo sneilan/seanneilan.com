@@ -37,7 +37,7 @@ describe('autosave subscription', () => {
   });
 
   it('saves the grid + history (debounced) after an edit when a document is named', async () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, currentName: 'doc1', colorIdx: 2 });
 
     useGridStore.getState().beginDrawStroke();
@@ -52,13 +52,15 @@ describe('autosave subscription', () => {
     expect(saveDesign).toHaveBeenCalledTimes(1);
     const [name, design, history] = vi.mocked(saveDesign).mock.calls[0];
     expect(name).toBe('doc1');
-    expect(design.cells).toContainEqual([0, 0, 2]); // whole-grid serialize, color 2
+    // Whole-grid serialize: one drawn 1x square → a single [relR, relC, color, size]
+    // entry (subdivision 1 ⇒ size CELL_UNITS = 8), never 64 fine cells.
+    expect(design.cells).toContainEqual([0, 0, 2, 8]);
     expect(history?.undo.length).toBe(1);            // the stroke = one undo step
     expect(useGridStore.getState().saveState).toBe('saved');
   });
 
   it('collapses a burst of edits into a single save', async () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, currentName: 'doc1', colorIdx: 1 });
 
     useGridStore.getState().beginDrawStroke();
@@ -72,7 +74,7 @@ describe('autosave subscription', () => {
   });
 
   it('auto-creates a named piece on the first edit of an unnamed drawing', async () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, currentName: null, colorIdx: 2 });
 
     useGridStore.getState().beginDrawStroke();
@@ -89,7 +91,7 @@ describe('autosave subscription', () => {
   });
 
   it('does NOT create a piece when the unnamed canvas has no content', async () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, currentName: null });
 
     // A committed edit that leaves the canvas empty (draw, then undo it).
@@ -104,7 +106,7 @@ describe('autosave subscription', () => {
   });
 
   it('does NOT auto-create while suppressed (editing a training-example half)', async () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, currentName: null, colorIdx: 2 });
     suppressAutoCreate(true);
 

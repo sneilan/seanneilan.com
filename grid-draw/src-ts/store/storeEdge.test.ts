@@ -4,7 +4,7 @@ import { FakeGrid, asWasm } from './edits/fakeGrid';
 
 /**
  * Edge-case coverage (#5) for the undo layer, driven through the REAL store
- * actions against the faithful FakeGrid: overlapping cell moves, resize
+ * actions against the faithful FakeGrid: overlapping square moves, resize
  * normalization (dragging an edge past its opposite), and zero-area shapes.
  */
 function setup(g: FakeGrid, selectedItems: SelectedItem[] = []) {
@@ -19,20 +19,20 @@ describe('undo edge cases (store + faithful grid)', () => {
     useGridStore.setState({ grid: null, selectedItems: [], colorIdx: 0, outlineIdx: 6 });
   });
 
-  it('overlapping cell move round-trips exactly', () => {
+  it('overlapping square move round-trips exactly', () => {
     const g = new FakeGrid();
-    // Two adjacent filled cells, color 2.
-    g.set_draw_color(2);
-    g.set_cell(0, 0, true);
-    g.set_cell(0, 1, true);
-    setup(g, [{ type: 'cell', row: 0, col: 0 }, { type: 'cell', row: 0, col: 1 }]);
+    // Two adjacent unit squares, color 2.
+    g.add_square(0, 0, 2, 1);
+    g.add_square(0, 1, 2, 1);
+    setup(g, [{ type: 'cell', index: 0 }, { type: 'cell', index: 1 }]);
     const before = g.snapshot();
 
-    // Move right by 1 — destination (0,1) overlaps a source cell.
+    // Move right by 1 — square 0's destination (0,1) lands on square 1's old
+    // spot. Squares are atomic, index-stable records, so nothing is clobbered.
     useGridStore.getState().startDragSelection({ row: 0, col: 0 });
     useGridStore.getState().finishDragSelection({ row: 0, col: 1 });
 
-    // After move: cells at (0,1) and (0,2); (0,0) cleared.
+    // After move: squares at (0,1) and (0,2); (0,0) cleared.
     expect(g.get_cell(0, 0)).toBe(false);
     expect(g.get_cell(0, 1)).toBe(true);
     expect(g.get_cell(0, 2)).toBe(true);

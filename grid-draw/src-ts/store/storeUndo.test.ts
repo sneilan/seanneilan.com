@@ -1,79 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore, type SelectedItem } from './gridStore';
 import type { GridCanvasWasm } from '../types/grid';
-import { stubWasm } from './wasmStub';
+import { makeGrid } from './testGrid';
 
 /**
  * Integration tests for the edit/undo layer wired into the store. Every store
  * mutation action must route through History so undo/redo produce the exact
- * inverse WASM calls. The mock records mutations and serves configurable reads
- * so actions can capture prior state.
+ * inverse WASM calls. The shared testGrid mock records mutations and tracks
+ * square records in-memory so actions can capture prior state.
  */
-function makeGrid(opts?: {
-  lines?: number[][];
-  rects?: number[][];
-  cell?: (r: number, c: number) => boolean;
-  cellColor?: (r: number, c: number) => number;
-}) {
-  const calls: Array<[string, ...number[]]> = [];
-  const lines = opts?.lines ?? [];
-  const rects = opts?.rects ?? [];
-  // Track counts so insert/delete keep get_*_count consistent (the apply-layer
-  // range guard reads these); start from the seeded shape arrays.
-  let lineCount = lines.length;
-  let rectCount = rects.length;
-  let textCount = 0;
-  let imageCount = 0;
-  const g: Partial<GridCanvasWasm> = {
-    set_cell: (r, c, v) => calls.push(['set_cell', r, c, v ? 1 : 0]),
-    set_cell_color: (r, c, color) => calls.push(['set_cell_color', r, c, color]),
-    set_draw_color: (idx) => calls.push(['set_draw_color', idx]),
-    set_outline_color: () => {},
-    set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
-    set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
-    set_rect_outline: (idx, color) => calls.push(['set_rect_outline', idx, color]),
-    move_line: (idx, dr, dc) => calls.push(['move_line', idx, dr, dc]),
-    move_rect: (idx, dr, dc) => calls.push(['move_rect', idx, dr, dc]),
-    set_line: (idx, r1, c1, r2, c2) => calls.push(['set_line', idx, r1, c1, r2, c2]),
-    set_rect: (idx, r1, c1, r2, c2) => calls.push(['set_rect', idx, r1, c1, r2, c2]),
-    insert_line: (idx, r1, c1, r2, c2, color) => { lineCount++; calls.push(['insert_line', idx, r1, c1, r2, c2, color]); },
-    insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rectCount++; calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]); },
-    delete_line: (idx) => { lineCount--; calls.push(['delete_line', idx]); },
-    delete_rect: (idx) => { rectCount--; calls.push(['delete_rect', idx]); },
-    insert_text: (idx, r, c, color) => { textCount++; calls.push(['insert_text', idx, r, c, color]); },
-    delete_text: (idx) => { textCount--; calls.push(['delete_text', idx]); },
-    move_text: (idx, dr, dc) => calls.push(['move_text', idx, dr, dc]),
-    set_text_color: (idx, color) => calls.push(['set_text_color', idx, color]),
-    get_text_count: () => textCount,
-    get_text: () => new Int32Array([1, 0, 0, 1, 1]),
-    get_text_string: () => '',
-    get_text_size: () => 1,
-    insert_image: (idx, r1, c1, r2, c2) => { imageCount++; calls.push(['insert_image', idx, r1, c1, r2, c2]); },
-    delete_image: (idx) => { imageCount--; calls.push(['delete_image', idx]); },
-    move_image: (idx, dr, dc) => calls.push(['move_image', idx, dr, dc]),
-    set_image_geom: (idx, r1, c1, r2, c2) => calls.push(['set_image_geom', idx, r1, c1, r2, c2]),
-    get_image_count: () => imageCount,
-    get_image: () => new Int32Array([0, 0, 8, 8]),
-    get_image_url: () => '',
-    highlight_image: () => {},
-    delete_cell: (r, c) => calls.push(['delete_cell', r, c]),
-    get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
-    get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
-    get_line_count: () => lineCount,
-    get_rect_count: () => rectCount,
-    get_cell: (r, c) => (opts?.cell ? opts.cell(r, c) : false),
-    get_cell_color: (r, c) => (opts?.cellColor ? opts.cellColor(r, c) : 0),
-    get_cell_size: () => 16,
-    render: () => {},
-    highlight_cell: () => {},
-    highlight_line: () => {},
-    highlight_rect: () => {},
-    draw_handle: () => {},
-    draw_selection_box: () => {},
-  };
-  return { grid: { ...stubWasm(), ...g }, calls };
-}
-
 function reset(grid: GridCanvasWasm) {
   useGridStore.setState({ grid, selectedItems: [], colorIdx: 0, outlineIdx: 6 });
   useGridStore.getState().resetHistory();
@@ -165,10 +100,10 @@ describe('store undo/redo integration', () => {
   });
 
   it('a freehand draw stroke is one undo step', () => {
-    const { grid, calls } = makeGrid({ cell: () => false });
+    const { grid, calls } = makeGrid();
     reset(grid);
-    // subdivision 8 → one fine cell per draw (block = CELL_UNITS/8 = 1), so a
-    // stroke over two points is two cells, not two blocks.
+    // subdivision 8 → one fine-unit square per draw (size = CELL_UNITS/8 = 1),
+    // so a stroke over two points stacks two atomic squares, not two blocks.
     useGridStore.setState({ grid, colorIdx: 2, subdivision: 8 });
 
     useGridStore.getState().beginDrawStroke();
@@ -180,10 +115,10 @@ describe('store undo/redo integration', () => {
 
     calls.length = 0;
     useGridStore.getState().undo();
-    // One undo reverts both cells (reverse order), clearing them.
+    // One undo deletes both squares (reverse insertion order).
     expect(calls).toEqual([
-      ['set_cell', 0, 1, 0],
-      ['set_cell', 0, 0, 0],
+      ['delete_square', 1],
+      ['delete_square', 0],
     ]);
     expect(useGridStore.getState().canUndo()).toBe(false);
   });

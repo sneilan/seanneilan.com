@@ -35,15 +35,18 @@ export type TextData = {
   boxW: number; boxH: number; halign: number; valign: number; text: string;
 };
 
-/** Full state of a single cell: whether it is filled, and its color index. */
-export type CellState = { filled: boolean; color: number };
+/** A drawn square as stored in WASM: one atomic record [r, c, color, size] at
+ * the resolution it was drawn (size in fine units: 1x=8, ½=4, ¼=2, ⅛=1).
+ * Index-stable like lines/rects; insertion order is z-order. */
+export type SquareData = { r: number; c: number; color: number; size: number };
 
 export type Edit =
-  | { kind: 'setCell'; row: number; col: number; from: boolean; to: boolean }
-  | { kind: 'setCellColor'; row: number; col: number; from: number; to: number }
-  // Combined fill+color edit; the invertible primitive for placing/erasing/
-  // moving colored cells (a bare set_cell can't restore a prior color).
-  | { kind: 'setCellState'; row: number; col: number; from: CellState; to: CellState }
+  // idx = the record's position in the buffer after insertion / before deletion
+  // (restoring at idx keeps the square's z-position through undo/redo).
+  | { kind: 'addSquare'; idx: number; square: SquareData }
+  | { kind: 'deleteSquare'; idx: number; square: SquareData }
+  | { kind: 'recolorSquare'; idx: number; from: number; to: number }
+  | { kind: 'moveSquare'; idx: number; dRow: number; dCol: number }
   | { kind: 'recolorLine'; idx: number; from: number; to: number }
   | { kind: 'resizeLine'; idx: number; from: number; to: number }
   | { kind: 'recolorRectFill'; idx: number; from: number; to: number }

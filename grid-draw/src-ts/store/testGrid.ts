@@ -4,21 +4,17 @@ import { stubWasm } from './wasmStub';
 /**
  * A recording mock of the WASM GridCanvas for store/action tests. It captures
  * every mutation call and serves configurable reads so actions can capture
- * prior state and we can assert the exact WASM calls an action produces. Cell
- * fills/colors are tracked in-memory so place/clear round-trips behave like the
- * real grid (needed by loadDesign and friends).
+ * prior state and we can assert the exact WASM calls an action produces.
+ * Square records are tracked in-memory (flat [r, c, color, size, ...], z-order)
+ * so draw/place/clear round-trips behave like the real grid.
  */
 export function makeGrid(opts?: {
-  rows?: number;
-  cols?: number;
   lines?: number[][];
   rects?: number[][];
-  cell?: (r: number, c: number) => boolean;
-  cellColor?: (r: number, c: number) => number;
+  /** Pre-existing square records as [r, c, color, size] tuples. */
+  squares?: number[][];
 }) {
   const calls: Array<[string, ...number[]]> = [];
-  const rows = opts?.rows ?? 32;
-  const cols = opts?.cols ?? 32;
   const lines = opts?.lines ?? [];
   const rects = opts?.rects ?? [];
   let lineCount = lines.length;
@@ -26,23 +22,65 @@ export function makeGrid(opts?: {
   let textCount = 0;
   let imageCount = 0;
 
-  // In-memory cell state so set/get round-trips (place → serialize) work.
-  const filled = new Map<string, number>(); // "r,c" -> colorIdx
-  const key = (r: number, c: number) => `${r},${c}`;
-  // Mirror the real grid: set_cell(true) fills with the current draw color.
-  let drawColor = 0;
-  if (opts?.cell) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (opts.cell(r, c)) filled.set(key(r, c), opts.cellColor ? opts.cellColor(r, c) : 0);
-      }
+  const STRIDE = 4;
+  const squares: number[] = (opts?.squares ?? []).flatMap(([r, c, color, size]) => [r, c, color ?? 0, size ?? 1]);
+  const squareCount = () => squares.length / STRIDE;
+  const squareAt = (row: number, col: number) => {
+    for (let i = squareCount() - 1; i >= 0; i--) {
+      const s = i * STRIDE;
+      const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+      if (row >= r && row < r + size && col >= c && col < c + size) return i;
     }
-  }
+    return -1;
+  };
 
   const g: Partial<GridCanvasWasm> = {
-    set_cell: (r, c, v) => { calls.push(['set_cell', r, c, v ? 1 : 0]); if (v) filled.set(key(r, c), drawColor); else filled.delete(key(r, c)); },
-    set_cell_color: (r, c, color) => { calls.push(['set_cell_color', r, c, color]); if (filled.has(key(r, c))) filled.set(key(r, c), color); },
-    set_draw_color: (idx) => { drawColor = idx; calls.push(['set_draw_color', idx]); },
+    insert_square: (idx, r, c, color, size) => {
+      calls.push(['insert_square', idx, r, c, color, size]);
+      squares.splice(Math.min(idx, squareCount()) * STRIDE, 0, r, c, color, size);
+    },
+    add_square: (r, c, color, size) => {
+      const idx = squareCount();
+      calls.push(['add_square', r, c, color, size]);
+      squares.push(r, c, color, size);
+      return idx;
+    },
+    delete_square: (idx) => {
+      calls.push(['delete_square', idx]);
+      if (idx * STRIDE + STRIDE <= squares.length) squares.splice(idx * STRIDE, STRIDE);
+    },
+    get_square: (idx) => new Int32Array(squares.slice(idx * STRIDE, idx * STRIDE + STRIDE)),
+    get_square_count: squareCount,
+    get_squares: () => new Int32Array(squares),
+    set_square_color: (idx, color) => {
+      calls.push(['set_square_color', idx, color]);
+      if (idx * STRIDE + STRIDE <= squares.length) squares[idx * STRIDE + 2] = color;
+    },
+    move_square: (idx, dr, dc) => {
+      calls.push(['move_square', idx, dr, dc]);
+      if (idx * STRIDE + STRIDE <= squares.length) {
+        squares[idx * STRIDE] += dr;
+        squares[idx * STRIDE + 1] += dc;
+      }
+    },
+    square_at: squareAt,
+    squares_in_box: (r1, c1, r2, c2) => {
+      const [rLo, rHi] = [Math.min(r1, r2), Math.max(r1, r2)];
+      const [cLo, cHi] = [Math.min(c1, c2), Math.max(c1, c2)];
+      const out: number[] = [];
+      for (let i = 0; i < squareCount(); i++) {
+        const s = i * STRIDE;
+        const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+        if (r <= rHi && r + size - 1 >= rLo && c <= cHi && c + size - 1 >= cLo) out.push(i);
+      }
+      return new Uint32Array(out);
+    },
+    get_cell: (r, c) => squareAt(r, c) >= 0,
+    get_cell_color: (r, c) => {
+      const idx = squareAt(r, c);
+      return idx >= 0 ? squares[idx * STRIDE + 2] : 0;
+    },
+    set_draw_color: (idx) => { calls.push(['set_draw_color', idx]); },
     set_outline_color: () => {},
     set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
     set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
@@ -76,31 +114,19 @@ export function makeGrid(opts?: {
     image_intersects_box: () => false,
     highlight_image: () => {},
     preview_image: () => {},
-    delete_cell: (r, c) => { calls.push(['delete_cell', r, c]); filled.delete(key(r, c)); },
     get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
     get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
     get_line_count: () => lineCount,
     get_rect_count: () => rectCount,
-    get_cell: (r, c) => filled.has(key(r, c)),
-    get_cell_color: (r, c) => filled.get(key(r, c)) ?? 0,
-    get_cell_count: () => filled.size,
-    get_filled_cells: () => {
-      const out: number[] = [];
-      for (const [k, color] of filled) {
-        const [r, c] = k.split(',').map(Number);
-        out.push(r, c, color);
-      }
-      return new Int32Array(out);
-    },
-    get_cell_size: () => 16,
+    get_cell_size: () => 2,
     set_viewport: () => {},
     set_camera: () => {},
     get_cam_x: () => 0,
     get_cam_y: () => 0,
     get_zoom: () => 1,
-    clear: () => { filled.clear(); lineCount = 0; rectCount = 0; textCount = 0; imageCount = 0; },
+    clear: () => { squares.length = 0; lineCount = 0; rectCount = 0; textCount = 0; imageCount = 0; },
     render: () => {},
-    highlight_cell: () => {},
+    highlight_square: () => {},
     highlight_line: () => {},
     highlight_rect: () => {},
     draw_handle: () => {},

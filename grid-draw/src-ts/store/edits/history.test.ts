@@ -49,21 +49,23 @@ describe('History', () => {
   it('a batch gesture commits as a single undo step', () => {
     const { grid, calls } = makeRecordingGrid();
     const h = new History();
+    // A freehand stroke that stamps two 1x squares onto the empty grid.
     h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    h.commit(grid, { kind: 'setCell', row: 0, col: 1, from: false, to: true });
+    h.commit(grid, { kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 1, size: 8 } });
+    h.commit(grid, { kind: 'addSquare', idx: 1, square: { r: 0, c: 8, color: 1, size: 8 } });
     h.endBatch();
-    // Both edits applied during the gesture.
+    // Both squares inserted during the gesture.
     expect(calls).toEqual([
-      ['set_cell', 0, 0, 1],
-      ['set_cell', 0, 1, 1],
+      ['insert_square', 0, 0, 0, 1, 8],
+      ['insert_square', 1, 0, 8, 1, 8],
     ]);
     calls.length = 0;
-    // ...but a single undo reverts the whole stroke (reverse order).
+    // ...but a single undo reverts the whole stroke (reverse order, so each
+    // delete targets a still-valid trailing index).
     h.undoLast(grid);
     expect(calls).toEqual([
-      ['set_cell', 0, 1, 0],
-      ['set_cell', 0, 0, 0],
+      ['delete_square', 1],
+      ['delete_square', 0],
     ]);
     expect(h.canUndo()).toBe(false);
   });
@@ -78,14 +80,14 @@ describe('History', () => {
   it('multiple commits undo in LIFO order', () => {
     const { grid, calls } = makeRecordingGrid();
     const h = new History();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
-    h.commit(grid, { kind: 'setCell', row: 1, col: 1, from: false, to: true });
+    h.commit(grid, { kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 1, size: 8 } });
+    h.commit(grid, { kind: 'addSquare', idx: 1, square: { r: 8, c: 8, color: 2, size: 8 } });
     calls.length = 0;
     h.undoLast(grid);
     h.undoLast(grid);
     expect(calls).toEqual([
-      ['set_cell', 1, 1, 0],
-      ['set_cell', 0, 0, 0],
+      ['delete_square', 1],
+      ['delete_square', 0],
     ]);
   });
 });
@@ -95,12 +97,12 @@ describe('batch hygiene', () => {
     const { grid } = makeRecordingGrid();
     const h = new History();
     h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
+    h.commit(grid, { kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 1, size: 8 } });
     // A second beginBatch (e.g. a new stroke after one was interrupted) must
     // not strand the first batch's edit — it should already be recorded.
     h.beginBatch();
     expect(h.canUndo()).toBe(true);
-    h.commit(grid, { kind: 'setCell', row: 0, col: 1, from: false, to: true });
+    h.commit(grid, { kind: 'addSquare', idx: 1, square: { r: 0, c: 8, color: 1, size: 8 } });
     h.endBatch();
     // Two separate undo steps now.
     h.undoLast(grid);
@@ -113,7 +115,7 @@ describe('batch hygiene', () => {
     const { grid } = makeRecordingGrid();
     const h = new History();
     h.beginBatch();
-    h.commit(grid, { kind: 'setCell', row: 0, col: 0, from: false, to: true });
+    h.commit(grid, { kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 1, size: 8 } });
     h.cancelBatch();
     expect(h.canUndo()).toBe(false);
     expect(h.isBatching()).toBe(false);
@@ -131,6 +133,20 @@ describe('coalescing', () => {
     const { grid: g2, calls } = makeRecordingGrid();
     h.undoLast(g2);
     expect(calls).toEqual([['set_rect_fill', 0, 0]]);
+    expect(h.canUndo()).toBe(false);
+  });
+
+  it('merges same-key square recolors within the window into one step', () => {
+    // The square path coalesces exactly like the rect/line paths: a recolor drag
+    // over one square collapses to a single undo restoring its original color.
+    const { grid } = makeRecordingGrid();
+    const h = new History();
+    h.commit(grid, { kind: 'recolorSquare', idx: 0, from: 1, to: 2 }, { coalesceKey: 'sq:0', now: 0 });
+    h.commit(grid, { kind: 'recolorSquare', idx: 0, from: 2, to: 3 }, { coalesceKey: 'sq:0', now: 100 });
+    h.commit(grid, { kind: 'recolorSquare', idx: 0, from: 3, to: 5 }, { coalesceKey: 'sq:0', now: 200 });
+    const { grid: g2, calls } = makeRecordingGrid();
+    h.undoLast(g2);
+    expect(calls).toEqual([['set_square_color', 0, 1]]);
     expect(h.canUndo()).toBe(false);
   });
 
@@ -173,9 +189,21 @@ describe('coalescing', () => {
       mergeEdits({ kind: 'recolorLine', idx: 0, from: 0, to: 2 }, { kind: 'recolorLine', idx: 0, from: 2, to: 5 })
     ).toEqual({ kind: 'recolorLine', idx: 0, from: 0, to: 5 });
 
+    // Squares merge just like the other movable/recolorable shapes.
+    expect(
+      mergeEdits({ kind: 'moveSquare', idx: 0, dRow: 1, dCol: 2 }, { kind: 'moveSquare', idx: 0, dRow: 3, dCol: -1 })
+    ).toEqual({ kind: 'moveSquare', idx: 0, dRow: 4, dCol: 1 });
+
+    expect(
+      mergeEdits({ kind: 'recolorSquare', idx: 0, from: 0, to: 2 }, { kind: 'recolorSquare', idx: 0, from: 2, to: 5 })
+    ).toEqual({ kind: 'recolorSquare', idx: 0, from: 0, to: 5 });
+
     // Different targets don't merge.
     expect(
       mergeEdits({ kind: 'moveRect', idx: 0, dRow: 1, dCol: 0 }, { kind: 'moveRect', idx: 1, dRow: 1, dCol: 0 })
+    ).toBeNull();
+    expect(
+      mergeEdits({ kind: 'moveSquare', idx: 0, dRow: 1, dCol: 0 }, { kind: 'moveSquare', idx: 1, dRow: 1, dCol: 0 })
     ).toBeNull();
   });
 });

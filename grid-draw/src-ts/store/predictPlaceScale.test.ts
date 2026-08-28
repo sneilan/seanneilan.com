@@ -26,11 +26,11 @@ describe('predict-from-selection placement scale', () => {
     const { grid } = makeGrid();
     useGridStore.setState({ grid, tool: 'draw', colorIdx: 0, subdivision: 1, selectedItems: [] });
 
-    // Draw one 1x square at the origin: a whole cell = CELL_UNITS^2 fine cells.
+    // Draw one 1x square at the origin: ONE atomic record of size CELL_UNITS.
     useGridStore.getState().beginDrawStroke();
     useGridStore.getState().drawCellAt(0, 0, true);
     useGridStore.getState().endDrawStroke();
-    expect(grid.get_cell_count()).toBe(CELL_UNITS * CELL_UNITS);
+    expect(grid.get_square_count()).toBe(1);
 
     // Select the square, as the user does before hitting Predict.
     useGridStore.getState().selectAll();
@@ -50,10 +50,10 @@ describe('predict-from-selection placement scale', () => {
     useGridStore.getState().placeDesign(out, bounds?.minRow ?? 0, bounds?.minCol ?? 0);
 
     // placeDesign auto-selects what it placed. An identity prediction of a 1x
-    // square must span exactly one whole cell (CELL_UNITS fine units per side),
-    // not CELL_UNITS whole cells.
+    // square must land as ONE square spanning exactly one whole cell (CELL_UNITS
+    // fine units per side), not an 8x8 block of whole cells.
     const placed = useGridStore.getState().selectedItems.filter(isSelectedType('cell'));
-    expect(placed).toHaveLength(CELL_UNITS * CELL_UNITS);
+    expect(placed).toHaveLength(1);
     const pb = getSelectionBoundsAll(placed, grid);
     expect(pb).toBeTruthy();
     expect(pb!.maxRow - pb!.minRow + 1).toBe(CELL_UNITS);

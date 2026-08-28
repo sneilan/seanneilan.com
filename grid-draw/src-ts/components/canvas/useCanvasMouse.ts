@@ -150,7 +150,7 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
             grid.render();
             // Highlight the selected item
             if (hitItem.type === 'cell') {
-              grid.highlight_cell(hitItem.row, hitItem.col);
+              grid.highlight_square(hitItem.index);
             } else if (hitItem.type === 'line') {
               grid.highlight_line(hitItem.index);
             } else if (hitItem.type === 'rect') {
@@ -269,15 +269,14 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
           const deltaCol = col - selectDragStart.col;
           grid.render();
           // Live preview: draw each selected element as a ghost at its new
-          // position so the actual cells/lines/rects appear to move with the
-          // cursor (not just an outline) until release. Cells are batched so a
-          // contiguous block ghosts as one outlined region, not a lattice.
-          const cellGhosts: number[] = [];
+          // position so the actual squares/lines/rects appear to move with the
+          // cursor (not just an outline) until release.
           for (const item of selectedItems) {
             if (item.type === 'cell') {
-              const newRow = item.row + deltaRow;
-              const newCol = item.col + deltaCol;
-              cellGhosts.push(newRow, newCol, grid.get_cell_color(item.row, item.col));
+              const s = grid.get_square(item.index); // [r, c, color, size]
+              if (s.length >= 4) {
+                grid.preview_square(s[0] + deltaRow, s[1] + deltaCol, s[3], s[2]);
+              }
             } else if (item.type === 'line') {
               const l = grid.get_line(item.index);
               if (l.length >= 6) {
@@ -295,7 +294,6 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
               }
             }
           }
-          if (cellGhosts.length > 0) grid.preview_cells(new Int32Array(cellGhosts));
         }
       }
     },

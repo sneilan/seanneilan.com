@@ -1,6 +1,5 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { getSelectionBounds } from '../../utils/selection';
 import {
   allItems,
   getSelectionBoundsAll,
@@ -9,6 +8,7 @@ import {
   readImage,
   readLine,
   readRect,
+  readSquare,
   readText,
   serializeSelection,
 } from '../gridHelpers';
@@ -68,27 +68,30 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
     if (!grid) return;
     const edits: Edit[] = [];
     const newSelected: SelectedItem[] = [];
+    let squareIdx = grid.get_square_count();
     let lineIdx = grid.get_line_count();
     let rectIdx = grid.get_rect_count();
     let textIdx = grid.get_text_count();
     let imageIdx = grid.get_image_count();
 
-    // Rescale coordinates from the design's fine-unit resolution to the current
-    // one (CELL_UNITS). A design saved at this resolution → f=1; a pre-
-    // subdivision whole-cell design (no `sub`) → f=CELL_UNITS.
+    // Coordinates are canonically fine units; the ONLY rescale anywhere is this
+    // legacy-migration factor for pre-subdivision designs saved in whole-cell
+    // units (no `sub`): coords ×CELL_UNITS. Current designs → f=1.
     const f = CELL_UNITS / (design.sub ?? 1);
 
-    // Infinite canvas: place every cell, no bounds clipping (a large design
-    // opened in a small window no longer loses cells).
-    for (const [r, c, color] of design.cells ?? []) {
-      const gr = anchorRow + r * f;
-      const gc = anchorCol + c * f;
+    // One atomic square per cells entry. v9 entries are [r, c, color, size];
+    // v6 fine-cell entries ([r, c, color] with sub stamped) become eighth
+    // squares at the same spot (identical geometry); pre-subdivision entries
+    // become 1x squares (coords ×f above).
+    for (const cell of design.cells ?? []) {
+      const [r, c, color] = cell;
+      const size = cell.length >= 4 ? cell[3] : f === 1 ? 1 : CELL_UNITS;
       edits.push({
-        kind: 'setCellState', row: gr, col: gc,
-        from: { filled: grid.get_cell(gr, gc), color: grid.get_cell_color(gr, gc) },
-        to: { filled: true, color },
+        kind: 'addSquare', idx: squareIdx,
+        square: { r: anchorRow + r * f, c: anchorCol + c * f, color, size },
       });
-      newSelected.push({ type: 'cell', row: gr, col: gc });
+      newSelected.push({ type: 'cell', index: squareIdx });
+      squareIdx++;
     }
     for (const [r1, c1, r2, c2, color, width] of design.lines ?? []) {
       edits.push({ kind: 'addLine', idx: lineIdx, line: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, color, width: width ?? 10 } });
@@ -176,7 +179,8 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
     get().renderSelection();
   },
 
-  // Output actions - sparse format for cells
+  // Output actions — ONE entry per drawn square (never an expansion into fine
+  // cells): a 1x square selected at 1x is a single tensor/JSON element.
   updateOutputs: () => {
     const { grid, selectedItems } = get();
     const selectedCells = selectedItems.filter(isSelectedType('cell'));
@@ -187,45 +191,42 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
     }
 
     const colorMap = ['#000000', '#ffffff', '#cc3333', '#ffcc00', '#2266dd', '#22aa22', null];
+    const squares = selectedCells.map(c => readSquare(grid, c.index));
 
-    // Sparse format: list of {row, col, color}
-    const sparseList: Array<{ row: number; col: number; color: string }> = [];
-
-    // Find bounds for relative coords
-    const cells = selectedCells.map(c => ({ row: c.row, col: c.col }));
-    const bounds = getSelectionBounds(cells);
-    if (!bounds) {
-      set({ jsonOutput: '', tensorOutput: '' });
-      return;
+    // Bounds over the squares' full blocks, in fine units.
+    let minRow = Infinity, minCol = Infinity, maxRow = -Infinity, maxCol = -Infinity;
+    for (const s of squares) {
+      minRow = Math.min(minRow, s.r);
+      minCol = Math.min(minCol, s.c);
+      maxRow = Math.max(maxRow, s.r + s.size - 1);
+      maxCol = Math.max(maxCol, s.c + s.size - 1);
     }
 
-    for (const cell of selectedCells) {
-      if (grid.get_cell(cell.row, cell.col)) {
-        const colorIdx = grid.get_cell_color(cell.row, cell.col);
-        const colorHex = colorMap[colorIdx] ?? '#000000';
-        // Use relative coordinates (from top-left of selection)
-        sparseList.push({
-          row: cell.row - bounds.minRow,
-          col: cell.col - bounds.minCol,
-          color: colorHex,
-        });
-      }
-    }
-
-    // Sort by row, then col for consistent output
+    // JSON: exact data — bbox-relative FINE coords + each square's own size,
+    // so importJson round-trips losslessly (including mixed resolutions).
+    const sparseList = squares.map((s) => ({
+      row: s.r - minRow,
+      col: s.c - minCol,
+      size: s.size,
+      color: colorMap[s.color] ?? '#000000',
+    }));
     sparseList.sort((a, b) => a.row - b.row || a.col - b.col);
 
-    // Generate Python code for PyTorch sparse COO tensor
-    const height = bounds.maxRow - bounds.minRow + 1;
-    const width = bounds.maxCol - bounds.minCol + 1;
+    // Tensor: the ML-facing view. When every selected square shares one size
+    // and sits on its lattice (a drawing made at one grid setting), indices
+    // divide by that size — a 1x drawing exports one index per square in
+    // whole-cell units. Mixed resolutions fall back to fine units.
+    const unit = squares.every(
+      (s) => s.size === squares[0].size && (s.r - minRow) % s.size === 0 && (s.c - minCol) % s.size === 0,
+    ) ? squares[0].size : 1;
+    const height = Math.ceil((maxRow - minRow + 1) / unit);
+    const width = Math.ceil((maxCol - minCol + 1) / unit);
     const rowIndices: number[] = [];
     const colIndices: number[] = [];
-
     for (const cell of sparseList) {
-      // Only black cells (color index 0) are included
       if (cell.color === '#000000') {
-        rowIndices.push(cell.row);
-        colIndices.push(cell.col);
+        rowIndices.push(cell.row / unit);
+        colIndices.push(cell.col / unit);
       }
     }
 
@@ -262,7 +263,9 @@ sparse = sparse.coalesce()`;
       const isSparse = parsed.length > 0 && typeof parsed[0] === 'object' && 'row' in parsed[0] && 'col' in parsed[0];
 
       if (isSparse) {
-        // Sparse format: [{row, col, color}, ...]. Infinite canvas: no bounds.
+        // Sparse format: [{row, col, color, size?}, ...] with fine-unit coords.
+        // `size` (fine units) round-trips from updateOutputs; absent = a legacy
+        // fine-cell export, which becomes an eighth (size-1) square.
         for (const cell of parsed) {
           if (typeof cell !== 'object' || cell === null) continue;
           const r = cell.row;
@@ -270,27 +273,24 @@ sparse = sparse.coalesce()`;
           const color = cell.color;
           if (typeof r !== 'number' || typeof c !== 'number') continue;
 
-          const gridRow = mousePos.row + r;
-          const gridCol = mousePos.col + c;
           const colorIdx = colorMap[color] ?? 0;
-          grid.set_draw_color(colorIdx);
-          grid.set_cell(gridRow, gridCol, true);
-          newSelected.push({ type: 'cell', row: gridRow, col: gridCol });
+          const size = typeof cell.size === 'number' && cell.size >= 1 ? cell.size : 1;
+          const idx = grid.add_square(mousePos.row + r, mousePos.col + c, colorIdx, size);
+          newSelected.push({ type: 'cell', index: idx });
         }
       } else {
-        // Legacy 2D grid format: [[{color}, null, ...], ...]
+        // Legacy 2D grid format: [[{color}, null, ...], ...] — one square per
+        // entry, tiled at the CURRENT grid size (draw at 1x = 1x squares).
+        const size = CELL_UNITS / get().subdivision;
         for (let r = 0; r < parsed.length; r++) {
           const row = parsed[r];
           if (!Array.isArray(row)) continue;
           for (let c = 0; c < row.length; c++) {
-            const gridRow = mousePos.row + r;
-            const gridCol = mousePos.col + c;
             const cell = row[c];
             if (cell && typeof cell === 'object' && cell.color) {
               const colorIdx = colorMap[cell.color] ?? 0;
-              grid.set_draw_color(colorIdx);
-              grid.set_cell(gridRow, gridCol, true);
-              newSelected.push({ type: 'cell', row: gridRow, col: gridCol });
+              const idx = grid.add_square(mousePos.row + r * size, mousePos.col + c * size, colorIdx, size);
+              newSelected.push({ type: 'cell', index: idx });
             }
           }
         }
@@ -324,18 +324,17 @@ sparse = sparse.coalesce()`;
 
       const newSelected: SelectedItem[] = [];
 
-      grid.set_draw_color(0); // Black for tensor import
-
+      // One black square per active tensor entry, tiled at the CURRENT grid
+      // size — importing at 1x reproduces whole-cell squares.
+      const size = CELL_UNITS / get().subdivision;
       for (let r = 0; r < parsed.length; r++) {
         const row = parsed[r];
         if (!Array.isArray(row)) continue;
         for (let c = 0; c < row.length; c++) {
-          const gridRow = mousePos.row + r;
-          const gridCol = mousePos.col + c;
           const val = Number(row[c]);
           if (val > 0.5) {
-            grid.set_cell(gridRow, gridCol, true);
-            newSelected.push({ type: 'cell', row: gridRow, col: gridCol });
+            const idx = grid.add_square(mousePos.row + r * size, mousePos.col + c * size, 0, size);
+            newSelected.push({ type: 'cell', index: idx });
           }
         }
       }
@@ -369,11 +368,8 @@ sparse = sparse.coalesce()`;
     for (let i = grid.get_line_count() - 1; i >= 0; i--) {
       edits.push({ kind: 'deleteLine', idx: i, line: readLine(grid, i) });
     }
-    // Enumerate filled cells from the sparse buffer ([row, col, color, ...]).
-    const cells = grid.get_filled_cells();
-    for (let i = 0; i + 2 < cells.length; i += 3) {
-      const r = cells[i], c = cells[i + 1], color = cells[i + 2];
-      edits.push({ kind: 'setCellState', row: r, col: c, from: { filled: true, color }, to: { filled: false, color } });
+    for (let i = grid.get_square_count() - 1; i >= 0; i--) {
+      edits.push({ kind: 'deleteSquare', idx: i, square: readSquare(grid, i) });
     }
 
     get().commitEdits(edits);

@@ -1,14 +1,16 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE};
+use crate::{buffers, GridCanvas, CELL_SIZE, SQUARE_STRIDE};
 
-// Cell coordinates are signed world cells (the canvas is infinite). Storage is
-// sparse: a cell exists in `self.cells` iff it is filled, mapping to its color
-// index. There are no bounds — any (row, col) is valid, including negatives.
+// Atomic square records: one [r, c, color, size] record per drawn square, at
+// the resolution it was drawn (size in fine units: 1x=8, ½=4, ¼=2, ⅛=1).
+// Coordinates are signed fine units (the canvas is infinite). Records are
+// index-stable like lines/rects — insert/delete shift later indices — and
+// insertion order is z-order (later records draw and hit-test on top).
 #[wasm_bindgen]
 impl GridCanvas {
     #[wasm_bindgen]
     pub fn clear(&mut self) {
-        self.cells.clear();
+        self.squares.clear();
         self.drawn_lines.clear();
         self.drawn_rects.clear();
         self.drawn_texts.clear();
@@ -39,73 +41,103 @@ impl GridCanvas {
         self.subdivision
     }
 
-    /// Recolor an already-filled cell (for recoloring a selection).
+    /// Insert a square record at `idx` (clamped to count, so count appends),
+    /// shifting later indices up — the index-stable inverse of delete_square,
+    /// which is what lets undo restore a square at its original z-position.
     #[wasm_bindgen]
-    pub fn set_cell_color(&mut self, row: i32, col: i32, color: u8) {
-        if color < 6 && self.cells.contains_key(&(row, col)) {
-            self.cells.insert((row, col), color);
+    pub fn insert_square(&mut self, idx: usize, r: i32, c: i32, color: u8, size: i32) {
+        buffers::insert_record(&mut self.squares, SQUARE_STRIDE, idx, &[r, c, color as i32, size.max(1)]);
+        self.maybe_render();
+    }
+
+    /// Append a square on top (z-order) and return its index.
+    #[wasm_bindgen]
+    pub fn add_square(&mut self, r: i32, c: i32, color: u8, size: i32) -> usize {
+        let idx = self.squares.len() / SQUARE_STRIDE;
+        self.insert_square(idx, r, c, color, size);
+        idx
+    }
+
+    #[wasm_bindgen]
+    pub fn delete_square(&mut self, idx: usize) {
+        buffers::delete_record(&mut self.squares, SQUARE_STRIDE, idx);
+        self.maybe_render();
+    }
+
+    /// One record as [r, c, color, size]; empty if out of range.
+    #[wasm_bindgen]
+    pub fn get_square(&self, idx: usize) -> Vec<i32> {
+        let start = idx * SQUARE_STRIDE;
+        if start + SQUARE_STRIDE <= self.squares.len() {
+            self.squares[start..start + SQUARE_STRIDE].to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn get_square_count(&self) -> usize {
+        self.squares.len() / SQUARE_STRIDE
+    }
+
+    /// All squares as a flat [r, c, color, size, ...] buffer in z-order.
+    #[wasm_bindgen]
+    pub fn get_squares(&self) -> Vec<i32> {
+        self.squares.clone()
+    }
+
+    #[wasm_bindgen]
+    pub fn set_square_color(&mut self, idx: usize, color: u8) {
+        let start = idx * SQUARE_STRIDE;
+        if color < 6 && start + SQUARE_STRIDE <= self.squares.len() {
+            self.squares[start + 2] = color as i32;
             self.maybe_render();
         }
     }
 
     #[wasm_bindgen]
-    pub fn get_cell(&self, row: i32, col: i32) -> bool {
-        self.cells.contains_key(&(row, col))
+    pub fn move_square(&mut self, idx: usize, dr: i32, dc: i32) {
+        let start = idx * SQUARE_STRIDE;
+        if start + SQUARE_STRIDE <= self.squares.len() {
+            self.squares[start] += dr;
+            self.squares[start + 1] += dc;
+            self.maybe_render();
+        }
     }
 
+    /// Index of the topmost square covering fine coordinate (row, col), or -1.
+    #[wasm_bindgen]
+    pub fn square_at(&self, row: i32, col: i32) -> i32 {
+        buffers::topmost_square_at(&self.squares, row, col)
+    }
+
+    /// Indices of every square intersecting the inclusive fine-unit box —
+    /// squares are atomic, so touching any part of one selects the whole square.
+    #[wasm_bindgen]
+    pub fn squares_in_box(&self, r1: i32, c1: i32, r2: i32, c2: i32) -> Vec<u32> {
+        buffers::squares_in_box(&self.squares, r1, c1, r2, c2)
+    }
+
+    /// Coverage query: is this fine coordinate inside any square? (Used by the
+    /// draw tool's paint/erase toggle and shape hit-test fallthrough.)
+    #[wasm_bindgen]
+    pub fn get_cell(&self, row: i32, col: i32) -> bool {
+        self.square_at(row, col) >= 0
+    }
+
+    /// Color visible at a fine coordinate: the topmost covering square's.
     #[wasm_bindgen]
     pub fn get_cell_color(&self, row: i32, col: i32) -> u8 {
-        *self.cells.get(&(row, col)).unwrap_or(&0)
-    }
-
-    #[wasm_bindgen]
-    pub fn set_cell(&mut self, row: i32, col: i32, value: bool) {
-        if value && self.draw_color < 6 {
-            self.cells.insert((row, col), self.draw_color);
+        let idx = self.square_at(row, col);
+        if idx >= 0 {
+            self.squares[idx as usize * SQUARE_STRIDE + 2] as u8
         } else {
-            self.cells.remove(&(row, col));
+            0
         }
-        self.maybe_render();
     }
 
     #[wasm_bindgen]
     pub fn get_cell_size(&self) -> f64 {
         CELL_SIZE
-    }
-
-    /// Number of filled cells.
-    #[wasm_bindgen]
-    pub fn get_cell_count(&self) -> usize {
-        self.cells.len()
-    }
-
-    /// All filled cells as a flat [row, col, color, ...] buffer (stride 3).
-    /// Replaces the old "iterate every row×col" enumeration, which is impossible
-    /// on an unbounded grid. Order is unspecified (sparse map); callers that need
-    /// a stable order sort the result (serialization already does).
-    #[wasm_bindgen]
-    pub fn get_filled_cells(&self) -> Vec<i32> {
-        let mut out = Vec::with_capacity(self.cells.len() * 3);
-        for ((r, c), color) in &self.cells {
-            out.push(*r);
-            out.push(*c);
-            out.push(*color as i32);
-        }
-        out
-    }
-
-    #[wasm_bindgen]
-    pub fn move_cell(&mut self, from_row: i32, from_col: i32, to_row: i32, to_col: i32) {
-        if let Some(color) = self.cells.remove(&(from_row, from_col)) {
-            self.cells.insert((to_row, to_col), color);
-            self.maybe_render();
-        }
-    }
-
-    #[wasm_bindgen]
-    pub fn delete_cell(&mut self, row: i32, col: i32) {
-        if self.cells.remove(&(row, col)).is_some() {
-            self.maybe_render();
-        }
     }
 }

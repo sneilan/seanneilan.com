@@ -95,12 +95,15 @@ export function renderDesignToCanvas(
   }
   ctx.translate(pad, pad);
 
-  // Cells: filled unit squares.
-  for (const [r, c, color] of design.cells ?? []) {
+  // Squares: one filled quad per record at its native size. Legacy 3-tuple
+  // entries (no size) are fine cells → unit squares.
+  for (const cell of design.cells ?? []) {
+    const [r, c, color] = cell;
+    const size = cell.length >= 4 ? cell[3] : 1;
     const fill = hex(color);
     if (!fill) continue;
     ctx.fillStyle = fill;
-    ctx.fillRect(c * cs, r * cs, cs, cs);
+    ctx.fillRect(c * cs, r * cs, size * cs, size * cs);
   }
 
   // Images: a bitmap referenced by URL. Thumbnails are drawn synchronously from

@@ -35,11 +35,11 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     }));
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
-    // Recolor the fill of every selected cell/rect and the stroke of every line.
+    // Recolor the fill of every selected square/rect and the stroke of every line.
     const edits: Edit[] = [];
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        edits.push({ kind: 'setCellColor', row: item.row, col: item.col, from: grid.get_cell_color(item.row, item.col), to: idx });
+        edits.push({ kind: 'recolorSquare', idx: item.index, from: grid.get_square(item.index)[2], to: idx });
       } else if (item.type === 'line') {
         edits.push({ kind: 'recolorLine', idx: item.index, from: grid.get_line(item.index)[4], to: idx });
       } else if (item.type === 'rect') {
@@ -216,25 +216,40 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   drawCellAt: (row, col, filled) => {
     const { grid, colorIdx, subdivision } = get();
     if (!grid) return;
-    // A "cell" at the current subdivision covers a block of fine cells: whole
-    // cell = CELL_UNITS² fine cells, ½ = (CELL_UNITS/2)², etc. (row,col) is the
-    // block's snapped top-left. Paint/erase every fine cell in the block as one
-    // undo step, skipping no-ops so a drag over the same block doesn't bloat.
-    const block = CELL_UNITS / subdivision;
-    const edits: Edit[] = [];
-    for (let dr = 0; dr < block; dr++) {
-      for (let dc = 0; dc < block; dc++) {
-        const r = row + dr;
-        const c = col + dc;
-        const to = filled && colorIdx < 6
-          ? { filled: true, color: colorIdx }
-          : { filled: false, color: colorIdx < 6 ? colorIdx : grid.get_cell_color(r, c) };
-        const from = { filled: grid.get_cell(r, c), color: grid.get_cell_color(r, c) };
-        if (from.filled === to.filled && (!to.filled || from.color === to.color)) continue;
-        edits.push({ kind: 'setCellState', row: r, col: c, from, to });
+    // ONE atomic square record per drawn square, at the resolution it was drawn
+    // (1x = CELL_UNITS fine units per side, ½ = half that, ...). (row, col) is
+    // the block's snapped top-left.
+    const size = CELL_UNITS / subdivision;
+    if (filled && colorIdx < 6) {
+      // Re-drawing an existing exact-size block recolors it in place (a drag
+      // over the same block is a no-op); anything else stacks a new square on
+      // top — squares are atomic, they never expand into or clobber others.
+      const covering = grid.squares_in_box(row, col, row + size - 1, col + size - 1);
+      for (let i = covering.length - 1; i >= 0; i--) {
+        const s = grid.get_square(covering[i]);
+        if (s[0] === row && s[1] === col && s[3] === size) {
+          if (s[2] !== colorIdx) {
+            get().commitEdits([{ kind: 'recolorSquare', idx: covering[i], from: s[2], to: colorIdx }]);
+          }
+          return;
+        }
       }
+      get().commitEdits([{
+        kind: 'addSquare', idx: grid.get_square_count(),
+        square: { r: row, c: col, color: colorIdx, size },
+      }]);
+    } else {
+      // Erase: remove every WHOLE square the eraser block touches (squares are
+      // atomic — they never split). High-index-first keeps indices valid.
+      const hits = grid.squares_in_box(row, col, row + size - 1, col + size - 1);
+      const edits: Edit[] = [];
+      for (let i = hits.length - 1; i >= 0; i--) {
+        const idx = hits[i];
+        const s = grid.get_square(idx);
+        edits.push({ kind: 'deleteSquare', idx, square: { r: s[0], c: s[1], color: s[2], size: s[3] } });
+      }
+      if (edits.length > 0) get().commitEdits(edits);
     }
-    if (edits.length > 0) get().commitEdits(edits);
   },
 
   endDrawStroke: () => {

@@ -70,11 +70,10 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     const { grid, selectBoxStart, previousSelection } = get();
     if (!grid || !selectBoxStart) return;
     grid.render_with_selection_box(selectBoxStart.row, selectBoxStart.col, currentCell.row, currentCell.col);
-    // Highlight previously selected items; cells batched as merged regions.
-    const cellCoords: number[] = [];
+    // Highlight previously selected items.
     for (const item of previousSelection) {
       if (item.type === 'cell') {
-        cellCoords.push(item.row, item.col);
+        grid.highlight_square(item.index);
       } else if (item.type === 'line') {
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
@@ -85,7 +84,6 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.highlight_image(item.index);
       }
     }
-    if (cellCoords.length > 0) grid.highlight_cells(new Int32Array(cellCoords));
   },
 
   finishBoxSelection: (endCell) => {
@@ -103,13 +101,9 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     // Collect all items in the box
     const boxItems: SelectedItem[] = [];
 
-    // Get filled cells in box (the box is finite; coords may be negative).
-    for (let r = r1; r <= r2; r++) {
-      for (let c = c1; c <= c2; c++) {
-        if (grid.get_cell(r, c)) {
-          boxItems.push({ type: 'cell', row: r, col: c });
-        }
-      }
+    // Squares are atomic: touching any part of one selects the whole square.
+    for (const idx of grid.squares_in_box(r1, c1, r2, c2)) {
+      boxItems.push({ type: 'cell', index: idx });
     }
 
     // Get lines that intersect the box
@@ -198,31 +192,14 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (deltaRow !== 0 || deltaCol !== 0) {
       const newSelected: SelectedItem[] = [];
 
-      // Build one batch describing the whole move. For cells we emit all source
-      // clears first, then all destination writes, so overlapping source/dest
-      // footprints never clobber (a dest write can't land on a not-yet-cleared
-      // source). `from` states are captured pre-gesture, so undo restores the
-      // exact original contents of both source and destination cells.
-      const clears: Edit[] = [];
-      const writes: Edit[] = [];
-      for (const item of selectedItems) {
-        if (item.type === 'cell') {
-          if (!grid.get_cell(item.row, item.col)) continue;
-          const color = grid.get_cell_color(item.row, item.col);
-          const newRow = item.row + deltaRow;
-          const newCol = item.col + deltaCol;
-          clears.push({
-            kind: 'setCellState', row: item.row, col: item.col,
-            from: { filled: true, color }, to: { filled: false, color },
-          });
-          // Infinite canvas: any destination cell is valid (incl. negative).
-          writes.push({
-            kind: 'setCellState', row: newRow, col: newCol,
-            from: { filled: grid.get_cell(newRow, newCol), color: grid.get_cell_color(newRow, newCol) },
-            to: { filled: true, color },
-          });
-          newSelected.push({ type: 'cell', row: newRow, col: newCol });
-        }
+      // Build one batch describing the whole move. A square is one record, so
+      // moving it is one index-stable moveSquare edit — its identity (and the
+      // selection) survives the move, and squares it lands on stay underneath.
+      const squareEdits: Edit[] = [];
+      const squaresToMove = selectedItems.filter(isSelectedType('cell'));
+      for (const item of squaresToMove) {
+        squareEdits.push({ kind: 'moveSquare', idx: item.index, dRow: deltaRow, dCol: deltaCol });
+        newSelected.push({ type: 'cell', index: item.index });
       }
 
       const lineEdits: Edit[] = [];
@@ -253,7 +230,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         newSelected.push({ type: 'image', index: item.index });
       }
 
-      get().commitEdits([...clears, ...writes, ...lineEdits, ...rectEdits, ...textEdits, ...imageEdits]);
+      get().commitEdits([...squareEdits, ...lineEdits, ...rectEdits, ...textEdits, ...imageEdits]);
 
       set({
         selectedItems: newSelected,
@@ -318,12 +295,13 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
       return { type: 'image', index: imageIdx };
     }
 
-    // Test cells
-    const cellSize = grid.get_cell_size();
+    // Test squares: topmost record covering the pointer's fine coordinate.
+    const cellSize = grid.get_cell_size(); // world px per fine unit
     const col = Math.floor(x / cellSize);
     const row = Math.floor(y / cellSize);
-    if (grid.get_cell(row, col)) {
-      return { type: 'cell', row, col };
+    const squareIdx = grid.square_at(row, col);
+    if (squareIdx >= 0) {
+      return { type: 'cell', index: squareIdx };
     }
 
     return null;
@@ -335,12 +313,11 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (!grid) return;
     grid.render();
 
-    // Highlight all selected items. Cells are batched so contiguous fine cells
-    // (a 1x square is 8x8 of them) outline as ONE merged region, not a lattice.
-    const cellCoords: number[] = [];
+    // Highlight all selected items. A square is one atomic record, so it gets
+    // one outline — never a lattice of per-fine-cell borders.
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        cellCoords.push(item.row, item.col);
+        grid.highlight_square(item.index);
       } else if (item.type === 'line') {
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
@@ -351,7 +328,6 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.highlight_image(item.index);
       }
     }
-    if (cellCoords.length > 0) grid.highlight_cells(new Int32Array(cellCoords));
 
     // Draw resize handles when exactly one line, rect, or text frame is selected.
     if (selectedItems.length === 1) {
@@ -382,11 +358,15 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     }
   },
 
-  // Helper to get selected cells only
+  // Helper to get selected squares' top-left coords only
   getSelectedCells: () => {
-    const { selectedItems } = get();
+    const { grid, selectedItems } = get();
+    if (!grid) return [];
     return selectedItems
       .filter(isSelectedType('cell'))
-      .map(i => ({ row: i.row, col: i.col }));
+      .map(i => {
+        const s = grid.get_square(i.index);
+        return { row: s[0], col: s[1] };
+      });
   },
 });

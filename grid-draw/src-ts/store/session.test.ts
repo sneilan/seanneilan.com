@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useGridStore } from './gridStore';
+import type { Edit } from './edits/types';
 import { makeGrid } from './testGrid';
 
 /**
@@ -18,8 +19,10 @@ describe('session/document actions', () => {
   });
 
   it('selectAll selects every element and switches to the select tool', () => {
+    // Two atomic square records (index-addressed, z-order = insertion order),
+    // one line, one rect. selectAll enumerates squares by index, then shapes.
     const { grid } = makeGrid({
-      cell: (r, c) => (r === 0 && c === 0) || (r === 1 && c === 1),
+      squares: [[0, 0, 0, 8], [1, 1, 0, 8]],
       lines: [[0, 0, 1, 1, 0]],
       rects: [[0, 0, 2, 2, 0, 6]],
     });
@@ -29,8 +32,8 @@ describe('session/document actions', () => {
 
     const { selectedItems, tool } = useGridStore.getState();
     expect(tool).toBe('select');
-    expect(selectedItems).toContainEqual({ type: 'cell', row: 0, col: 0 });
-    expect(selectedItems).toContainEqual({ type: 'cell', row: 1, col: 1 });
+    expect(selectedItems).toContainEqual({ type: 'cell', index: 0 });
+    expect(selectedItems).toContainEqual({ type: 'cell', index: 1 });
     expect(selectedItems).toContainEqual({ type: 'line', index: 0 });
     expect(selectedItems).toContainEqual({ type: 'rect', index: 0 });
     expect(selectedItems).toHaveLength(4);
@@ -59,19 +62,43 @@ describe('session/document actions', () => {
     const { grid } = makeGrid();
     useGridStore.setState({ grid });
 
+    // Legacy (no-sub) whole-cell design: [0,0,2] → a 1x square at the origin.
     const design = { w: 1, h: 1, cells: [[0, 0, 2]], lines: [], rects: [], texts: [] };
-    const stacks = {
-      undo: [{ kind: 'setCell', row: 0, col: 0, from: false, to: true } as const],
+    // A persisted history built from the CURRENT edit vocabulary (square records)
+    // installs verbatim, so undo continues exactly as it did before saving.
+    const stacks: { undo: Edit[]; redo: Edit[] } = {
+      undo: [{ kind: 'addSquare', idx: 0, square: { r: 0, c: 0, color: 2, size: 8 } }],
       redo: [],
     };
 
     useGridStore.getState().loadDesignWithHistory(design, stacks);
 
-    // Grid reflects the loaded design...
+    // Grid reflects the loaded design (the 1x square covers the origin cell)...
     expect(grid.get_cell(0, 0)).toBe(true);
     // ...and the persisted history is installed verbatim (continue undo as before).
     expect(useGridStore.getState().canUndo()).toBe(true);
     expect(useGridStore.getState().exportHistory().undo).toEqual(stacks.undo);
+  });
+
+  it('loadDesignWithHistory drops a legacy per-fine-cell history but still loads the design', () => {
+    const { grid } = makeGrid();
+    useGridStore.setState({ grid });
+
+    const design = { w: 1, h: 1, cells: [[0, 0, 2]], lines: [], rects: [], texts: [] };
+    // Stacks saved before the square-record refactor carry setCell/setCellColor/
+    // setCellState kinds that no longer exist. They arrive as untyped JSON, and
+    // importing them would corrupt the document — so the history is dropped while
+    // the drawing itself still loads.
+    const legacyStacks = JSON.parse(JSON.stringify({
+      undo: [{ kind: 'setCell', row: 0, col: 0, from: false, to: true }],
+      redo: [],
+    }));
+
+    useGridStore.getState().loadDesignWithHistory(design, legacyStacks);
+
+    expect(grid.get_cell(0, 0)).toBe(true);
+    expect(useGridStore.getState().canUndo()).toBe(false);
+    expect(useGridStore.getState().canRedo()).toBe(false);
   });
 
   it('loadDesignWithHistory with no stacks loads a clean (empty) history', () => {
@@ -87,7 +114,7 @@ describe('session/document actions', () => {
   });
 
   it('exportHistory snapshots edits committed via actions', () => {
-    const { grid } = makeGrid({ cell: () => false });
+    const { grid } = makeGrid();
     useGridStore.setState({ grid, colorIdx: 2 });
 
     useGridStore.getState().beginDrawStroke();

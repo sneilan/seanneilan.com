@@ -65,7 +65,7 @@ function makeResizeGrid(opts?: {
 
     // --- rendering / highlight no-ops ---
     render: () => {},
-    highlight_cell: () => {},
+    highlight_square: () => {},
     highlight_line: () => {},
     highlight_rect: () => {},
     highlight_text: () => {},
@@ -220,7 +220,7 @@ describe('transform: rotate non-commit paths', () => {
     const { g } = makeResizeGrid();
     useGridStore.setState({
       grid: g,
-      selectedItems: [{ type: 'cell', row: 0, col: 0 }],
+      selectedItems: [{ type: 'cell', index: 0 }],
       selectMode: 'rotate',
       isSelecting: true,
       rotateOrigin: { cx: 8, cy: 8, startAngle: 0 },
@@ -239,7 +239,7 @@ describe('transform: rotate non-commit paths', () => {
     const { g } = makeResizeGrid();
     useGridStore.setState({
       grid: g,
-      selectedItems: [{ type: 'cell', row: 0, col: 0 }],
+      selectedItems: [{ type: 'cell', index: 0 }],
       selectMode: 'rotate',
       isSelecting: true,
       rotateOrigin: null,

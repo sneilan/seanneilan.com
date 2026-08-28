@@ -17,6 +17,7 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
   const rectCount = grid.get_rect_count();
   const textCount = typeof grid.get_text_count === 'function' ? grid.get_text_count() : 0;
   const imageCount = typeof grid.get_image_count === 'function' ? grid.get_image_count() : 0;
+  const squareCount = typeof grid.get_square_count === 'function' ? grid.get_square_count() : 0;
   const bad = (what: string, idx: number, max: number) => {
     if (idx < 0 || idx > max) {
       throw new RangeError(`applyEdit: ${e.kind} index ${idx} out of range (0..${max}) for ${what}`);
@@ -24,6 +25,14 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
   };
   switch (e.kind) {
     // Inserts may target one-past-the-end (append); others must hit an existing item.
+    case 'addSquare':
+      bad('squares', e.idx, squareCount);
+      break;
+    case 'deleteSquare':
+    case 'recolorSquare':
+    case 'moveSquare':
+      bad('squares', e.idx, squareCount - 1);
+      break;
     case 'addLine':
       bad('lines', e.idx, lineCount);
       break;
@@ -74,19 +83,17 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
 export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
   assertInRange(grid, e);
   switch (e.kind) {
-    case 'setCell':
-      grid.set_cell(e.row, e.col, e.to);
+    case 'addSquare':
+      grid.insert_square(e.idx, e.square.r, e.square.c, e.square.color, e.square.size);
       break;
-    case 'setCellColor':
-      grid.set_cell_color(e.row, e.col, e.to);
+    case 'deleteSquare':
+      grid.delete_square(e.idx);
       break;
-    case 'setCellState':
-      if (e.to.filled) {
-        grid.set_draw_color(e.to.color);
-        grid.set_cell(e.row, e.col, true);
-      } else {
-        grid.set_cell(e.row, e.col, false);
-      }
+    case 'recolorSquare':
+      grid.set_square_color(e.idx, e.to);
+      break;
+    case 'moveSquare':
+      grid.move_square(e.idx, e.dRow, e.dCol);
       break;
     case 'recolorLine':
       grid.set_line_color(e.idx, e.to);
@@ -180,12 +187,14 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
  */
 export function invertEdit(e: Edit): Edit {
   switch (e.kind) {
-    case 'setCell':
+    case 'addSquare':
+      return { kind: 'deleteSquare', idx: e.idx, square: e.square };
+    case 'deleteSquare':
+      return { kind: 'addSquare', idx: e.idx, square: e.square };
+    case 'recolorSquare':
       return { ...e, from: e.to, to: e.from };
-    case 'setCellColor':
-      return { ...e, from: e.to, to: e.from };
-    case 'setCellState':
-      return { ...e, from: e.to, to: e.from };
+    case 'moveSquare':
+      return { ...e, dRow: -e.dRow, dCol: -e.dCol };
     case 'recolorLine':
     case 'resizeLine':
     case 'recolorRectFill':
@@ -251,6 +260,7 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
     case 'recolorRectOutline':
     case 'recolorText':
     case 'resizeText':
+    case 'recolorSquare':
       if (next.kind === prev.kind && prev.idx === next.idx) return { ...prev, to: next.to };
       return null;
     case 'alignText':
@@ -258,16 +268,6 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
       return null;
     case 'setTextFrame':
       if (next.kind === 'setTextFrame' && prev.idx === next.idx) return { ...prev, to: next.to };
-      return null;
-    case 'setCellColor':
-      if (next.kind === 'setCellColor' && prev.row === next.row && prev.col === next.col) {
-        return { ...prev, to: next.to };
-      }
-      return null;
-    case 'setCellState':
-      if (next.kind === 'setCellState' && prev.row === next.row && prev.col === next.col) {
-        return { ...prev, to: next.to };
-      }
       return null;
     case 'setLineGeom':
     case 'setRectGeom':
@@ -278,6 +278,7 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
     case 'moveRect':
     case 'moveText':
     case 'moveImage':
+    case 'moveSquare':
       if (next.kind === prev.kind && prev.idx === next.idx) {
         return { ...prev, dRow: prev.dRow + next.dRow, dCol: prev.dCol + next.dCol };
       }

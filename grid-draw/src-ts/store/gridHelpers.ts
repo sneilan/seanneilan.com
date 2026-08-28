@@ -1,8 +1,13 @@
 import type { GridCanvasWasm } from '../types/grid';
-import type { LineData, RectData, LineGeom, RectGeom, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
+import type { LineData, RectData, LineGeom, RectGeom, SquareData, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
 import { CELL_UNITS, type DesignJSON, type SelectedItem } from './types';
 
 // --- Shape readers ----------------------------------------------------------
+
+export function readSquare(grid: GridCanvasWasm, idx: number): SquareData {
+  const a = grid.get_square(idx); // [r, c, color, size]
+  return { r: a[0], c: a[1], color: a[2], size: a[3] };
+}
 
 export function readLine(grid: GridCanvasWasm, idx: number): LineData {
   const a = grid.get_line(idx);
@@ -51,32 +56,18 @@ export function readImage(grid: GridCanvasWasm, idx: number): ImageData {
 
 // Stable signature of a selection, so consecutive recolors of the SAME
 // selection coalesce into one undo step (but a different selection doesn't).
+// Every item type (squares included) is index-addressed, and the first letters
+// of the five type names are distinct.
 export function selectionSignature(items: SelectedItem[]): string {
   return items
-    .map(i => (i.type === 'cell' ? `c:${i.row},${i.col}` : `${i.type[0]}:${i.index}`))
+    .map(i => `${i.type[0]}:${i.index}`)
     .sort()
     .join('|');
 }
 
 // Helper to check if two items are equal
 export function itemsEqual(a: SelectedItem, b: SelectedItem): boolean {
-  if (a.type !== b.type) return false;
-  if (a.type === 'cell' && b.type === 'cell') {
-    return a.row === b.row && a.col === b.col;
-  }
-  if (a.type === 'line' && b.type === 'line') {
-    return a.index === b.index;
-  }
-  if (a.type === 'rect' && b.type === 'rect') {
-    return a.index === b.index;
-  }
-  if (a.type === 'text' && b.type === 'text') {
-    return a.index === b.index;
-  }
-  if (a.type === 'image' && b.type === 'image') {
-    return a.index === b.index;
-  }
-  return false;
+  return a.type === b.type && a.index === b.index;
 }
 
 // Helper to check if item is in selection
@@ -118,10 +109,15 @@ export function getSelectionBoundsAll(items: SelectedItem[], grid: GridCanvasWas
 
   for (const item of items) {
     if (item.type === 'cell') {
-      minRow = Math.min(minRow, item.row);
-      minCol = Math.min(minCol, item.col);
-      maxRow = Math.max(maxRow, item.row);
-      maxCol = Math.max(maxCol, item.col);
+      const s = grid.get_square(item.index); // [r, c, color, size]
+      if (s.length >= 4) {
+        // A square covers fine units [r, r+size), so its last covered unit is
+        // r+size-1 (matching the old one-fine-cell convention of max = row).
+        minRow = Math.min(minRow, s[0]);
+        minCol = Math.min(minCol, s[1]);
+        maxRow = Math.max(maxRow, s[0] + s[3] - 1);
+        maxCol = Math.max(maxCol, s[1] + s[3] - 1);
+      }
     } else if (item.type === 'line') {
       const lineData = grid.get_line(item.index);
       if (lineData.length >= 4) {
@@ -194,7 +190,8 @@ export function serializeSelection(
 
   for (const item of items) {
     if (item.type === 'cell') {
-      cells.push([item.row - oR, item.col - oC, grid.get_cell_color(item.row, item.col)]);
+      const s = grid.get_square(item.index); // [r, c, color, size]
+      cells.push([s[0] - oR, s[1] - oC, s[2], s[3]]);
     } else if (item.type === 'line') {
       const a = grid.get_line(item.index);
       lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
@@ -210,8 +207,8 @@ export function serializeSelection(
     }
   }
 
-  // Sort for stable, augmentation-friendly output (row-major, then by kind).
-  cells.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  // Cells stay in index order — that IS the z-order, and overlapping squares
+  // must reload with the same square on top (no row-major sort).
   return {
     w: maxCol - oC + 1,
     h: maxRow - oR + 1,
@@ -308,15 +305,23 @@ export function rotateQuarter(r: number, c: number, k: number, icr: number, icc:
   return { r: rr, c: cc };
 }
 
+/**
+ * Quarter-turn a square BLOCK (top-left r,c + size) about (icr, icc): rotate
+ * two opposite corners and take the min — the block stays an axis-aligned
+ * square of the same size, so only its top-left moves.
+ */
+export function rotateSquareQuarter(
+  r: number, c: number, size: number, k: number, icr: number, icc: number,
+): { r: number; c: number } {
+  const a = rotateQuarter(r, c, k, icr, icc);
+  const b = rotateQuarter(r + size - 1, c + size - 1, k, icr, icc);
+  return { r: Math.min(a.r, b.r), c: Math.min(a.c, b.c) };
+}
+
 /** Every drawable item currently on the grid, as a selection list. */
 export function allItems(grid: GridCanvasWasm): SelectedItem[] {
   const items: SelectedItem[] = [];
-  // The grid is infinite/sparse, so enumerate filled cells via the WASM buffer
-  // ([row, col, color, ...]) rather than scanning a bounded row×col range.
-  const cells = grid.get_filled_cells();
-  for (let i = 0; i + 2 < cells.length; i += 3) {
-    items.push({ type: 'cell', row: cells[i], col: cells[i + 1] });
-  }
+  for (let i = 0; i < grid.get_square_count(); i++) items.push({ type: 'cell', index: i });
   for (let i = 0; i < grid.get_line_count(); i++) items.push({ type: 'line', index: i });
   for (let i = 0; i < grid.get_rect_count(); i++) items.push({ type: 'rect', index: i });
   for (let i = 0; i < grid.get_text_count(); i++) items.push({ type: 'text', index: i });

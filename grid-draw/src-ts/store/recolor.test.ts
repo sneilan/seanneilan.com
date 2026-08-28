@@ -4,27 +4,30 @@ import type { GridCanvasWasm } from '../types/grid';
 import { stubWasm } from './wasmStub';
 
 /**
- * pickColor recolors the fill of selected cells/rects and the stroke of lines;
+ * pickColor recolors the fill of selected squares/rects and the stroke of lines;
  * pickOutline recolors only selected rects' outlines. Both also set the active
  * color for newly drawn shapes.
  */
 function makeRecordingGrid() {
   const calls: Array<[string, ...number[]]> = [];
   const g: Partial<GridCanvasWasm> = {
-    set_cell_color: (r, c, color) => calls.push(['cell', r, c, color]),
+    set_square_color: (idx, color) => calls.push(['square', idx, color]),
     set_line_color: (idx, color) => calls.push(['line', idx, color]),
     set_rect_fill: (idx, color) => calls.push(['rect_fill', idx, color]),
     set_rect_outline: (idx, color) => calls.push(['rect_outline', idx, color]),
     // renderSelection / updateOutputs touch these:
     render: () => {},
-    highlight_cell: () => {},
+    highlight_square: () => {},
     highlight_line: () => {},
     highlight_rect: () => {},
     draw_handle: () => {},
     draw_selection_box: () => {},
+    // One square (color 0) + one line + one rect exist; pickColor reads the
+    // prior color from these and the edit-layer range guard reads the counts.
+    get_square: () => new Int32Array([1, 2, 0, 8]),
     get_line: () => new Int32Array([0, 0, 1, 1, 0]),
     get_rect: () => new Int32Array([0, 0, 2, 2, 0, 6]),
-    // One line + one rect exist; the edit-layer range guard reads these.
+    get_square_count: () => 1,
     get_line_count: () => 1,
     get_rect_count: () => 1,
     get_cell: () => false,
@@ -41,7 +44,7 @@ describe('recolor selection', () => {
   it('pickColor sets active color and recolors fills/strokes of the selection', () => {
     const { grid, calls } = makeRecordingGrid();
     const selectedItems: SelectedItem[] = [
-      { type: 'cell', row: 1, col: 2 },
+      { type: 'cell', index: 0 },
       { type: 'line', index: 0 },
       { type: 'rect', index: 0 },
     ];
@@ -50,7 +53,7 @@ describe('recolor selection', () => {
     useGridStore.getState().pickColor(4);
 
     expect(useGridStore.getState().colorIdx).toBe(4);
-    expect(calls).toContainEqual(['cell', 1, 2, 4]);
+    expect(calls).toContainEqual(['square', 0, 4]);
     expect(calls).toContainEqual(['line', 0, 4]);
     expect(calls).toContainEqual(['rect_fill', 0, 4]);
     // pickColor must not touch rect outlines.
@@ -60,7 +63,7 @@ describe('recolor selection', () => {
   it('pickOutline sets active outline and recolors only rect outlines', () => {
     const { grid, calls } = makeRecordingGrid();
     const selectedItems: SelectedItem[] = [
-      { type: 'cell', row: 0, col: 0 },
+      { type: 'cell', index: 0 },
       { type: 'rect', index: 0 },
     ];
     useGridStore.setState({ grid, selectedItems });
@@ -69,8 +72,8 @@ describe('recolor selection', () => {
 
     expect(useGridStore.getState().outlineIdx).toBe(2);
     expect(calls).toContainEqual(['rect_outline', 0, 2]);
-    // No fill/cell/line recoloring from pickOutline.
-    expect(calls.some(c => c[0] === 'rect_fill' || c[0] === 'cell' || c[0] === 'line')).toBe(false);
+    // No fill/square/line recoloring from pickOutline.
+    expect(calls.some(c => c[0] === 'rect_fill' || c[0] === 'square' || c[0] === 'line')).toBe(false);
   });
 
   it('picking a color with no selection only sets the active color', () => {

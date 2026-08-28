@@ -36,19 +36,23 @@ export function stubWasm(): GridCanvasWasm {
     // Grid info
     get_schema_version: zero,
     rects_consistent: () => true,
-    get_cell_size: () => 16,
+    get_cell_size: () => 2,
 
-    // Cell operations
+    // Square records + coverage queries
+    insert_square: noop,
+    add_square: zero,
+    delete_square: noop,
+    get_square: empty,
+    get_square_count: zero,
+    get_squares: empty,
+    set_square_color: noop,
+    move_square: noop,
+    square_at: () => -1,
+    squares_in_box: () => new Uint32Array(),
     get_cell: no,
     get_cell_color: zero,
-    set_cell: noop,
-    set_cell_color: noop,
     set_draw_color: noop,
     set_outline_color: noop,
-    move_cell: noop,
-    delete_cell: noop,
-    get_cell_count: zero,
-    get_filled_cells: empty,
 
     // Drawing tools
     render_with_line: noop,
@@ -57,10 +61,8 @@ export function stubWasm(): GridCanvasWasm {
     draw_rect: noop,
 
     // Selection
-    render_with_selection: noop,
     render_with_selection_box: noop,
-    highlight_cell: noop,
-    highlight_cells: noop,
+    highlight_square: noop,
     draw_selection_box: noop,
 
     // Shape selection (lines and rects)
@@ -80,8 +82,7 @@ export function stubWasm(): GridCanvasWasm {
     resize_rect: noop,
     draw_handle: noop,
     draw_rotate_handle: noop,
-    preview_cell: noop,
-    preview_cells: noop,
+    preview_square: noop,
     preview_line: noop,
     preview_rect: noop,
     set_line_color: noop,

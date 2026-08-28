@@ -30,9 +30,10 @@ export type ResizeTarget = {
   handle: number;
 };
 
-// Unified selection item type
+// Unified selection item type. A 'cell' is one atomic square RECORD (drawn at
+// its native 1x/½/¼/⅛ size), addressed by index like every other shape.
 export type SelectedItem =
-  | { type: 'cell'; row: number; col: number }
+  | { type: 'cell'; index: number }
   | { type: 'line'; index: number }
   | { type: 'rect'; index: number }
   | { type: 'text'; index: number }
@@ -43,7 +44,7 @@ export type SelectedItem =
 export type TextEditState = { row: number; col: number; size: number; text: string };
 
 // Clipboard data types
-export type ClipboardCell = { relRow: number; relCol: number; color: number };
+export type ClipboardCell = { relRow: number; relCol: number; color: number; size: number };
 export type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; width: number };
 export type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
 export type ClipboardText = { relR: number; relC: number; color: number; size: number; boxW: number; boxH: number; halign: number; valign: number; text: string };
@@ -70,7 +71,10 @@ export type ClipboardData = {
 export type DesignJSON = {
   w: number;
   h: number;
-  cells: number[][];        // [relRow, relCol, colorIdx]
+  // One atomic square record per drawn square: [relRow, relCol, colorIdx, size]
+  // (size in fine units — the resolution it was drawn at). Legacy designs have
+  // [relRow, relCol, colorIdx] 3-tuples; loaders migrate them (see placeDesign).
+  cells: number[][];
   lines: number[][];        // [r1, c1, r2, c2, colorIdx, widthX10]
   rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
   // [r, c, colorIdx, size, boxW, boxH, halign, valign, text] (frame top-left, fine units)
@@ -78,8 +82,9 @@ export type DesignJSON = {
   // [r1, c1, r2, c2, url] — image objects (grid-snapped box + S3/remote source).
   // Optional so older designs (and training-example halves) stay valid.
   images?: Array<[number, number, number, number, string]>;
-  // Fine units per whole cell at save time. Absent = a pre-subdivision design in
-  // whole-cell units (sub=1); loaders rescale coords by CELL_UNITS/sub.
+  // Fine units per whole cell at save time. Coordinates are canonically fine
+  // units (sub = CELL_UNITS); the ONLY scaling anywhere is the legacy-migration
+  // path for designs saved without it (whole-cell units, coords ×CELL_UNITS).
   sub?: number;
 };
 

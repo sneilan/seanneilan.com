@@ -171,7 +171,9 @@ export async function predictDesign(input: DesignJSON): Promise<DesignJSON> {
     const cProbs = probs[1];
     const rIdx = rProbs.argMax(1).dataSync();
     const cIdx = cProbs.argMax(1).dataSync();
-    return cells.map(([, , color], i) => [rIdx[i], cIdx[i], color]);
+    // The model only maps coordinates; each square's color AND native size
+    // pass through unchanged (legacy 3-tuple inputs default to size 1).
+    return cells.map((cell, i) => [rIdx[i], cIdx[i], cell[2], cell.length >= 4 ? cell[3] : 1]);
   });
 
   // Dedupe cells landing on the same coordinate (last color wins), and size w/h.

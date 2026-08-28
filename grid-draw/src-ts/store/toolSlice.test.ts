@@ -7,13 +7,15 @@ import { stubWasm } from './wasmStub';
  * Focused coverage for the tool slice's behaviors that the existing store tests
  * (recolor/storeUndo/storeEdge/session) don't exercise: per-tool style memory,
  * the pick-and-restyle-plus-coalesce paths, the text-edit lifecycle, drawCellAt's
- * subdivision block painting + no-op skipping, subdivision cycling, and
+ * one-square-per-block painting + no-op skipping, subdivision cycling, and
  * placeImage's select-the-new-image behavior.
  *
  * Uses a self-contained in-memory recording grid (like recolor.test.ts) because
  * these actions touch WASM methods the shared testGrid mock doesn't stub
  * (set_text_size/align, set_line_width, set_draw_line_width, set_subdivision,
- * render_text_preview, highlight_text).
+ * render_text_preview, highlight_text). Square records are tracked in-memory as
+ * a flat [r, c, color, size, ...] buffer so draw/erase round-trips behave like
+ * the real grid.
  */
 type Call = [string, ...unknown[]];
 type TextRec = { r: number; c: number; color: number; size: number; boxW: number; boxH: number; halign: number; valign: number; text: string };
@@ -23,36 +25,49 @@ function makeGrid(opts?: {
   texts?: TextRec[];
   lines?: LineRec[];
   rects?: number[][];
-  cell?: (r: number, c: number) => boolean;
-  cellColor?: (r: number, c: number) => number;
+  squares?: Array<[number, number, number?, number?]>; // [r, c, color?, size?]
 }) {
   const calls: Call[] = [];
-  const filled = new Map<string, number>(); // "r,c" -> colorIdx
-  const key = (r: number, c: number) => `${r},${c}`;
-  let drawColor = 0;
   const texts: TextRec[] = (opts?.texts ?? []).map(t => ({ ...t }));
   const lines: LineRec[] = (opts?.lines ?? []).map(l => ({ ...l }));
   const rects = opts?.rects ?? [];
   let rectCount = rects.length;
   let imageCount = 0;
 
-  if (opts?.cell) {
-    for (let r = 0; r < 32; r++) {
-      for (let c = 0; c < 32; c++) {
-        if (opts.cell(r, c)) filled.set(key(r, c), opts.cellColor ? opts.cellColor(r, c) : 0);
-      }
+  // Square records, z-ordered (topmost last), flat [r, c, color, size, ...].
+  const STRIDE = 4;
+  const squares: number[] = (opts?.squares ?? []).flatMap(([r, c, color, size]) => [r, c, color ?? 0, size ?? 1]);
+  const squareCount = () => squares.length / STRIDE;
+  const squareAt = (row: number, col: number) => {
+    for (let i = squareCount() - 1; i >= 0; i--) {
+      const s = i * STRIDE;
+      const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+      if (row >= r && row < r + size && col >= c && col < c + size) return i;
     }
-  }
+    return -1;
+  };
 
   const g: Partial<GridCanvasWasm> = {
-    // Cells (in-memory so set/get round-trips like the real grid).
-    set_draw_color: (idx) => { drawColor = idx; calls.push(['set_draw_color', idx]); },
-    set_cell: (r, c, v) => { calls.push(['set_cell', r, c, v ? 1 : 0]); if (v) filled.set(key(r, c), drawColor); else filled.delete(key(r, c)); },
-    set_cell_color: (r, c, color) => { calls.push(['set_cell_color', r, c, color]); if (filled.has(key(r, c))) filled.set(key(r, c), color); },
-    delete_cell: (r, c) => { calls.push(['delete_cell', r, c]); filled.delete(key(r, c)); },
-    get_cell: (r, c) => filled.has(key(r, c)),
-    get_cell_color: (r, c) => filled.get(key(r, c)) ?? 0,
-    get_cell_count: () => filled.size,
+    // Square records + coverage (set/get round-trips like the real grid).
+    insert_square: (idx, r, c, color, size) => { squares.splice(Math.min(idx, squareCount()) * STRIDE, 0, r, c, color, size); },
+    delete_square: (idx) => { if (idx * STRIDE + STRIDE <= squares.length) squares.splice(idx * STRIDE, STRIDE); },
+    set_square_color: (idx, color) => { if (idx * STRIDE + STRIDE <= squares.length) squares[idx * STRIDE + 2] = color; },
+    get_square: (idx) => new Int32Array(squares.slice(idx * STRIDE, idx * STRIDE + STRIDE)),
+    get_square_count: squareCount,
+    square_at: squareAt,
+    squares_in_box: (r1, c1, r2, c2) => {
+      const [rLo, rHi] = [Math.min(r1, r2), Math.max(r1, r2)];
+      const [cLo, cHi] = [Math.min(c1, c2), Math.max(c1, c2)];
+      const out: number[] = [];
+      for (let i = 0; i < squareCount(); i++) {
+        const s = i * STRIDE;
+        const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
+        if (r <= rHi && r + size - 1 >= rLo && c <= cHi && c + size - 1 >= cLo) out.push(i);
+      }
+      return new Uint32Array(out);
+    },
+    get_cell: (r, c) => squareAt(r, c) >= 0,
+    get_cell_color: (r, c) => { const idx = squareAt(r, c); return idx >= 0 ? squares[idx * STRIDE + 2] : 0; },
 
     // Text shapes.
     insert_text: (idx, r, c, color, size, boxW, boxH, halign, valign, text) => {
@@ -96,7 +111,7 @@ function makeGrid(opts?: {
     // Subdivision + render/selection no-ops.
     set_subdivision: (level) => calls.push(['set_subdivision', level]),
     render: () => {},
-    highlight_cell: () => {},
+    highlight_square: () => {},
     highlight_line: () => {},
     highlight_rect: () => {},
     draw_handle: () => {},
@@ -320,34 +335,72 @@ describe('toolSlice: text edit lifecycle', () => {
   });
 });
 
-describe('toolSlice: drawCellAt subdivision painting', () => {
+describe('toolSlice: drawCellAt square painting', () => {
   beforeEach(() => reset());
 
-  it('paints a full CELL_UNITS² block at subdivision 1 as one undo step', () => {
+  it('paints a whole-cell block as ONE square record (never 64 fine cells) in one undo step', () => {
     const { grid } = makeGrid();
     reset(grid);
     useGridStore.setState({ grid, colorIdx: 2, subdivision: 1 });
 
     useGridStore.getState().drawCellAt(0, 0, true);
 
-    // subdivision 1 → block = CELL_UNITS/1 = 8, so 8×8 = 64 fine cells painted.
-    expect(grid.get_cell_count()).toBe(64);
+    // subdivision 1 → size = CELL_UNITS/1 = 8: ONE atomic 1x square, not 64 cells.
+    expect(grid.get_square_count()).toBe(1);
+    const s = grid.get_square(0);
+    expect([s[0], s[1], s[2], s[3]]).toEqual([0, 0, 2, 8]);
+    // Coverage query: the block reads as color 2 across its whole 8×8 footprint.
     expect(grid.get_cell_color(0, 0)).toBe(2);
+    expect(grid.get_cell_color(7, 7)).toBe(2);
     expect(useGridStore.getState().canUndo()).toBe(true);
 
     useGridStore.getState().undo();
-    expect(grid.get_cell_count()).toBe(0); // one undo clears the whole block
+    expect(grid.get_square_count()).toBe(0); // one undo clears the whole block
   });
 
-  it('drawCellAt skips no-op cells so a re-paint of identical state adds no step', () => {
-    // (0,0) already filled with color 2; painting the same block is a no-op.
-    const { grid } = makeGrid({ cell: (r, c) => r === 0 && c === 0, cellColor: () => 2 });
+  it('drawCellAt skips a no-op redraw of the identical block (adds no undo step)', () => {
+    // An eighth square (size 1) already lives at (0,0) with color 2; re-drawing
+    // the same block in the same color is a no-op.
+    const { grid } = makeGrid({ squares: [[0, 0, 2, 1]] });
     reset(grid);
     useGridStore.setState({ grid, colorIdx: 2, subdivision: 8 }); // block = 1 fine cell
 
     useGridStore.getState().drawCellAt(0, 0, true);
 
+    expect(grid.get_square_count()).toBe(1);
     expect(useGridStore.getState().canUndo()).toBe(false);
+  });
+
+  it('re-drawing the identical block in a new color recolors it in place (one square, one step)', () => {
+    const { grid } = makeGrid({ squares: [[0, 0, 2, 1]] });
+    reset(grid);
+    useGridStore.setState({ grid, colorIdx: 4, subdivision: 8 });
+
+    useGridStore.getState().drawCellAt(0, 0, true);
+
+    // No new square stacked — the existing one is recolored in place.
+    expect(grid.get_square_count()).toBe(1);
+    expect(grid.get_square(0)[2]).toBe(4);
+    expect(useGridStore.getState().canUndo()).toBe(true);
+
+    useGridStore.getState().undo();
+    expect(grid.get_square(0)[2]).toBe(2); // recolor reverts to the original
+  });
+
+  it('erasing removes every WHOLE square the eraser block touches (atomic, one step)', () => {
+    // A 1x square at (0,0) plus an eighth square stacked inside it.
+    const { grid } = makeGrid({ squares: [[0, 0, 0, 8], [2, 2, 2, 1]] });
+    reset(grid);
+    useGridStore.setState({ grid, subdivision: 8 }); // eraser block = 1 fine cell
+
+    useGridStore.getState().drawCellAt(2, 2, false); // erase inside both squares
+
+    // Both squares touching the eraser block are removed in a single undo step.
+    expect(grid.get_square_count()).toBe(0);
+    expect(useGridStore.getState().canUndo()).toBe(true);
+
+    useGridStore.getState().undo();
+    expect(grid.get_square_count()).toBe(2);
   });
 });
 
