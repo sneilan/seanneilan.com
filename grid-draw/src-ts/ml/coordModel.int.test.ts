@@ -50,6 +50,9 @@ describe('coordModel end-to-end (headless)', () => {
     const cols = out.cells.map((c) => c[1]).sort((a, b) => a - b);
     expect(cols).toEqual([2, 3]); // input cols {0,1} -> {2,3}
     expect(out.cells.every((c) => c.length === 3)).toBe(true);
+    // Predictions are fine-unit coordinates; without the `sub` stamp,
+    // placeDesign scales them up 8x (a 1x square became an 8x8-cell cube).
+    expect(out.sub).toBe(8);
 
     // Persistence: a fresh load from indexeddb:// should succeed.
     expect(await coordModel.loadModel()).toBe(true);

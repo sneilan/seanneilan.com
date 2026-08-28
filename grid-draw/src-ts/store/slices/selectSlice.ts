@@ -70,10 +70,11 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     const { grid, selectBoxStart, previousSelection } = get();
     if (!grid || !selectBoxStart) return;
     grid.render_with_selection_box(selectBoxStart.row, selectBoxStart.col, currentCell.row, currentCell.col);
-    // Highlight previously selected items
+    // Highlight previously selected items; cells batched as merged regions.
+    const cellCoords: number[] = [];
     for (const item of previousSelection) {
       if (item.type === 'cell') {
-        grid.highlight_cell(item.row, item.col);
+        cellCoords.push(item.row, item.col);
       } else if (item.type === 'line') {
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
@@ -84,6 +85,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.highlight_image(item.index);
       }
     }
+    if (cellCoords.length > 0) grid.highlight_cells(new Int32Array(cellCoords));
   },
 
   finishBoxSelection: (endCell) => {
@@ -333,10 +335,12 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (!grid) return;
     grid.render();
 
-    // Highlight all selected items
+    // Highlight all selected items. Cells are batched so contiguous fine cells
+    // (a 1x square is 8x8 of them) outline as ONE merged region, not a lattice.
+    const cellCoords: number[] = [];
     for (const item of selectedItems) {
       if (item.type === 'cell') {
-        grid.highlight_cell(item.row, item.col);
+        cellCoords.push(item.row, item.col);
       } else if (item.type === 'line') {
         grid.highlight_line(item.index);
       } else if (item.type === 'rect') {
@@ -347,6 +351,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.highlight_image(item.index);
       }
     }
+    if (cellCoords.length > 0) grid.highlight_cells(new Int32Array(cellCoords));
 
     // Draw resize handles when exactly one line, rect, or text frame is selected.
     if (selectedItems.length === 1) {

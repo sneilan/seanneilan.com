@@ -43,6 +43,8 @@ export type GridCanvasWasm = {
   render_with_selection(row: number, col: number): void;
   render_with_selection_box(r1: number, c1: number, r2: number, c2: number): void;
   highlight_cell(row: number, col: number): void;
+  /** Merged-region highlight for a cell set; flat [r, c, r, c, ...]. */
+  highlight_cells(cells: Int32Array): void;
   draw_selection_box(r1: number, c1: number, r2: number, c2: number): void;
 
   // Shape selection (lines and rects)
@@ -64,6 +66,8 @@ export type GridCanvasWasm = {
   // Rotate affordance: round handle on a stalk above the selection's top edge.
   draw_rotate_handle(handle_r: number, handle_c: number, stalk_r: number, stalk_c: number): void;
   preview_cell(row: number, col: number, color: number): void;
+  /** Merged-outline drag ghost for a cell set; flat [r, c, color, ...]. */
+  preview_cells(cells: Int32Array): void;
   preview_line(r1: number, c1: number, r2: number, c2: number, color: number, width_x10: number): void;
   preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
   set_line_color(idx: number, color: number): void;

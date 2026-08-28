@@ -10,7 +10,7 @@
 // Persistence: the trained model is saved to indexeddb://grid-draw-coord-model
 // and auto-loaded at startup — so a trained model survives reloads with no server.
 
-import type { DesignJSON } from '../store/gridStore';
+import { CELL_UNITS, type DesignJSON } from '../store/gridStore';
 import type { SavedExample } from '../lib/localDb';
 import { COORD_MAX, buildPointPairs, inRange, type PointPair } from './frame';
 
@@ -154,7 +154,7 @@ export async function predictDesign(input: DesignJSON): Promise<DesignJSON> {
   const trained = model; // capture the non-null narrowing for use inside tf.tidy
   const tf = await tfjs();
   const cells = input.cells ?? [];
-  if (cells.length === 0) return { w: 1, h: 1, cells: [], lines: [], rects: [], texts: [] };
+  if (cells.length === 0) return { w: 1, h: 1, cells: [], lines: [], rects: [], texts: [], sub: CELL_UNITS };
 
   const pts: Array<[number, number]> = cells.map(([r, c]) => [
     Math.max(0, Math.min(COORD_MAX, r)),
@@ -182,5 +182,8 @@ export async function predictDesign(input: DesignJSON): Promise<DesignJSON> {
     maxR = Math.max(maxR, cell[0]);
     maxC = Math.max(maxC, cell[1]);
   }
-  return { w: maxC + 1, h: maxR + 1, cells: [...byKey.values()], lines: [], rects: [], texts: [] };
+  // Coordinates in/out of the model are fine units (CELL_UNITS per cell); stamp
+  // `sub` so placeDesign doesn't treat this as a legacy whole-cell design and
+  // scale the prediction up 8x (a drawn 1x square became an 8x8-cell cube).
+  return { w: maxC + 1, h: maxR + 1, cells: [...byKey.values()], lines: [], rects: [], texts: [], sub: CELL_UNITS };
 }

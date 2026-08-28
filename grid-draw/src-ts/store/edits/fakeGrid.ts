@@ -194,6 +194,7 @@ export class FakeGrid implements GridCanvasWasm {
   // --- no-op rendering / selection surface ---------------------------------
   render() {}
   highlight_cell() {}
+  highlight_cells() {}
   highlight_line() {}
   highlight_rect() {}
   highlight_image() {}
@@ -240,6 +241,7 @@ export class FakeGrid implements GridCanvasWasm {
   hit_test_rect(): number { return -1; }
   draw_rotate_handle(): void {}
   preview_cell(): void {}
+  preview_cells(): void {}
   preview_line(): void {}
   preview_rect(): void {}
   set_subdivision(): void {}

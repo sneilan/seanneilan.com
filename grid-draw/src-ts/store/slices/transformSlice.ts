@@ -134,10 +134,12 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
     if (!bounds) return;
     const icr = Math.round((bounds.minRow + bounds.maxRow) / 2);
     const icc = Math.round((bounds.minCol + bounds.maxCol) / 2);
+    // Cells batched so a contiguous block ghosts as one region, not a lattice.
+    const cellGhosts: number[] = [];
     for (const item of selectedItems) {
       if (item.type === 'cell') {
         const p = rotateQuarter(item.row, item.col, k, icr, icc);
-        grid.preview_cell(p.r, p.c, grid.get_cell_color(item.row, item.col));
+        cellGhosts.push(p.r, p.c, grid.get_cell_color(item.row, item.col));
       } else if (item.type === 'line') {
         const l = grid.get_line(item.index);
         if (l.length >= 6) {
@@ -168,6 +170,7 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
         }
       }
     }
+    if (cellGhosts.length > 0) grid.preview_cells(new Int32Array(cellGhosts));
   },
 
   finishRotate: (x, y) => {

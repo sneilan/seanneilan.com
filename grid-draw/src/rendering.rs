@@ -198,6 +198,41 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
+    /// Moving "ghosts" of a set of cells: translucent per-cell fills plus ONE
+    /// merged orange outline around the set (only edges not shared within it),
+    /// so a dragged 1x block previews as one square, not an 8x8 lattice.
+    /// `cells` is flat [r, c, color, ...]. Does NOT clear.
+    #[wasm_bindgen]
+    pub fn preview_cells(&self, cells: &[i32]) {
+        let set: std::collections::HashSet<(i32, i32)> =
+            cells.chunks_exact(3).map(|p| (p[0], p[1])).collect();
+        self.ctx.set_global_alpha(0.7);
+        for p in cells.chunks_exact(3) {
+            let x0 = self.sx(p[1] as f64 * CELL_SIZE).round();
+            let y0 = self.sy(p[0] as f64 * CELL_SIZE).round();
+            let x1 = self.sx((p[1] + 1) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((p[0] + 1) as f64 * CELL_SIZE).round();
+            self.ctx.set_fill_style_str(color_for_idx(p[2] as u8));
+            self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
+        }
+        self.ctx.set_global_alpha(1.0);
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(2.0);
+        self.ctx.begin_path();
+        for &(r, c) in &set {
+            let x0 = self.sx(c as f64 * CELL_SIZE).round();
+            let y0 = self.sy(r as f64 * CELL_SIZE).round();
+            let x1 = self.sx((c + 1) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((r + 1) as f64 * CELL_SIZE).round();
+            if !set.contains(&(r - 1, c)) { self.ctx.move_to(x0, y0 + 1.0); self.ctx.line_to(x1, y0 + 1.0); }
+            if !set.contains(&(r + 1, c)) { self.ctx.move_to(x0, y1 - 1.0); self.ctx.line_to(x1, y1 - 1.0); }
+            if !set.contains(&(r, c - 1)) { self.ctx.move_to(x0 + 1.0, y0); self.ctx.line_to(x0 + 1.0, y1); }
+            if !set.contains(&(r, c + 1)) { self.ctx.move_to(x1 - 1.0, y0); self.ctx.line_to(x1 - 1.0, y1); }
+        }
+        self.ctx.stroke();
+        self.ctx.set_line_width(1.0);
+    }
+
     /// Moving "ghost" of a line. Does NOT clear.
     #[wasm_bindgen]
     pub fn preview_line(&self, r1: i32, c1: i32, r2: i32, c2: i32, color: u8, width_x10: i32) {
@@ -267,6 +302,34 @@ impl GridCanvas {
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(3.0);
         self.ctx.stroke_rect(x + 1.5, y + 1.5, cp - 3.0, cp - 3.0);
+        self.ctx.set_line_width(1.0);
+    }
+
+    /// Highlight a set of selected fine cells as one merged region: stroke only
+    /// the edges NOT shared with another cell in the set. A 1x square (8x8 fine
+    /// cells) reads as one selected square, not an 8x8 lattice of tiny outlines.
+    /// `cells` is flat [r, c, r, c, ...].
+    #[wasm_bindgen]
+    pub fn highlight_cells(&self, cells: &[i32]) {
+        let set: std::collections::HashSet<(i32, i32)> =
+            cells.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+        self.ctx.set_stroke_style_str("#ff8800");
+        self.ctx.set_line_width(3.0);
+        self.ctx.begin_path();
+        for &(r, c) in &set {
+            // Same pixel-snapped edges as render()'s cell loop, so the outline
+            // hugs the fill exactly; each exposed edge is inset 1.5px inward so
+            // the 3px stroke sits inside the region (like highlight_cell).
+            let x0 = self.sx(c as f64 * CELL_SIZE).round();
+            let y0 = self.sy(r as f64 * CELL_SIZE).round();
+            let x1 = self.sx((c + 1) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((r + 1) as f64 * CELL_SIZE).round();
+            if !set.contains(&(r - 1, c)) { self.ctx.move_to(x0, y0 + 1.5); self.ctx.line_to(x1, y0 + 1.5); }
+            if !set.contains(&(r + 1, c)) { self.ctx.move_to(x0, y1 - 1.5); self.ctx.line_to(x1, y1 - 1.5); }
+            if !set.contains(&(r, c - 1)) { self.ctx.move_to(x0 + 1.5, y0); self.ctx.line_to(x0 + 1.5, y1); }
+            if !set.contains(&(r, c + 1)) { self.ctx.move_to(x1 - 1.5, y0); self.ctx.line_to(x1 - 1.5, y1); }
+        }
+        self.ctx.stroke();
         self.ctx.set_line_width(1.0);
     }
 

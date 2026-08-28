@@ -270,12 +270,14 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
           grid.render();
           // Live preview: draw each selected element as a ghost at its new
           // position so the actual cells/lines/rects appear to move with the
-          // cursor (not just an outline) until release.
+          // cursor (not just an outline) until release. Cells are batched so a
+          // contiguous block ghosts as one outlined region, not a lattice.
+          const cellGhosts: number[] = [];
           for (const item of selectedItems) {
             if (item.type === 'cell') {
               const newRow = item.row + deltaRow;
               const newCol = item.col + deltaCol;
-              grid.preview_cell(newRow, newCol, grid.get_cell_color(item.row, item.col));
+              cellGhosts.push(newRow, newCol, grid.get_cell_color(item.row, item.col));
             } else if (item.type === 'line') {
               const l = grid.get_line(item.index);
               if (l.length >= 6) {
@@ -293,6 +295,7 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
               }
             }
           }
+          if (cellGhosts.length > 0) grid.preview_cells(new Int32Array(cellGhosts));
         }
       }
     },

@@ -60,6 +60,7 @@ export function stubWasm(): GridCanvasWasm {
     render_with_selection: noop,
     render_with_selection_box: noop,
     highlight_cell: noop,
+    highlight_cells: noop,
     draw_selection_box: noop,
 
     // Shape selection (lines and rects)
@@ -80,6 +81,7 @@ export function stubWasm(): GridCanvasWasm {
     draw_handle: noop,
     draw_rotate_handle: noop,
     preview_cell: noop,
+    preview_cells: noop,
     preview_line: noop,
     preview_rect: noop,
     set_line_color: noop,
