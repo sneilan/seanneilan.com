@@ -172,6 +172,41 @@ describe('drag-move snaps to the ACTIVE grid step', () => {
     expect([b[0], b[1]]).toEqual([8, 9]);
   });
 
+  it('changing the grid changes which lattice a move aligns to', () => {
+    // ONE unit square drawn at the 1/8 grid, off every coarser lattice at (3,3).
+    const { grid } = makeGrid({ squares: [[3, 3, 0, 1]] });
+    const startDrag = () => useGridStore.setState({
+      grid,
+      selectedItems: [{ type: 'cell', index: 0 }],
+      selectMode: 'drag',
+      selectDragStart: { row: 0, col: 0 },
+      isSelecting: true,
+    });
+    const at = () => { const s = grid.get_square(0); return [s[0], s[1]]; };
+
+    // Grid at 1/8 (step 1): a one-fine-unit drag applies verbatim.
+    useGridStore.setState({ subdivision: 8 });
+    startDrag();
+    useGridStore.getState().finishDragSelection({ row: 1, col: 1 });
+    expect(at()).toEqual([4, 4]); // still fine-grained, off the coarser lattices
+
+    // Same square, grid now at 1/2 (step 4): the destination snaps onto the
+    // half-cell lattice — raw (4+3, 4+7) = (7, 11) becomes (8, 12).
+    useGridStore.setState({ subdivision: 2 });
+    startDrag();
+    useGridStore.getState().finishDragSelection({ row: 3, col: 7 });
+    expect(at()).toEqual([8, 12]);
+    expect(at().map(v => v % 4)).toEqual([0, 0]);
+
+    // Same square again, grid at 1x (step 8): now it aligns to whole cells —
+    // raw (8+5, 12+5) = (13, 17) becomes (16, 16).
+    useGridStore.setState({ subdivision: 1 });
+    startDrag();
+    useGridStore.getState().finishDragSelection({ row: 5, col: 5 });
+    expect(at()).toEqual([16, 16]);
+    expect(at().map(v => v % 8)).toEqual([0, 0]);
+  });
+
   it('a snapped-to-zero delta is a no-op (no edits, nothing moves)', () => {
     // Square already on the 1x lattice; a sub-step wiggle must not move it.
     const { grid, calls } = makeGrid({ squares: [[8, 8, 0, 8]] });
