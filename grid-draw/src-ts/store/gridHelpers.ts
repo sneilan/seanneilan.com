@@ -163,6 +163,27 @@ export function getSelectionOrigin(items: SelectedItem[], grid: GridCanvasWasm):
   return bounds ? { minRow: bounds.minRow, minCol: bounds.minCol } : null;
 }
 
+// Adjust a raw drag delta so the selection's bounding-box top-left lands on the
+// active grid step (fine units). Moving re-aligns to the CURRENT grid: a square
+// drawn at 1/8 then dragged while the grid is 1x snaps onto the 1x lattice.
+// One shared anchor (the bbox corner) keeps relative layout intact.
+export function snapDragDelta(
+  grid: GridCanvasWasm,
+  items: SelectedItem[],
+  deltaRow: number,
+  deltaCol: number,
+  subdivision: number,
+): { deltaRow: number; deltaCol: number } {
+  const bounds = getSelectionBoundsAll(items, grid);
+  if (!bounds) return { deltaRow, deltaCol };
+  const step = CELL_UNITS / subdivision;
+  const snap = (v: number) => Math.round(v / step) * step;
+  return {
+    deltaRow: snap(bounds.minRow + deltaRow) - bounds.minRow,
+    deltaCol: snap(bounds.minCol + deltaCol) - bounds.minCol,
+  };
+}
+
 /**
  * Serialize the given selection into a DesignJSON, with all coordinates made
  * relative to the selection's bounding box (so the same shape captured anywhere

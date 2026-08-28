@@ -8,6 +8,7 @@ import {
   isItemSelected,
   isSelectedType,
   removeItemFromSelectionArray,
+  snapDragDelta,
 } from '../gridHelpers';
 import type { GridStore, SelectActions, SelectedItem } from '../types';
 
@@ -186,8 +187,14 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
       return;
     }
 
-    const deltaRow = endCell.row - selectDragStart.row;
-    const deltaCol = endCell.col - selectDragStart.col;
+    // Snap so the selection lands aligned to the CURRENT grid step (a 1/8-drawn
+    // square moved while the grid is at 1x re-aligns to the 1x lattice).
+    const { deltaRow, deltaCol } = snapDragDelta(
+      grid, selectedItems,
+      endCell.row - selectDragStart.row,
+      endCell.col - selectDragStart.col,
+      get().subdivision,
+    );
 
     if (deltaRow !== 0 || deltaCol !== 0) {
       const newSelected: SelectedItem[] = [];

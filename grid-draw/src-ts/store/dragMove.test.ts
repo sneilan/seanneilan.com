@@ -23,13 +23,16 @@ function countFilled(grid: GridCanvasWasm, rows: number, cols: number): number {
 
 describe('select-drag-move: squares should not disappear', () => {
   beforeEach(() => {
-    // Reset relevant store state between tests.
+    // Reset relevant store state between tests. These tests move unit squares
+    // by single fine units, which is a 1/8-grid operation now that drag-moves
+    // snap the selection to the ACTIVE grid step.
     useGridStore.setState({
       grid: null,
       selectedItems: [],
       selectMode: null,
       selectDragStart: null,
       isSelecting: false,
+      subdivision: 8,
     });
     useGridStore.getState().resetHistory();
   });
@@ -113,5 +116,77 @@ describe('select-drag-move: squares should not disappear', () => {
     useGridStore.getState().finishDragSelection({ row: 1, col: 0 }); // delta (1,0)
 
     expect(countFilled(grid, rows, cols)).toBe(3);
+  });
+});
+
+describe('drag-move snaps to the ACTIVE grid step', () => {
+  beforeEach(() => {
+    useGridStore.setState({
+      grid: null,
+      selectedItems: [],
+      selectMode: null,
+      selectDragStart: null,
+      isSelecting: false,
+      subdivision: 1,
+    });
+    useGridStore.getState().resetHistory();
+  });
+
+  it('a 1/8-drawn square dragged at the 1x grid re-aligns to the 1x lattice', () => {
+    // Unit square at (3, 3) — off the 1x lattice (drawn while the grid was 1/8).
+    const { grid, calls } = makeGrid({ squares: [[3, 3, 0, 1]] });
+    useGridStore.setState({
+      grid,
+      selectedItems: [{ type: 'cell', index: 0 }],
+      selectMode: 'drag',
+      selectDragStart: { row: 0, col: 0 },
+      isSelecting: true,
+    });
+
+    // Mouse moved one whole cell down-right (raw delta 8,8). The square must
+    // land ON the 1x lattice at (8, 8), so the applied delta is (5, 5).
+    useGridStore.getState().finishDragSelection({ row: 8, col: 8 });
+
+    expect(calls).toContainEqual(['move_square', 0, 5, 5]);
+    const s = grid.get_square(0);
+    expect([s[0], s[1]]).toEqual([8, 8]);
+  });
+
+  it('a group snaps by its bbox corner, preserving relative offsets', () => {
+    // Two unit squares one fine unit apart, both off the 1x lattice.
+    const { grid } = makeGrid({ squares: [[3, 3, 0, 1], [3, 4, 1, 1]] });
+    useGridStore.setState({
+      grid,
+      selectedItems: [{ type: 'cell', index: 0 }, { type: 'cell', index: 1 }],
+      selectMode: 'drag',
+      selectDragStart: { row: 0, col: 0 },
+      isSelecting: true,
+    });
+
+    useGridStore.getState().finishDragSelection({ row: 8, col: 8 });
+
+    // bbox corner (3,3) snapped to (8,8); the neighbour keeps its +1 offset.
+    const a = grid.get_square(0);
+    const b = grid.get_square(1);
+    expect([a[0], a[1]]).toEqual([8, 8]);
+    expect([b[0], b[1]]).toEqual([8, 9]);
+  });
+
+  it('a snapped-to-zero delta is a no-op (no edits, nothing moves)', () => {
+    // Square already on the 1x lattice; a sub-step wiggle must not move it.
+    const { grid, calls } = makeGrid({ squares: [[8, 8, 0, 8]] });
+    useGridStore.setState({
+      grid,
+      selectedItems: [{ type: 'cell', index: 0 }],
+      selectMode: 'drag',
+      selectDragStart: { row: 0, col: 0 },
+      isSelecting: true,
+    });
+
+    useGridStore.getState().finishDragSelection({ row: 2, col: 2 }); // < half a step
+
+    expect(calls.filter(c => c[0] === 'move_square')).toEqual([]);
+    const s = grid.get_square(0);
+    expect([s[0], s[1]]).toEqual([8, 8]);
   });
 });

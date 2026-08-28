@@ -32,28 +32,6 @@ impl GridCanvas {
         self.ctx.set_fill_style_str(&self.empty_color);
         self.ctx.fill_rect(0.0, 0.0, self.view_w, self.view_h);
 
-        // Drawn squares, in z-order (cull to the visible window). One record is
-        // one solid quad at its native size — nothing tiles, so there are no
-        // fine-pitch seams by construction. Edges are still rounded to whole
-        // pixels so neighbouring squares butt together exactly.
-        let mut i = 0;
-        while i + SQUARE_STRIDE <= self.squares.len() {
-            let r = self.squares[i];
-            let c = self.squares[i + 1];
-            let color = self.squares[i + 2] as u8;
-            let size = self.squares[i + 3];
-            i += SQUARE_STRIDE;
-            if c + size <= c0 || c > c1 || r + size <= r0 || r > r1 {
-                continue;
-            }
-            self.ctx.set_fill_style_str(color_for_idx(color));
-            let x0 = self.sx(c as f64 * CELL_SIZE).round();
-            let y0 = self.sy(r as f64 * CELL_SIZE).round();
-            let x1 = self.sx((c + size) as f64 * CELL_SIZE).round();
-            let y1 = self.sy((r + size) as f64 * CELL_SIZE).round();
-            self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
-        }
-
         // Grid lines. Coordinates are fine units (CELL_UNITS per cell), so most
         // fine lines are NOT drawn: whole-cell lines every CELL_UNITS (every 10th
         // cell darker), plus sub-grid lines every `sub_step` when subdivided.
@@ -90,6 +68,29 @@ impl GridCanvas {
             self.ctx.move_to(0.0, y);
             self.ctx.line_to(self.view_w, y);
             self.ctx.stroke();
+        }
+
+        // Drawn squares, in z-order (cull to the visible window), painted OVER
+        // the grid lines: a square is one solid quad at its native size, so the
+        // sub-grid never shows through it (a 1x square stays one square even
+        // when the grid is subdivided to eighths). Edges are rounded to whole
+        // pixels so neighbouring squares butt together exactly.
+        let mut i = 0;
+        while i + SQUARE_STRIDE <= self.squares.len() {
+            let r = self.squares[i];
+            let c = self.squares[i + 1];
+            let color = self.squares[i + 2] as u8;
+            let size = self.squares[i + 3];
+            i += SQUARE_STRIDE;
+            if c + size <= c0 || c > c1 || r + size <= r0 || r > r1 {
+                continue;
+            }
+            self.ctx.set_fill_style_str(color_for_idx(color));
+            let x0 = self.sx(c as f64 * CELL_SIZE).round();
+            let y0 = self.sy(r as f64 * CELL_SIZE).round();
+            let x1 = self.sx((c + size) as f64 * CELL_SIZE).round();
+            let y1 = self.sy((r + size) as f64 * CELL_SIZE).round();
+            self.ctx.fill_rect(x0, y0, x1 - x0, y1 - y0);
         }
 
         // Committed images: bitmaps composited above the grid/cells but below

@@ -25,6 +25,8 @@ describe('undo edge cases (store + faithful grid)', () => {
     g.add_square(0, 0, 2, 1);
     g.add_square(0, 1, 2, 1);
     setup(g, [{ type: 'cell', index: 0 }, { type: 'cell', index: 1 }]);
+    // A one-fine-unit move needs the 1/8 grid: drags snap to the active step.
+    useGridStore.setState({ subdivision: 8 });
     const before = g.snapshot();
 
     // Move right by 1 — square 0's destination (0,1) lands on square 1's old

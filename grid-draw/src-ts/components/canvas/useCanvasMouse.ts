@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { GridCanvasWasm } from '../../types/grid';
 import { useGridStore, getSelectionBoundsAll } from '../../store/gridStore';
-import { isItemSelected } from '../../store/gridHelpers';
+import { isItemSelected, snapDragDelta } from '../../store/gridHelpers';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../../utils/handles';
 import { CELL_SIZE, textFrameCorners } from './constants';
 import { getCanvasXY, getCellCoords, getIntersectionCoords, type Camera } from './coords';
@@ -265,8 +265,11 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         if (selectMode === 'box' && selectBoxStart) {
           updateBoxSelection({ row, col });
         } else if (selectMode === 'drag' && selectDragStart && selectedItems.length > 0) {
-          const deltaRow = row - selectDragStart.row;
-          const deltaCol = col - selectDragStart.col;
+          // Same snap as the commit in finishDragSelection, so the ghosts
+          // preview exactly where the selection will land.
+          const { deltaRow, deltaCol } = snapDragDelta(
+            grid, selectedItems, row - selectDragStart.row, col - selectDragStart.col, subdivision,
+          );
           grid.render();
           // Live preview: draw each selected element as a ghost at its new
           // position so the actual squares/lines/rects appear to move with the

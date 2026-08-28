@@ -88,7 +88,8 @@ describe('store undo/redo integration', () => {
   it('move (finishDragSelection) is undoable and moves shapes back', () => {
     const { grid, calls } = makeGrid({ rects: [[0, 0, 2, 2, 0, 6]] });
     reset(grid);
-    useGridStore.setState({ grid, selectedItems: [{ type: 'rect', index: 0 }] });
+    // Fine-unit delta → run at the 1/8 grid (drags snap to the active step).
+    useGridStore.setState({ grid, selectedItems: [{ type: 'rect', index: 0 }], subdivision: 8 });
 
     useGridStore.getState().startDragSelection({ row: 1, col: 1 });
     useGridStore.getState().finishDragSelection({ row: 3, col: 4 });
