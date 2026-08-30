@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // HTTP client for the grid-draw API server (grid-draw-api/, deployed at
 // api.seanneilan.com — an EC2 box with SQLite, see infra/grid-draw-api/).
 // Mirrors the localDb.ts function signatures so store/serverStore.ts is the
@@ -56,17 +57,12 @@ function isPresignedUpload(v: unknown): v is PresignedUpload {
   );
 }
 
-// Read a string-valued Vite env var without asserting the shape of import.meta
-// (which the TS lib types as only `{ url }`); `'env' in meta` narrows it.
-function envString(key: string): string | undefined {
-  const meta: ImportMeta = import.meta;
-  if (!('env' in meta)) return undefined;
-  const env = meta.env;
-  if (isRecord(env) && typeof env[key] === 'string') return env[key];
-  return undefined;
-}
-
-const BASE: string = envString('VITE_API_URL') ?? 'https://api.seanneilan.com';
+// MUST be the literal text `import.meta.env.VITE_API_URL` — Vite substitutes
+// exactly that expression at build time. A dynamic `env[key]` lookup (or even
+// optional chaining on `env`) is left as-is in the bundle and always misses,
+// so the override silently never takes effect.
+const envUrl: unknown = import.meta.env.VITE_API_URL;
+const BASE: string = typeof envUrl === 'string' && envUrl !== '' ? envUrl : 'https://api.seanneilan.com';
 
 const TOKEN_KEY = 'grid-draw-token';
 

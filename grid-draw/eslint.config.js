@@ -41,6 +41,26 @@ export default [
     },
   },
 
+  // The input layer may not touch the WASM grid: mouse/keyboard hooks convert
+  // coordinates and dispatch store actions; only the store (ultimately the
+  // edit layer) talks to WASM. Keeps gesture policy testable and in one place.
+  {
+    files: [
+      'src-ts/components/canvas/useCanvasMouse.ts',
+      'src-ts/components/canvas/useKeyboardShortcuts.ts',
+    ],
+    languageOptions: { parser: tseslint.parser },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "MemberExpression[object.name='grid']",
+          message: 'No WASM access in the input layer — dispatch a store action (see store/slices).',
+        },
+      ],
+    },
+  },
+
   // .tsx components: NO direct network, and no direct data-layer imports
   // (type-only is fine) — all data goes through the zustand store. Auth entry
   // points (login/logout/getToken) from lib/apiClient are the one exception.

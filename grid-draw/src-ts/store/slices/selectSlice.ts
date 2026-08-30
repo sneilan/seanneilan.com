@@ -13,6 +13,7 @@ import {
   readSquare,
   readText,
   removeItemFromSelectionArray,
+  shapeHandles,
   snapDragDelta,
   textFrameCorners,
 } from '../gridHelpers';
@@ -291,14 +292,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (selectedItems.length === 1 && !shift) {
       const only = selectedItems[0];
       if (only.type !== 'cell') {
-        const handles = only.type === 'line'
-          ? getLineHandles(grid.get_line(only.index))
-          : only.type === 'rect'
-            ? getRectHandles(grid.get_rect(only.index))
-            : only.type === 'image'
-              ? getRectHandles(grid.get_image(only.index))
-              : getRectHandles(textFrameCorners(grid.get_text(only.index)));
-        const hit = hitTestHandle(x, y, handles, cellSize, 9);
+        const hit = hitTestHandle(x, y, shapeHandles(grid, only), cellSize, 9);
         if (hit) {
           get().startResize({ shape: only.type, index: only.index, handle: hit.handle });
           return;
@@ -340,6 +334,36 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
       // Empty space: start a box selection (additive when shift is held).
       get().startBoxSelection({ row, col }, shift);
     }
+  },
+
+  // Cursor feedback for the idle select pointer — the same geometry and
+  // priority order as pressSelectAt (rotate > resize > move), so what the
+  // cursor advertises is exactly what a press would do.
+  hoverAffordanceAt: ({ x, y, row, col, zoom }) => {
+    const { grid, selectedItems } = get();
+    if (!grid || selectedItems.length === 0) return 'none';
+    const cellSize = grid.get_cell_size();
+
+    const rb = getSelectionBoundsAll(selectedItems, grid);
+    if (rb) {
+      const h = rotateHandlePoint(rb);
+      if (Math.hypot(x - h.c * cellSize, y - h.r * cellSize) <= 10 / zoom) return 'rotate';
+    }
+
+    if (selectedItems.length === 1) {
+      const only = selectedItems[0];
+      if (only.type !== 'cell' && hitTestHandle(x, y, shapeHandles(grid, only), cellSize, 9)) {
+        return 'resize';
+      }
+    }
+
+    // Over a selected shape, or inside the selection's bounding box → a press
+    // would start a drag.
+    const hit = get().hitTestShapes(x, y);
+    const inBounds = rb != null && row >= rb.minRow && row <= rb.maxRow &&
+                     col >= rb.minCol && col <= rb.maxCol;
+    if ((hit != null && isItemSelected(hit, selectedItems)) || inBounds) return 'move';
+    return 'none';
   },
 
   // Ghost preview of the selection during a drag: repaint, then draw every

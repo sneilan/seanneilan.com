@@ -29,7 +29,7 @@ function GridCanvas() {
   const { cam, camRef, applyCamera, resetView, spaceHeld, isSpaceDown, panRef } =
     useCameraControls(grid, canvasRef);
   const { handleMouseDown, handleMouseMove, handleMouseUp, handleMouseLeave } =
-    useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef });
+    useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef });
   useKeyboardShortcuts();
   const image = useImageObjects(camRef, viewport);
   const session = useDrawingSession(grid);

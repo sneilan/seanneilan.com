@@ -9,7 +9,7 @@ import {
   removeItemFromSelectionArray,
 } from './gridHelpers';
 import type { GridCanvasWasm } from '../types/grid';
-import { stubWasm } from './wasmStub';
+import { makeGrid as makeTestGrid, type TestGridOpts } from './testGrid';
 
 /**
  * Focused coverage for the selection slice (src-ts/store/slices/selectSlice.ts)
@@ -23,124 +23,12 @@ import { stubWasm } from './wasmStub';
  * A drawn square is ONE atomic record [r, c, color, size] (size in fine units),
  * index-addressed like every other shape — so a selected 'cell' is { type:
  * 'cell', index } and box selection picks WHOLE squares that touch the box.
+ *
+ * Uses the shared recording mock (store/testGrid), defaulted to cellSize 16 so
+ * the hitTestShapes tests' pixel→fine math stays as written ((8,8) → cell 0).
  */
-type MockOpts = {
-  squares?: Array<[number, number, number?, number?]>; // [row, col, color?, size?]
-  lines?: number[][]; // [r1, c1, r2, c2, color, width]
-  rects?: number[][]; // [r1, c1, r2, c2, fill, outline]
-  texts?: number[][]; // [r, c, color, boxW, boxH, halign, valign]
-  images?: number[][]; // [r1, c1, r2, c2]
-  hit?: { line?: number; text?: number; rect?: number; image?: number };
-  cellSize?: number;
-};
-
-// A box-overlap test against a shape's bounding box; matches the "intersects the
-// selection box" semantics the slice relies on (finite, may be negative).
-function bboxOverlaps(
-  aR1: number, aC1: number, aR2: number, aC2: number,
-  qR1: number, qC1: number, qR2: number, qC2: number,
-): boolean {
-  const minR = Math.min(aR1, aR2), maxR = Math.max(aR1, aR2);
-  const minC = Math.min(aC1, aC2), maxC = Math.max(aC1, aC2);
-  return !(maxR < qR1 || minR > qR2 || maxC < qC1 || minC > qC2);
-}
-
-function makeGrid(opts: MockOpts = {}) {
-  // Square records tracked in-memory as a flat [r, c, color, size, ...] buffer,
-  // z-ordered (topmost = last), exactly like testGrid.ts / the real grid.
-  const STRIDE = 4;
-  const squares: number[] = (opts.squares ?? []).flatMap(([r, c, color, size]) => [r, c, color ?? 0, size ?? 1]);
-  const squareCount = () => squares.length / STRIDE;
-  const squareAt = (row: number, col: number) => {
-    for (let i = squareCount() - 1; i >= 0; i--) {
-      const s = i * STRIDE;
-      const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
-      if (row >= r && row < r + size && col >= c && col < c + size) return i;
-    }
-    return -1;
-  };
-  const lines = opts.lines ?? [];
-  const rects = opts.rects ?? [];
-  const texts = opts.texts ?? [];
-  const images = opts.images ?? [];
-  const hit = opts.hit ?? {};
-  const cellSize = opts.cellSize ?? 16;
-
-  const g: Partial<GridCanvasWasm> = {
-    // Square records + coverage queries.
-    get_square: (idx) => new Int32Array(squares.slice(idx * STRIDE, idx * STRIDE + STRIDE)),
-    get_square_count: squareCount,
-    square_at: squareAt,
-    squares_in_box: (r1, c1, r2, c2) => {
-      const [rLo, rHi] = [Math.min(r1, r2), Math.max(r1, r2)];
-      const [cLo, cHi] = [Math.min(c1, c2), Math.max(c1, c2)];
-      const out: number[] = [];
-      for (let i = 0; i < squareCount(); i++) {
-        const s = i * STRIDE;
-        const [r, c, size] = [squares[s], squares[s + 1], squares[s + 3]];
-        if (r <= rHi && r + size - 1 >= rLo && c <= cHi && c + size - 1 >= cLo) out.push(i);
-      }
-      return new Uint32Array(out);
-    },
-    get_cell: (r, c) => squareAt(r, c) >= 0,
-    get_cell_color: (r, c) => {
-      const idx = squareAt(r, c);
-      return idx >= 0 ? squares[idx * STRIDE + 2] : 0;
-    },
-    get_cell_size: () => cellSize,
-
-    // Counts
-    get_line_count: () => lines.length,
-    get_rect_count: () => rects.length,
-    get_text_count: () => texts.length,
-    get_image_count: () => images.length,
-
-    // Shape readers
-    get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0, 10]),
-    get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
-    get_text: (idx) => new Int32Array(texts[idx] ?? [0, 0, 0, 1, 1, 0, 0]),
-    get_text_string: () => '',
-    get_text_size: () => 1,
-    get_image: (idx) => new Int32Array(images[idx] ?? [0, 0, 8, 8]),
-    get_image_url: () => '',
-
-    // Box intersections (bbox overlap of the shape vs. the query box)
-    line_intersects_box: (i, r1, c1, r2, c2) => {
-      const l = lines[i];
-      return l ? bboxOverlaps(l[0], l[1], l[2], l[3], r1, c1, r2, c2) : false;
-    },
-    rect_intersects_box: (i, r1, c1, r2, c2) => {
-      const s = rects[i];
-      return s ? bboxOverlaps(s[0], s[1], s[2], s[3], r1, c1, r2, c2) : false;
-    },
-    text_intersects_box: (i, r1, c1, r2, c2) => {
-      const t = texts[i];
-      return t ? bboxOverlaps(t[0], t[1], t[0] + t[4], t[1] + t[3], r1, c1, r2, c2) : false;
-    },
-    image_intersects_box: (i, r1, c1, r2, c2) => {
-      const m = images[i];
-      return m ? bboxOverlaps(m[0], m[1], m[2], m[3], r1, c1, r2, c2) : false;
-    },
-
-    // Hit tests (return configured indices; default miss = -1)
-    hit_test_line: () => hit.line ?? -1,
-    hit_test_text: () => hit.text ?? -1,
-    hit_test_rect: () => hit.rect ?? -1,
-    hit_test_image: () => hit.image ?? -1,
-
-    // Rendering / highlight: no-ops (draw_rotate_handle from the stub is a no-op,
-    // so renderSelection's rotate-handle branch runs harmlessly).
-    render: () => {},
-    render_with_selection_box: () => {},
-    highlight_square: () => {},
-    highlight_line: () => {},
-    highlight_rect: () => {},
-    highlight_text: () => {},
-    highlight_image: () => {},
-    draw_handle: () => {},
-    draw_selection_box: () => {},
-  };
-  return { ...stubWasm(), ...g };
+function makeGrid(opts: TestGridOpts = {}): GridCanvasWasm {
+  return makeTestGrid({ cellSize: 16, ...opts }).grid;
 }
 
 function resetStore(grid: GridCanvasWasm | null = null) {
@@ -345,7 +233,7 @@ describe('hitTestShapes priority order', () => {
   it('prefers line > text > rect > image > cell at the same point', () => {
     // All four shape hit-tests report a hit AND a square covers the point.
     // cellSize 16, point (8,8) → row 0, col 0.
-    const base: MockOpts = {
+    const base: TestGridOpts = {
       squares: [[0, 0, 0, 1]],
       hit: { line: 0, text: 1, rect: 2, image: 3 },
     };

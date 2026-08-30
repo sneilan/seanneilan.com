@@ -11,7 +11,7 @@ everything external code needs (`useGridStore`, `DesignJSON`, `SelectedItem`,
 - `types.ts` — all constants (`CELL_UNITS`, `TEXT_SIZES`, …) and types; `GridActions` is split into one interface per slice.
 - `gridHelpers.ts` — pure functions: WASM shape readers (`readLine`, `textFrame`, …), selection equality/bounds, `serializeSelection`, quarter-turn rotation math, `allItems`.
 - `slices/historySlice.ts` — owns the module-scope `History` instance; `commitEdits`/`undo`/`redo`/`resetHistory`/`exportHistory`.
-- `slices/toolSlice.ts` — tool/color/outline state (per-tool style memory), text-tool typing lifecycle, subdivision, draw-stroke/line/rect/image commits.
+- `slices/toolSlice.ts` — tool/color/outline state (per-tool style memory, synced into WASM on every change), text-tool typing lifecycle, subdivision, draw-stroke/line/rect/image commits; `pressDrawAt`/`dragDrawAt` (draw-vs-erase rule) and the line/rect rubber-band preview/cancel actions.
 - `slices/selectSlice.ts` — selection set/add/remove, box selection, drag-move, `hitTestShapes` (priority: line > text > rect > image > cell), `renderSelection`; `pressSelectAt` (the select tool's whole mousedown decision tree — rotate handle > resize handle > drag > shift-toggle > single-select > box) and `renderDragPreview` (ghosts at the same snapped delta the drop commits), so `useCanvasMouse` only converts coordinates.
 - `slices/transformSlice.ts` — resize gesture (origin captured at start, single from→to edit on release) and rotate gesture (free drag, snaps to 90°).
 - `slices/clipboardSlice.ts` — copy/paste/deleteSelected (all single undo steps).
@@ -28,6 +28,9 @@ everything external code needs (`useGridStore`, `DesignJSON`, `SelectedItem`,
 
 - Every document mutation routes through `commitEdits` (history) — `applyEdit`
   in `edits/` is the only code that calls WASM mutators.
+- The input layer (`components/canvas/useCanvasMouse.ts`, `useKeyboardShortcuts.ts`)
+  never touches the WASM grid — it converts coordinates and dispatches store
+  actions. Enforced by eslint (`no-restricted-syntax` on `grid.*` in those files).
 - Repo-root `Makefile` has `make lint`: fails on any tracked source file over
   500 lines (`make lint MAX_LINES=n` to override) and on any TypeScript type
   assertion (`as T` / `<T>expr` — banned repo-wide; use type guards instead).

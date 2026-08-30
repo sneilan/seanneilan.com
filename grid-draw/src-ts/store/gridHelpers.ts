@@ -1,5 +1,6 @@
 import type { GridCanvasWasm } from '../types/grid';
 import type { LineData, RectData, LineGeom, RectGeom, SquareData, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
+import { getLineHandles, getRectHandles, type HandlePoint } from '../utils/handles';
 import { CELL_UNITS, type DesignJSON, type SelectedItem } from './types';
 
 // --- Shape readers ----------------------------------------------------------
@@ -106,6 +107,18 @@ export function highlightItem(grid: GridCanvasWasm, item: SelectedItem): void {
 // it can reuse the rect resize-handle geometry.
 export function textFrameCorners(a: ArrayLike<number>): number[] {
   return [a[0], a[1], a[0] + a[4], a[1] + a[3]];
+}
+
+// Resize handles for a single selected shape: line endpoints, or the 8 box
+// handles of a rect/image/text frame. Squares have none — they move, never
+// resize. Shared by the press decision tree (pressSelectAt) and the hover
+// affordance query so the two can't drift apart.
+export function shapeHandles(grid: GridCanvasWasm, only: SelectedItem): HandlePoint[] {
+  if (only.type === 'line') return getLineHandles(grid.get_line(only.index));
+  if (only.type === 'rect') return getRectHandles(grid.get_rect(only.index));
+  if (only.type === 'image') return getRectHandles(grid.get_image(only.index));
+  if (only.type === 'text') return getRectHandles(textFrameCorners(grid.get_text(only.index)));
+  return [];
 }
 
 /**

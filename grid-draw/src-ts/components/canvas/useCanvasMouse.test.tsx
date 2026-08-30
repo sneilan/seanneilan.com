@@ -22,7 +22,6 @@ import type { DrawTool } from '../../store/gridStore';
  */
 
 type Deps = {
-  grid: ReturnType<typeof makeGrid>['grid'];
   camRef: React.MutableRefObject<Camera>;
   applyCamera: (next: Camera) => void;
   isSpaceDown: React.MutableRefObject<boolean>;
@@ -37,19 +36,10 @@ function mouseEvent(over: CanvasMouseInit = {}): React.MouseEvent<HTMLCanvasElem
   return makeCanvasMouseEvent(canvas, over);
 }
 
-// testGrid omits the vector hit-test methods (they're canvas/WASM geometry).
-// The select tool always probes them first, so stub them as misses; a filled
-// cell (if any) then decides the hit via hitTestShapes' fallthrough.
-function withHitTests(grid: ReturnType<typeof makeGrid>['grid']) {
-  grid.hit_test_line = () => -1;
-  grid.hit_test_text = () => -1;
-  grid.hit_test_rect = () => -1;
-  return grid;
-}
-
-function makeDeps(grid: ReturnType<typeof makeGrid>['grid']): Deps {
+// The hook no longer takes the grid — it dispatches store actions only; the
+// store reads the mock grid installed by setupStore.
+function makeDeps(): Deps {
   return {
-    grid,
     camRef: { current: { x: 0, y: 0, zoom: 1 } },
     applyCamera: vi.fn(),
     isSpaceDown: { current: false },
@@ -88,7 +78,7 @@ describe('useCanvasMouse — pan gesture', () => {
   it('middle-button mousedown starts a pan (no document mutation)', () => {
     const { grid, calls } = makeGrid();
     setupStore(grid, 'draw');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     const ev = mouseEvent({ button: 1, clientX: 100, clientY: 100 });
@@ -104,7 +94,7 @@ describe('useCanvasMouse — pan gesture', () => {
   it('active pan: mousemove moves the camera via applyCamera, not the store', () => {
     const { grid, calls } = makeGrid();
     setupStore(grid, 'draw');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     deps.panRef.current = { x: 100, y: 100, camX: 0, camY: 0 };
     const { result } = renderHook(() => useCanvasMouse(deps));
 
@@ -119,7 +109,7 @@ describe('useCanvasMouse — pan gesture', () => {
   it('space-held left-drag mousedown starts a pan', () => {
     const { grid } = makeGrid();
     setupStore(grid, 'draw');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     deps.isSpaceDown.current = true;
     const { result } = renderHook(() => useCanvasMouse(deps));
 
@@ -137,7 +127,7 @@ describe('useCanvasMouse — draw tool', () => {
   it('wraps a down→up stroke in a single undo batch (one undo removes the drawn square)', () => {
     const { grid } = makeGrid();
     setupStore(grid, 'draw');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));
@@ -163,9 +153,8 @@ describe('useCanvasMouse — line / rect commit on release', () => {
 
   it('line tool commits one line on mouseup at intersection-snapped coords', () => {
     const { grid, calls } = makeGrid();
-    grid.render_with_line = () => {};
     setupStore(grid, 'line');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 0, clientY: 0 })));
@@ -184,9 +173,8 @@ describe('useCanvasMouse — line / rect commit on release', () => {
 
   it('rect tool commits one rect on mouseup at intersection-snapped coords', () => {
     const { grid, calls } = makeGrid();
-    grid.render_with_rect = () => {};
     setupStore(grid, 'rect');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 0, clientY: 0 })));
@@ -208,9 +196,8 @@ describe('useCanvasMouse — select tool', () => {
 
   it('mousedown on empty space starts a box selection', () => {
     const { grid } = makeGrid();
-    withHitTests(grid);
     setupStore(grid, 'select');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));
@@ -225,9 +212,8 @@ describe('useCanvasMouse — select tool', () => {
     // hit-tests, so hitTestShapes falls through to square_at). clientX/Y 8 →
     // fine coord (4,4), which lands inside the square's 0..7 block.
     const { grid } = makeGrid({ squares: [[0, 0, 0, 8]] });
-    withHitTests(grid);
     setupStore(grid, 'select');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));
@@ -239,9 +225,8 @@ describe('useCanvasMouse — select tool', () => {
 
   it('mouseleave cancels the active box-selection gesture', () => {
     const { grid } = makeGrid();
-    withHitTests(grid);
     setupStore(grid, 'select');
-    const deps = makeDeps(grid);
+    const deps = makeDeps();
     const { result } = renderHook(() => useCanvasMouse(deps));
 
     act(() => result.current.handleMouseDown(mouseEvent({ clientX: 8, clientY: 8 })));

@@ -1,26 +1,52 @@
 import type { GridCanvasWasm } from '../types/grid';
 import { stubWasm } from './wasmStub';
 
+/** Configuration for the shared recording mock. */
+export type TestGridOpts = {
+  lines?: number[][];  // [r1, c1, r2, c2, color, width]
+  rects?: number[][];  // [r1, c1, r2, c2, fill, outline]
+  /** Pre-existing square records as [r, c, color, size] tuples. */
+  squares?: number[][];
+  texts?: number[][];  // [r, c, color, boxW, boxH, halign, valign]
+  images?: number[][]; // [r1, c1, r2, c2]
+  /** Configured hit-test results by shape kind (default: miss, -1). */
+  hit?: { line?: number; text?: number; rect?: number; image?: number };
+  /** World px per fine unit (default 2, matching the real grid). */
+  cellSize?: number;
+};
+
+// A box-overlap test against a shape's bounding box; matches the "intersects
+// the selection box" semantics the select slice relies on (may be negative).
+function bboxOverlaps(
+  aR1: number, aC1: number, aR2: number, aC2: number,
+  qR1: number, qC1: number, qR2: number, qC2: number,
+): boolean {
+  const minR = Math.min(aR1, aR2), maxR = Math.max(aR1, aR2);
+  const minC = Math.min(aC1, aC2), maxC = Math.max(aC1, aC2);
+  return !(maxR < qR1 || minR > qR2 || maxC < qC1 || minC > qC2);
+}
+
 /**
- * A recording mock of the WASM GridCanvas for store/action tests. It captures
- * every mutation call and serves configurable reads so actions can capture
+ * The one recording mock of the WASM GridCanvas for store/action tests. It
+ * captures every mutation call in `calls` and every paint (render / highlight /
+ * preview) in `paints`, and serves configurable reads so actions can capture
  * prior state and we can assert the exact WASM calls an action produces.
  * Square records are tracked in-memory (flat [r, c, color, size, ...], z-order)
  * so draw/place/clear round-trips behave like the real grid.
  */
-export function makeGrid(opts?: {
-  lines?: number[][];
-  rects?: number[][];
-  /** Pre-existing square records as [r, c, color, size] tuples. */
-  squares?: number[][];
-}) {
+export function makeGrid(opts?: TestGridOpts) {
   const calls: Array<[string, ...number[]]> = [];
+  const paints: Array<Array<string | number>> = [];
   const lines = opts?.lines ?? [];
   const rects = opts?.rects ?? [];
+  const texts = opts?.texts ?? [];
+  const images = opts?.images ?? [];
+  const hit = opts?.hit ?? {};
+  const cellSize = opts?.cellSize ?? 2;
   let lineCount = lines.length;
   let rectCount = rects.length;
-  let textCount = 0;
-  let imageCount = 0;
+  let textCount = texts.length;
+  let imageCount = images.length;
 
   const STRIDE = 4;
   const squares: number[] = (opts?.squares ?? []).flatMap(([r, c, color, size]) => [r, c, color ?? 0, size ?? 1]);
@@ -81,7 +107,7 @@ export function makeGrid(opts?: {
       return idx >= 0 ? squares[idx * STRIDE + 2] : 0;
     },
     set_draw_color: (idx) => { calls.push(['set_draw_color', idx]); },
-    set_outline_color: () => {},
+    set_outline_color: (idx) => { calls.push(['set_outline_color', idx]); },
     set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
     set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
     set_rect_outline: (idx, color) => calls.push(['set_rect_outline', idx, color]),
@@ -98,7 +124,7 @@ export function makeGrid(opts?: {
     move_text: (idx, dr, dc) => calls.push(['move_text', idx, dr, dc]),
     set_text_color: (idx, color) => calls.push(['set_text_color', idx, color]),
     get_text_count: () => textCount,
-    get_text: () => new Int32Array([1, 0, 0, 1, 1]),
+    get_text: (idx) => new Int32Array(texts[idx] ?? [1, 0, 0, 1, 1]),
     get_text_string: () => '',
     get_text_size: () => 1,
     insert_image: (idx, r1, c1, r2, c2) => { imageCount++; calls.push(['insert_image', idx, r1, c1, r2, c2]); },
@@ -108,29 +134,64 @@ export function makeGrid(opts?: {
     set_image_geom: (idx, r1, c1, r2, c2) => calls.push(['set_image_geom', idx, r1, c1, r2, c2]),
     resize_image: (idx, handle, r, c) => calls.push(['resize_image', idx, handle, r, c]),
     get_image_count: () => imageCount,
-    get_image: () => new Int32Array([0, 0, 8, 8]),
+    get_image: (idx) => new Int32Array(images[idx] ?? [0, 0, 8, 8]),
     get_image_url: () => '',
-    hit_test_image: () => -1,
-    image_intersects_box: () => false,
-    highlight_image: () => {},
-    preview_image: () => {},
     get_line: (idx) => new Int32Array(lines[idx] ?? [0, 0, 1, 1, 0]),
     get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
     get_line_count: () => lineCount,
     get_rect_count: () => rectCount,
-    get_cell_size: () => 2,
+    get_cell_size: () => cellSize,
+
+    // Hit tests: configured index or miss. Box intersections do a real bbox
+    // overlap against the configured shape rows (absent rows never intersect).
+    hit_test_line: () => hit.line ?? -1,
+    hit_test_text: () => hit.text ?? -1,
+    hit_test_rect: () => hit.rect ?? -1,
+    hit_test_image: () => hit.image ?? -1,
+    line_intersects_box: (i, r1, c1, r2, c2) => {
+      const l = lines[i];
+      return l ? bboxOverlaps(l[0], l[1], l[2], l[3], r1, c1, r2, c2) : false;
+    },
+    rect_intersects_box: (i, r1, c1, r2, c2) => {
+      const s = rects[i];
+      return s ? bboxOverlaps(s[0], s[1], s[2], s[3], r1, c1, r2, c2) : false;
+    },
+    text_intersects_box: (i, r1, c1, r2, c2) => {
+      const t = texts[i];
+      return t ? bboxOverlaps(t[0], t[1], t[0] + t[4], t[1] + t[3], r1, c1, r2, c2) : false;
+    },
+    image_intersects_box: (i, r1, c1, r2, c2) => {
+      const m = images[i];
+      return m ? bboxOverlaps(m[0], m[1], m[2], m[3], r1, c1, r2, c2) : false;
+    },
+
     set_viewport: () => {},
     set_camera: () => {},
     get_cam_x: () => 0,
     get_cam_y: () => 0,
     get_zoom: () => 1,
     clear: () => { squares.length = 0; lineCount = 0; rectCount = 0; textCount = 0; imageCount = 0; },
-    render: () => {},
-    highlight_square: () => {},
-    highlight_line: () => {},
-    highlight_rect: () => {},
+
+    // Paints land in `paints` (not `calls`) so mutation-sequence assertions
+    // stay stable while preview/highlight tests can assert paint order.
+    render: () => { paints.push(['render']); },
+    render_with_line: (r1, c1, r2, c2) => { paints.push(['render_with_line', r1, c1, r2, c2]); },
+    render_with_rect: (r1, c1, r2, c2) => { paints.push(['render_with_rect', r1, c1, r2, c2]); },
+    render_with_selection_box: (r1, c1, r2, c2) => { paints.push(['render_with_selection_box', r1, c1, r2, c2]); },
+    highlight_square: (idx) => { paints.push(['highlight_square', idx]); },
+    highlight_line: (idx) => { paints.push(['highlight_line', idx]); },
+    highlight_rect: (idx) => { paints.push(['highlight_rect', idx]); },
+    highlight_text: (idx) => { paints.push(['highlight_text', idx]); },
+    highlight_image: (idx) => { paints.push(['highlight_image', idx]); },
+    preview_square: (r, c, size, color) => { paints.push(['preview_square', r, c, size, color]); },
+    preview_line: (r1, c1, r2, c2, color, w) => { paints.push(['preview_line', r1, c1, r2, c2, color, w]); },
+    preview_rect: (r1, c1, r2, c2, fill, outline) => { paints.push(['preview_rect', r1, c1, r2, c2, fill, outline]); },
+    preview_text: (r, c, color, size, boxW, boxH, halign, valign, text) => {
+      paints.push(['preview_text', r, c, color, size, boxW, boxH, halign, valign, text]);
+    },
+    preview_image: () => { paints.push(['preview_image']); },
     draw_handle: () => {},
     draw_selection_box: () => {},
   };
-  return { grid: { ...stubWasm(), ...g }, calls };
+  return { grid: { ...stubWasm(), ...g }, calls, paints };
 }

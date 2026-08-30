@@ -4,9 +4,23 @@ import { selectionSignature } from '../gridHelpers';
 import { CELL_UNITS, SUBDIVISIONS, widthToTenths, type GridStore, type ToolActions } from '../types';
 import { history } from './historySlice';
 
-export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (set, get) => ({
+export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (set, get) => {
+  // Push the active draw/outline colors into WASM. The rubber-band previews
+  // (render_with_line/render_with_rect) read them there, so this runs whenever
+  // the colors change (or a grid arrives) — the input layer never syncs them.
+  const syncStyleToGrid = () => {
+    const { grid, colorIdx, outlineIdx } = get();
+    if (!grid) return;
+    grid.set_draw_color(colorIdx);
+    grid.set_outline_color(outlineIdx);
+  };
+
+  return {
   // Grid actions
-  setGrid: (grid) => set({ grid }),
+  setGrid: (grid) => {
+    set({ grid });
+    syncStyleToGrid();
+  },
   setGridSize: (gridSize) => set({ gridSize }),
   setCurrentName: (currentName) => set({ currentName }),
   setSaveState: (saveState, message = '') => set({ saveState, saveMessage: message }),
@@ -18,21 +32,29 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     // Restore the color/outline last used in the tool we're switching to.
     const style = get().toolStyles[tool];
     set({ tool, colorIdx: style.colorIdx, outlineIdx: style.outlineIdx });
+    syncStyleToGrid();
   },
-  setColorIdx: (idx) => set((s) => ({
-    colorIdx: idx,
-    toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], colorIdx: idx } },
-  })),
-  setOutlineIdx: (idx) => set((s) => ({
-    outlineIdx: idx,
-    toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], outlineIdx: idx } },
-  })),
+  setColorIdx: (idx) => {
+    set((s) => ({
+      colorIdx: idx,
+      toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], colorIdx: idx } },
+    }));
+    syncStyleToGrid();
+  },
+  setOutlineIdx: (idx) => {
+    set((s) => ({
+      outlineIdx: idx,
+      toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], outlineIdx: idx } },
+    }));
+    syncStyleToGrid();
+  },
 
   pickColor: (idx) => {
     set((s) => ({
       colorIdx: idx,
       toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], colorIdx: idx } },
     }));
+    syncStyleToGrid();
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Recolor the fill of every selected square/rect and the stroke of every line.
@@ -58,6 +80,7 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
       outlineIdx: idx,
       toolStyles: { ...s.toolStyles, [s.tool]: { ...s.toolStyles[s.tool], outlineIdx: idx } },
     }));
+    syncStyleToGrid();
     const { grid, selectedItems } = get();
     if (!grid || selectedItems.length === 0) return;
     // Outline only applies to rects.
@@ -73,10 +96,36 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   },
   startDrawing: (mode) => set({ isDrawing: true, drawMode: mode }),
   stopDrawing: () => set({ isDrawing: false }),
-  startLine: (cell) => set({ lineStart: cell, isDrawing: true }),
+  startLine: (cell) => {
+    set({ lineStart: cell, isDrawing: true });
+    // Zero-length rubber band so the pick is visible from the first press.
+    get().grid?.render_with_line(cell.row, cell.col, cell.row, cell.col);
+  },
   finishLine: () => set({ lineStart: null, isDrawing: false }),
-  startRect: (cell) => set({ rectStart: cell, isDrawing: true }),
+  startRect: (cell) => {
+    set({ rectStart: cell, isDrawing: true });
+    get().grid?.render_with_rect(cell.row, cell.col, cell.row, cell.col);
+  },
   finishRect: () => set({ rectStart: null, isDrawing: false }),
+
+  renderLinePreview: (cell) => {
+    const { grid, lineStart } = get();
+    if (!grid || !lineStart) return;
+    grid.render_with_line(lineStart.row, lineStart.col, cell.row, cell.col);
+  },
+  renderRectPreview: (cell) => {
+    const { grid, rectStart } = get();
+    if (!grid || !rectStart) return;
+    grid.render_with_rect(rectStart.row, rectStart.col, cell.row, cell.col);
+  },
+  cancelLine: () => {
+    get().grid?.render(); // clear the rubber band
+    get().finishLine();
+  },
+  cancelRect: () => {
+    get().grid?.render();
+    get().finishRect();
+  },
 
   // --- Text tool ------------------------------------------------------------
   // Live typing draws a preview via render_text_preview; nothing touches the
@@ -216,6 +265,27 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
 
   // --- Drawing commits (called by the canvas component) ---------------------
 
+  // One draw-tool press. The draw-vs-erase rule lives here: the transparent
+  // color always erases; any other color toggles based on whether a square
+  // already covers the pressed cell. The whole stroke (down → up) is one
+  // history batch, closed by endDrawStroke.
+  pressDrawAt: (cell) => {
+    const { grid, colorIdx } = get();
+    if (!grid) return;
+    const mode = colorIdx === 6 ? false : !grid.get_cell(cell.row, cell.col);
+    get().startDrawing(mode);
+    get().beginDrawStroke();
+    get().drawCellAt(cell.row, cell.col, mode);
+    get().updateOutputs();
+  },
+
+  dragDrawAt: (cell) => {
+    const { isDrawing, drawMode } = get();
+    if (!isDrawing) return;
+    get().drawCellAt(cell.row, cell.col, drawMode);
+    get().updateOutputs();
+  },
+
   beginDrawStroke: () => {
     history.beginBatch();
   },
@@ -291,4 +361,5 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     get().renderSelection();
     get().updateOutputs();
   },
-});
+  };
+};

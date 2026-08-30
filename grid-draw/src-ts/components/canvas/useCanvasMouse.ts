@@ -1,14 +1,9 @@
 import { useCallback } from 'react';
-import type { GridCanvasWasm } from '../../types/grid';
-import { useGridStore, getSelectionBoundsAll } from '../../store/gridStore';
-import { isItemSelected } from '../../store/gridHelpers';
-import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../../utils/handles';
-import { CELL_SIZE, textFrameCorners } from './constants';
+import { useGridStore } from '../../store/gridStore';
 import { getCanvasXY, getCellCoords, getIntersectionCoords, type Camera } from './coords';
 import type { PanGesture } from './useCameraControls';
 
 type MouseDeps = {
-  grid: GridCanvasWasm | null;
   camRef: React.MutableRefObject<Camera>;
   applyCamera: (next: Camera) => void;
   isSpaceDown: React.MutableRefObject<boolean>;
@@ -16,17 +11,18 @@ type MouseDeps = {
 };
 
 /**
- * The four canvas mouse handlers: draw/line/rect/text/select tool gestures plus
- * pan (middle mouse or Space-held left drag). All coordinates flow through the
- * camera (world space); only WASM render applies it back to the screen.
+ * The four canvas mouse handlers — pure input translation. Screen coordinates
+ * are converted to world/cell coordinates (through the camera) and dispatched
+ * to store actions; all gesture policy, geometry and document rendering live in
+ * the store (pressSelectAt, hoverAffordanceAt, pressDrawAt, the preview
+ * actions). Only the pan gesture is handled here: it drives the camera — a view
+ * concern — and never touches the document. This layering is lint-enforced:
+ * eslint bans `grid.*` in this file.
  */
-export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef }: MouseDeps) {
+export function useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef }: MouseDeps) {
   const {
     tool,
-    colorIdx, outlineIdx,
-    isDrawing, drawMode, startDrawing, stopDrawing,
-    lineStart, startLine, finishLine,
-    rectStart, startRect, finishRect,
+    isDrawing, lineStart, rectStart,
     subdivision,
     beginTextEdit,
     selectedItems,
@@ -37,15 +33,14 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
     updateResize, finishResize, cancelResize,
     updateRotate, finishRotate, cancelRotate,
     setMousePos,
-    hitTestShapes,
-    pressSelectAt, renderDragPreview,
-    updateOutputs,
-    beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
+    pressSelectAt, renderDragPreview, hoverAffordanceAt,
+    pressDrawAt, dragDrawAt, endDrawStroke, stopDrawing,
+    startLine, renderLinePreview, commitLine, finishLine, cancelLine,
+    startRect, renderRectPreview, commitRect, finishRect, cancelRect,
   } = useGridStore();
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!grid) return;
       // Pan gesture (middle mouse, or Space-held left drag) takes precedence over
       // every tool and never mutates the document.
       if (event.button === 1 || (event.button === 0 && isSpaceDown.current)) {
@@ -54,45 +49,32 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         event.currentTarget.style.cursor = 'grabbing';
         return;
       }
-      grid.set_draw_color(colorIdx);
-      grid.set_outline_color(outlineIdx);
 
       if (tool === 'draw') {
         const { col, row } = getCellCoords(event, camRef.current, subdivision);
-        const mode = colorIdx === 6 ? false : !grid.get_cell(row, col);
-        startDrawing(mode);
-        // Open one history batch for the whole stroke (mousedown → mouseup).
-        beginDrawStroke();
-        drawCellAt(row, col, mode);
-        updateOutputs();
+        pressDrawAt({ row, col });
       } else if (tool === 'line') {
         const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
         startLine({ row, col });
-        grid.render_with_line(row, col, row, col);
       } else if (tool === 'rect') {
         const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
         startRect({ row, col });
-        grid.render_with_rect(row, col, row, col);
       } else if (tool === 'text') {
         // Place the text caret at the clicked cell and start typing. If a text
         // is already in progress, beginTextEdit commits it first.
         const { col, row } = getCellCoords(event, camRef.current, subdivision);
         beginTextEdit({ row, col });
       } else if (tool === 'select') {
-        // The whole press decision tree (rotate/resize handles, drag, shift
-        // toggle, box select) lives in the store; this just converts coords.
         const { col, row } = getCellCoords(event, camRef.current, subdivision);
         const { x, y } = getCanvasXY(event, camRef.current);
         pressSelectAt({ x, y, row, col, shift: event.shiftKey, zoom: camRef.current.zoom });
       }
     },
-    [grid, tool, colorIdx, outlineIdx, subdivision, startDrawing, startLine, startRect, pressSelectAt, updateOutputs, beginDrawStroke, drawCellAt, beginTextEdit, camRef, isSpaceDown, panRef]
+    [tool, subdivision, pressDrawAt, startLine, startRect, beginTextEdit, pressSelectAt, camRef, isSpaceDown, panRef]
   );
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!grid) return;
-
       // Active pan: move the camera opposite the cursor so the grabbed world
       // point follows the cursor. Screen delta maps to world delta via 1/zoom.
       if (panRef.current) {
@@ -109,9 +91,9 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
       const coords = getCellCoords(event, camRef.current, subdivision);
       setMousePos(coords);
 
-      // Cursor feedback for the select tool: grab over a handle or a draggable
-      // selection, grabbing while actively dragging/resizing, move over the
-      // selection's interior, crosshair otherwise.
+      // Cursor feedback for the select tool: 'grabbing'/'move' while a gesture
+      // is active (pure state), otherwise ask the store what the pointer is
+      // over and map the affordance to a CSS cursor.
       if (tool === 'select') {
         const canvas = event.currentTarget;
         if (isSelecting && (selectMode === 'resize' || selectMode === 'rotate')) {
@@ -120,41 +102,11 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
           canvas.style.cursor = 'move';
         } else {
           const { x, y } = getCanvasXY(event, camRef.current);
-          let cursor = 'crosshair';
-          // Rotate-handle hover (any selection) -> grab.
-          if (selectedItems.length > 0) {
-            const rb = getSelectionBoundsAll(selectedItems, grid);
-            if (rb) {
-              const h = rotateHandlePoint(rb);
-              if (Math.hypot(x - h.c * CELL_SIZE, y - h.r * CELL_SIZE) <= 10 / camRef.current.zoom) {
-                cursor = 'grab';
-              }
-            }
-          }
-          // Handle hover (single line/rect selected) -> grab (resize affordance).
-          if (cursor === 'crosshair' && selectedItems.length === 1) {
-            const only = selectedItems[0];
-            if (only.type === 'line' || only.type === 'rect' || only.type === 'text' || only.type === 'image') {
-              const handles = only.type === 'line'
-                ? getLineHandles(grid.get_line(only.index))
-                : only.type === 'rect'
-                  ? getRectHandles(grid.get_rect(only.index))
-                  : only.type === 'image'
-                    ? getRectHandles(grid.get_image(only.index))
-                    : getRectHandles(textFrameCorners(grid.get_text(only.index)));
-              if (hitTestHandle(x, y, handles, CELL_SIZE, 9)) cursor = 'grab';
-            }
-          }
-          // Hover over a selected shape, or inside the selection bounds -> move
-          // (four-way cross), to distinguish moving from resizing.
-          if (cursor === 'crosshair' && selectedItems.length > 0) {
-            const hit = hitTestShapes(x, y);
-            const b = getSelectionBoundsAll(selectedItems, grid);
-            const inB = b && coords.row >= b.minRow && coords.row <= b.maxRow &&
-                        coords.col >= b.minCol && coords.col <= b.maxCol;
-            if ((hit && isItemSelected(hit, selectedItems)) || inB) cursor = 'move';
-          }
-          canvas.style.cursor = cursor;
+          const affordance = hoverAffordanceAt({ x, y, row: coords.row, col: coords.col, zoom: camRef.current.zoom });
+          canvas.style.cursor =
+            affordance === 'rotate' || affordance === 'resize' ? 'grab'
+              : affordance === 'move' ? 'move'
+                : 'crosshair';
         }
       } else {
         event.currentTarget.style.cursor = 'crosshair';
@@ -163,15 +115,13 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
       if (!isDrawing && !isSelecting) return;
 
       if (tool === 'draw' && isDrawing) {
-        const { col, row } = getCellCoords(event, camRef.current, subdivision);
-        drawCellAt(row, col, drawMode);
-        updateOutputs();
+        dragDrawAt({ row: coords.row, col: coords.col });
       } else if (tool === 'line' && lineStart) {
         const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
-        grid.render_with_line(lineStart.row, lineStart.col, row, col);
+        renderLinePreview({ row, col });
       } else if (tool === 'rect' && rectStart) {
         const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
-        grid.render_with_rect(rectStart.row, rectStart.col, row, col);
+        renderRectPreview({ row, col });
       } else if (tool === 'select' && isSelecting && selectMode === 'resize') {
         // Resize uses intersection coords (corners), like line/rect drawing.
         const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
@@ -181,23 +131,19 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         updateRotate(x, y);
       } else if (tool === 'select' && isSelecting) {
         // Infinite grid: no clamping — selection works in negative space too.
-        const { col, row } = getCellCoords(event, camRef.current, subdivision);
-
         if (selectMode === 'box' && selectBoxStart) {
-          updateBoxSelection({ row, col });
+          updateBoxSelection({ row: coords.row, col: coords.col });
         } else if (selectMode === 'drag' && selectDragStart && selectedItems.length > 0) {
           // Ghosts of the selection at the drag's snapped destination.
-          renderDragPreview({ row, col });
+          renderDragPreview({ row: coords.row, col: coords.col });
         }
       }
     },
-    [grid, tool, subdivision, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, renderDragPreview, updateResize, updateRotate, updateOutputs, drawCellAt, camRef, panRef, applyCamera]
+    [tool, subdivision, isDrawing, isSelecting, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, setMousePos, hoverAffordanceAt, dragDrawAt, renderLinePreview, renderRectPreview, updateBoxSelection, renderDragPreview, updateResize, updateRotate, camRef, panRef, applyCamera]
   );
 
   const handleMouseUp = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!grid) return;
-
       // End a pan gesture; restore the appropriate idle cursor.
       if (panRef.current) {
         panRef.current = null;
@@ -222,22 +168,22 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         }
         finishRect();
       } else if (tool === 'select') {
-        const { col, row } = getCellCoords(event, camRef.current, subdivision);
-
         if (selectMode === 'rotate') {
           const { x, y } = getCanvasXY(event, camRef.current);
           finishRotate(x, y);
         } else if (selectMode === 'resize') {
-          const { col: icol, row: irow } = getIntersectionCoords(event, camRef.current, subdivision);
-          finishResize({ row: irow, col: icol });
+          const { col, row } = getIntersectionCoords(event, camRef.current, subdivision);
+          finishResize({ row, col });
         } else if (selectMode === 'box') {
+          const { col, row } = getCellCoords(event, camRef.current, subdivision);
           finishBoxSelection({ row, col });
         } else if (selectMode === 'drag') {
+          const { col, row } = getCellCoords(event, camRef.current, subdivision);
           finishDragSelection({ row, col });
         }
       }
     },
-    [grid, tool, subdivision, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, finishRotate, endDrawStroke, commitLine, commitRect, camRef, isSpaceDown, panRef]
+    [tool, subdivision, lineStart, rectStart, selectMode, stopDrawing, finishLine, finishRect, finishBoxSelection, finishDragSelection, finishResize, finishRotate, endDrawStroke, commitLine, commitRect, camRef, isSpaceDown, panRef]
   );
 
   const handleMouseLeave = useCallback(() => {
@@ -249,11 +195,9 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
     if (tool === 'draw') {
       stopDrawing();
     } else if (tool === 'line') {
-      if (grid) grid.render();
-      finishLine();
+      cancelLine();
     } else if (tool === 'rect') {
-      if (grid) grid.render();
-      finishRect();
+      cancelRect();
     } else if (tool === 'select') {
       if (selectMode === 'box') {
         cancelBoxSelection();
@@ -265,7 +209,7 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         cancelRotate();
       }
     }
-  }, [grid, tool, selectMode, stopDrawing, finishLine, finishRect, cancelBoxSelection, cancelDragSelection, cancelResize, cancelRotate, panRef]);
+  }, [tool, selectMode, stopDrawing, cancelLine, cancelRect, cancelBoxSelection, cancelDragSelection, cancelResize, cancelRotate, panRef]);
 
   return { handleMouseDown, handleMouseMove, handleMouseUp, handleMouseLeave };
 }

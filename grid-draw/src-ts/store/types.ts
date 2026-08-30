@@ -23,6 +23,9 @@ export const tenthsToWidth = (tenths: number) => tenths / 10;
 export type DrawTool = 'draw' | 'line' | 'rect' | 'text' | 'select';
 export type SelectMode = 'box' | 'drag' | 'resize' | 'rotate' | null;
 
+// What the idle pointer is over with the select tool (drives the CSS cursor).
+export type HoverAffordance = 'rotate' | 'resize' | 'move' | 'none';
+
 // Which handle of which single shape is being dragged during a resize.
 export type ResizeTarget = {
   shape: 'line' | 'rect' | 'text' | 'image';
@@ -227,6 +230,20 @@ export type ToolActions = {
   endDrawStroke: () => void;
   commitLine: (r1: number, c1: number, r2: number, c2: number) => void;
   commitRect: (r1: number, c1: number, r2: number, c2: number) => void;
+
+  // One draw-tool press: transparent always erases; any other color toggles
+  // based on what's under the pointer. Opens the stroke's history batch
+  // (closed by endDrawStroke on release).
+  pressDrawAt: (cell: Cell) => void;
+  // Continue an in-progress draw stroke (no-op unless a press started one).
+  dragDrawAt: (cell: Cell) => void;
+  // Rubber-band previews while dragging out a line/rect.
+  renderLinePreview: (cell: Cell) => void;
+  renderRectPreview: (cell: Cell) => void;
+  // Abandon an in-progress line/rect gesture (e.g. pointer left the canvas):
+  // repaint to clear the rubber band, then reset the gesture state.
+  cancelLine: () => void;
+  cancelRect: () => void;
   // Add an image object (grid-snapped box + URL) as one undoable step and select
   // it. `url` is a public bitmap source (uploaded to S3, or a pasted-in URL).
   placeImage: (url: string, box: { r1: number; c1: number; r2: number; c2: number }) => void;
@@ -259,6 +276,10 @@ export type SelectActions = {
   // using the same snap as finishDragSelection so ghosts land exactly where
   // the commit will.
   renderDragPreview: (cell: Cell) => void;
+  // What the idle pointer is over, for cursor feedback — same geometry and
+  // priority as pressSelectAt: the rotate handle, a resize handle, something
+  // draggable (a selected shape or the selection's bounds), or nothing.
+  hoverAffordanceAt: (q: { x: number; y: number; row: number; col: number; zoom: number }) => HoverAffordance;
 
   // Hit testing for shapes
   hitTestShapes: (x: number, y: number) => SelectedItem | null;
