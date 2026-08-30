@@ -171,6 +171,27 @@ describe('useKeyboardShortcuts: text-edit suppression', () => {
     expect(grid.get_text_count()).toBe(1);
   });
 
+  it('arrow keys move the caret so Backspace/Delete edit mid-string', () => {
+    const { grid } = makePatchedGrid();
+    reset(grid);
+    store().beginTextEdit({ row: 0, col: 0 });
+    mount();
+
+    for (const ch of 'abcd') press(ch);
+    press('ArrowLeft');
+    press('ArrowLeft');
+    press('Backspace'); // ab|cd → a|cd
+    expect(store().textEdit?.text).toBe('acd');
+    press('Delete'); // a|cd → a|d
+    expect(store().textEdit?.text).toBe('ad');
+    press('Home');
+    press('x');
+    expect(store().textEdit?.text).toBe('xad');
+    press('End');
+    press('z');
+    expect(store().textEdit?.text).toBe('xadz');
+  });
+
   it('Escape cancels the in-progress text without committing', () => {
     const { grid } = makePatchedGrid();
     reset(grid);

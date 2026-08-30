@@ -110,7 +110,7 @@ export type GridCanvasWasm = {
   text_intersects_box(idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   highlight_text(idx: number): void;
   preview_text(r: number, c: number, color: number, size: number, boxW: number, boxH: number, halign: number, valign: number, text: string): void;
-  render_text_preview(r: number, c: number, color: number, size: number, text: string): void;
+  render_text_preview(r: number, c: number, color: number, size: number, text: string, cursor: number): void;
 
   // Image objects (bitmaps in a grid-snapped box; pixels loaded from `url`).
   // Only the box + URL are serialized; the browser-decoded element is passed in.

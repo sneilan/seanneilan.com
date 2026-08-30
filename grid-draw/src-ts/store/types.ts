@@ -48,8 +48,11 @@ export type SelectedItem =
 // index and full original record: the original is deleted while typing (so the
 // preview isn't drawn over it) and either replaced on commit or restored
 // verbatim on cancel — both at the original z-index.
+// `cursor` is the caret position as a character index into `text` (0 = before
+// the first char); typing inserts there, arrows/Home/End move it.
 export type TextEditState = {
   row: number; col: number; size: number; text: string; halign: number; valign: number;
+  cursor: number;
   editing?: { idx: number; original: TextData };
 };
 
@@ -230,6 +233,11 @@ export type ToolActions = {
   beginTextEditAt: (index: number) => void;
   typeTextChar: (ch: string) => void;
   backspaceText: () => void;
+  // Delete the character AT the cursor (the Delete key's forward delete).
+  deleteTextForward: () => void;
+  // Move the caret by `delta` characters, clamped to the text (±Infinity works
+  // as Home/End).
+  moveTextCursor: (delta: number) => void;
   commitTextEdit: () => void;
   cancelTextEdit: () => void;
 

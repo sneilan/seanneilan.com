@@ -45,7 +45,7 @@ describe('beginTextEditAt', () => {
     expect(edit?.editing).toMatchObject({ idx: 0 });
     expect(useGridStore.getState().selectedItems).toEqual([]);
     // Preview shows the ORIGINAL string in the original color (2), not colorIdx.
-    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567']);
+    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567', 3]);
   });
 
   it('typing previews with the original color; commit replaces at the original index as ONE undo step', () => {
@@ -53,7 +53,7 @@ describe('beginTextEditAt', () => {
     useGridStore.getState().beginTextEditAt(0);
 
     useGridStore.getState().typeTextChar('x');
-    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567x']);
+    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567x', 4]);
 
     useGridStore.getState().commitTextEdit();
     expect(useGridStore.getState().textEdit).toBeNull();
@@ -97,6 +97,69 @@ describe('beginTextEditAt', () => {
     expect(useGridStore.getState().canUndo()).toBe(true);
     useGridStore.getState().undo();
     expect(calls[calls.length - 1]).toEqual(['insert_text', 0, 5, 10, 2, 1, 'ab']);
+  });
+});
+
+describe('text cursor movement', () => {
+  it('opens with the caret at the end, and arrows move it (clamped)', () => {
+    setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    expect(useGridStore.getState().textEdit?.cursor).toBe(3);
+
+    useGridStore.getState().moveTextCursor(-1);
+    expect(useGridStore.getState().textEdit?.cursor).toBe(2);
+    useGridStore.getState().moveTextCursor(-Infinity); // Home
+    expect(useGridStore.getState().textEdit?.cursor).toBe(0);
+    useGridStore.getState().moveTextCursor(-1); // clamped at the start
+    expect(useGridStore.getState().textEdit?.cursor).toBe(0);
+    useGridStore.getState().moveTextCursor(Infinity); // End
+    expect(useGridStore.getState().textEdit?.cursor).toBe(3);
+  });
+
+  it('moving the caret re-renders the preview with the cursor position', () => {
+    const { paints } = setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    useGridStore.getState().moveTextCursor(-2);
+    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567', 1]);
+  });
+
+  it('typing inserts at the caret, not the end', () => {
+    setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    useGridStore.getState().moveTextCursor(-2); // 5|67
+    useGridStore.getState().typeTextChar('x');
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '5x67', cursor: 2 });
+  });
+
+  it('Backspace deletes BEFORE the caret; at the start it is a no-op', () => {
+    setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    useGridStore.getState().moveTextCursor(-1); // 56|7
+    useGridStore.getState().backspaceText();
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '57', cursor: 1 });
+    useGridStore.getState().moveTextCursor(-Infinity);
+    useGridStore.getState().backspaceText();
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '57', cursor: 0 });
+  });
+
+  it('Delete removes AT the caret; at the end it is a no-op', () => {
+    setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    useGridStore.getState().deleteTextForward(); // caret at end → nothing
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '567', cursor: 3 });
+    useGridStore.getState().moveTextCursor(-Infinity);
+    useGridStore.getState().deleteTextForward();
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '67', cursor: 0 });
+  });
+
+  it('a mid-string edit commits the edited text', () => {
+    const { calls } = setup(TEXT);
+    useGridStore.getState().beginTextEditAt(0);
+    useGridStore.getState().moveTextCursor(-1);
+    useGridStore.getState().backspaceText(); // 567 → 5|7
+    useGridStore.getState().typeTextChar('X');
+    useGridStore.getState().commitTextEdit();
+    expect(calls).toContainEqual(['insert_text', 0, 5, 10, 2, 1, '5X7']);
   });
 });
 

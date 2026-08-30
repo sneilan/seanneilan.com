@@ -195,7 +195,7 @@ export function makeGrid(opts?: TestGridOpts) {
       paints.push(['preview_text', r, c, color, size, boxW, boxH, halign, valign, text]);
     },
     preview_image: () => { paints.push(['preview_image']); },
-    render_text_preview: (r, c, color, size, text) => { paints.push(['render_text_preview', r, c, color, size, text]); },
+    render_text_preview: (r, c, color, size, text, cursor) => { paints.push(['render_text_preview', r, c, color, size, text, cursor]); },
     draw_handle: () => {},
     draw_selection_box: () => {},
   };

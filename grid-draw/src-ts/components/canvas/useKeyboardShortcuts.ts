@@ -9,7 +9,7 @@ export function useKeyboardShortcuts() {
     clipboard, copy, paste,
     cycleSubdivision,
     undo, redo,
-    typeTextChar, backspaceText, commitTextEdit, cancelTextEdit,
+    typeTextChar, backspaceText, deleteTextForward, moveTextCursor, commitTextEdit, cancelTextEdit,
   } = useGridStore();
 
   // Keyboard shortcuts
@@ -60,13 +60,19 @@ export function useKeyboardShortcuts() {
   }, [tool, setTool, setColorIdx, selectedItems, deleteSelected, copy, paste, clipboard, undo, redo, selectAll, cycleSubdivision]);
 
   // Inline text typing. Active only while a text shape is being edited; captures
-  // printable characters, Backspace to delete, Enter to commit, Esc to cancel.
+  // printable characters, Backspace/Delete around a movable caret (arrows /
+  // Home / End), Enter to commit, Esc to cancel.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!useGridStore.getState().textEdit) return;
       if (e.key === 'Enter') { e.preventDefault(); commitTextEdit(); return; }
       if (e.key === 'Escape') { e.preventDefault(); cancelTextEdit(); return; }
       if (e.key === 'Backspace') { e.preventDefault(); backspaceText(); return; }
+      if (e.key === 'Delete') { e.preventDefault(); deleteTextForward(); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); moveTextCursor(-1); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); moveTextCursor(1); return; }
+      if (e.key === 'Home') { e.preventDefault(); moveTextCursor(-Infinity); return; }
+      if (e.key === 'End') { e.preventDefault(); moveTextCursor(Infinity); return; }
       // Single printable char (ignore modifier combos like Ctrl+C / Cmd+V).
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
@@ -75,5 +81,5 @@ export function useKeyboardShortcuts() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [commitTextEdit, cancelTextEdit, backspaceText, typeTextChar]);
+  }, [commitTextEdit, cancelTextEdit, backspaceText, deleteTextForward, moveTextCursor, typeTextChar]);
 }

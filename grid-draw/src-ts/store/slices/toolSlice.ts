@@ -140,7 +140,7 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     if (textEdit) {
       const next = { ...textEdit, size };
       set({ textEdit: next });
-      grid?.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+      grid?.render_text_preview(next.row, next.col, colorIdx, next.size, next.text, next.cursor);
       return;
     }
     if (!grid || selectedItems.length === 0) return;
@@ -220,8 +220,8 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     if (get().textEdit) get().commitTextEdit();
     const { grid, colorIdx, textSize } = get();
     // The text frame's top-left is the clicked cell, so a 1-cell text fills it.
-    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '', halign: 0, valign: 0 }, selectedItems: [] });
-    if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '');
+    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '', halign: 0, valign: 0, cursor: 0 }, selectedItems: [] });
+    if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '', 0);
   },
 
   // Reopen an existing text for in-place editing. The original is deleted
@@ -239,30 +239,53 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     set({
       textEdit: {
         row: original.r, col: original.c, size: original.size, text: original.text,
-        halign: original.halign, valign: original.valign,
+        halign: original.halign, valign: original.valign, cursor: original.text.length,
         editing: { idx: index, original },
       },
       selectedItems: [],
     });
-    grid.render_text_preview(original.r, original.c, original.color, original.size, original.text);
+    grid.render_text_preview(original.r, original.c, original.color, original.size, original.text, original.text.length);
   },
 
   typeTextChar: (ch) => {
     const { grid, textEdit, colorIdx } = get();
     if (!textEdit) return;
-    const next = { ...textEdit, text: textEdit.text + ch };
+    const { text, cursor } = textEdit;
+    const next = { ...textEdit, text: text.slice(0, cursor) + ch + text.slice(cursor), cursor: cursor + ch.length };
     set({ textEdit: next });
     const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text);
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
   },
 
   backspaceText: () => {
     const { grid, textEdit, colorIdx } = get();
-    if (!textEdit) return;
-    const next = { ...textEdit, text: textEdit.text.slice(0, -1) };
+    if (!textEdit || textEdit.cursor === 0) return;
+    const { text, cursor } = textEdit;
+    const next = { ...textEdit, text: text.slice(0, cursor - 1) + text.slice(cursor), cursor: cursor - 1 };
     set({ textEdit: next });
     const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text);
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
+  },
+
+  deleteTextForward: () => {
+    const { grid, textEdit, colorIdx } = get();
+    if (!textEdit || textEdit.cursor >= textEdit.text.length) return;
+    const { text, cursor } = textEdit;
+    const next = { ...textEdit, text: text.slice(0, cursor) + text.slice(cursor + 1) };
+    set({ textEdit: next });
+    const color = textEdit.editing?.original.color ?? colorIdx;
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
+  },
+
+  moveTextCursor: (delta) => {
+    const { grid, textEdit, colorIdx } = get();
+    if (!textEdit) return;
+    const cursor = Math.max(0, Math.min(textEdit.text.length, textEdit.cursor + delta));
+    if (cursor === textEdit.cursor) return;
+    const next = { ...textEdit, cursor };
+    set({ textEdit: next });
+    const color = textEdit.editing?.original.color ?? colorIdx;
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
   },
 
   commitTextEdit: () => {

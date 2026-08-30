@@ -277,9 +277,10 @@ impl GridCanvas {
     }
 
     /// Re-render then draw a live typing preview: box top-left at `(r,c)`, text
-    /// left/top inside an auto-fit box, with a caret after the text.
+    /// left/top inside an auto-fit box, with a caret after `cursor` characters
+    /// (clamped to the text length, so passing usize::MAX means "at the end").
     #[wasm_bindgen]
-    pub fn render_text_preview(&self, r: i32, c: i32, color: u8, size: f64, text: &str) {
+    pub fn render_text_preview(&self, r: i32, c: i32, color: u8, size: f64, text: &str, cursor: usize) {
         self.maybe_render();
         let (w, asc, desc) = self.measure_screen_metrics(text, size);
         let (box_w, box_h) = self.text_fit_box(text, size);
@@ -289,12 +290,15 @@ impl GridCanvas {
         self.ctx.set_text_baseline("alphabetic");
         self.ctx.set_fill_style_str(color_for_idx(if color >= 6 { 0 } else { color }));
         let _ = self.ctx.fill_text(text, x, baseline);
-        // Caret bar (em height) right after the text.
+        // Caret bar (em height) after the first `cursor` characters. The font is
+        // already the zoomed one, so this measurement is in screen px like `w`.
+        let prefix: String = text.chars().take(cursor).collect();
+        let caret_x = x + self.ctx.measure_text(&prefix).map(|m| m.width()).unwrap_or(w) + 1.0;
         self.ctx.set_stroke_style_str("#ff8800");
         self.ctx.set_line_width(1.5);
         self.ctx.begin_path();
-        self.ctx.move_to(x + w + 1.0, baseline - size * self.whole_px());
-        self.ctx.line_to(x + w + 1.0, baseline);
+        self.ctx.move_to(caret_x, baseline - size * self.whole_px());
+        self.ctx.line_to(caret_x, baseline);
         self.ctx.stroke();
         self.ctx.set_line_width(1.0);
     }

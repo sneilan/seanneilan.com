@@ -82,7 +82,7 @@ function makeGrid(opts?: {
     get_text: (idx) => { const t = texts[idx]; return new Int32Array([t.r, t.c, t.color, t.boxW, t.boxH, t.halign, t.valign]); },
     get_text_size: (idx) => texts[idx].size,
     get_text_string: (idx) => texts[idx].text,
-    render_text_preview: (r, c, color, size, text) => calls.push(['render_text_preview', r, c, color, size, text]),
+    render_text_preview: (r, c, color, size, text, cursor) => calls.push(['render_text_preview', r, c, color, size, text, cursor]),
     highlight_text: () => {},
 
     // Lines.
@@ -211,7 +211,7 @@ describe('toolSlice: text tool restyle picks', () => {
 
     expect(useGridStore.getState().textEdit?.size).toBe(2);
     // The preview is re-rendered at the new size; nothing is committed.
-    expect(calls).toContainEqual(['render_text_preview', 2, 3, 0, 2, 'a']);
+    expect(calls).toContainEqual(['render_text_preview', 2, 3, 0, 2, 'a', 1]);
     expect(grid.get_text_count()).toBe(0);
     expect(useGridStore.getState().canUndo()).toBe(false);
   });
@@ -348,7 +348,7 @@ describe('toolSlice: text edit lifecycle', () => {
     // Previous non-empty text committed; a fresh empty edit is now open.
     expect(grid.get_text_count()).toBe(1);
     expect(grid.get_text_string(0)).toBe('a');
-    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '', halign: 0, valign: 0 });
+    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '', halign: 0, valign: 0, cursor: 0 });
   });
 });
 

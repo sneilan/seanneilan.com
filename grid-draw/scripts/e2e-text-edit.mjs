@@ -5,9 +5,10 @@
 // in event wiring (onDoubleClick), coordinate translation, or the deployed
 // bundle itself is invisible to it. Flow exercised:
 //   text tool → click → type "567" → Enter    (creates a text shape)
-//   select tool → double-click the text → type "89" → Enter
+//   select tool → double-click the text → type "89",
+//   then ArrowLeft ×2 + Backspace (deletes the '7' mid-string) → Enter
 // and asserts, via the API stub's recorded autosaves, that the design ends with
-// ONE text shape reading "56789" at the original position.
+// ONE text shape reading "5689" at the original position.
 //
 // Usage:
 //   VITE_API_URL=http://127.0.0.1:8791 npx vite build --outDir /tmp/gd-e2e --emptyOutDir
@@ -201,8 +202,13 @@ async function main() {
       const { writeFileSync } = await import('node:fs');
       writeFileSync('/tmp/gd-e2e-after-dblclick.png', Buffer.from(shot.data, 'base64'));
     }
-    // The in-place edit must now be active: typing appends to the EXISTING text.
+    // The in-place edit must now be active: typing appends to the EXISTING text
+    // ("567" → "56789"), then the caret moves left past "89" and Backspace
+    // deletes the '7' MID-string ("56789" → "5689").
     for (const ch of '89') await key(ch);
+    await key('ArrowLeft', '');
+    await key('ArrowLeft', '');
+    await key('Backspace', '');
     await key('Enter', '\r');
     await sleep(1200);
 
@@ -212,14 +218,14 @@ async function main() {
         JSON.stringify(final.texts));
     }
     const [r, c, , , , , , , text] = final.texts[0];
-    if (text !== '56789') {
-      throw new Error(`double-click edit did not work: text is ${JSON.stringify(text)}, expected "56789"`);
+    if (text !== '5689') {
+      throw new Error(`in-place edit with cursor movement did not work: text is ${JSON.stringify(text)}, expected "5689"`);
     }
     if (r !== created.texts[0][0] || c !== created.texts[0][1]) {
       throw new Error('text moved during in-place edit');
     }
 
-    console.log('PASS: double-click in-place text edit ("567" → "56789", same position, one shape)');
+    console.log('PASS: double-click in-place text edit with caret movement ("567" → +"89", ←←⌫ → "5689", same position, one shape)');
   } finally {
     chrome.kill();
     server.close();
