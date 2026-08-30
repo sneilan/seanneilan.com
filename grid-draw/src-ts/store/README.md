@@ -12,7 +12,7 @@ everything external code needs (`useGridStore`, `DesignJSON`, `SelectedItem`,
 - `gridHelpers.ts` — pure functions: WASM shape readers (`readLine`, `textFrame`, …), selection equality/bounds, `serializeSelection`, quarter-turn rotation math, `allItems`.
 - `slices/historySlice.ts` — owns the module-scope `History` instance; `commitEdits`/`undo`/`redo`/`resetHistory`/`exportHistory`.
 - `slices/toolSlice.ts` — tool/color/outline state (per-tool style memory), text-tool typing lifecycle, subdivision, draw-stroke/line/rect/image commits.
-- `slices/selectSlice.ts` — selection set/add/remove, box selection, drag-move, `hitTestShapes` (priority: line > text > rect > image > cell), `renderSelection`.
+- `slices/selectSlice.ts` — selection set/add/remove, box selection, drag-move, `hitTestShapes` (priority: line > text > rect > image > cell), `renderSelection`; `pressSelectAt` (the select tool's whole mousedown decision tree — rotate handle > resize handle > drag > shift-toggle > single-select > box) and `renderDragPreview` (ghosts at the same snapped delta the drop commits), so `useCanvasMouse` only converts coordinates.
 - `slices/transformSlice.ts` — resize gesture (origin captured at start, single from→to edit on release) and rotate gesture (free drag, snaps to 90°).
 - `slices/clipboardSlice.ts` — copy/paste/deleteSelected (all single undo steps).
 - `slices/designSlice.ts` — training-data capture, `placeDesign`/`loadDesign`/`serializeWholeGrid`, JSON/tensor import, `updateOutputs`, `clear`.

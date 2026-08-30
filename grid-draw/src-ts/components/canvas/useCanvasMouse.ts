@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import type { GridCanvasWasm } from '../../types/grid';
 import { useGridStore, getSelectionBoundsAll } from '../../store/gridStore';
-import { isItemSelected, snapDragDelta } from '../../store/gridHelpers';
+import { isItemSelected } from '../../store/gridHelpers';
 import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../../utils/handles';
 import { CELL_SIZE, textFrameCorners } from './constants';
 import { getCanvasXY, getCellCoords, getIntersectionCoords, type Camera } from './coords';
@@ -29,16 +29,17 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
     rectStart, startRect, finishRect,
     subdivision,
     beginTextEdit,
-    selectedItems, setSelectedItems,
+    selectedItems,
     selectMode, isSelecting,
     selectBoxStart, selectDragStart,
-    startBoxSelection, updateBoxSelection, finishBoxSelection, cancelBoxSelection,
-    startDragSelection, finishDragSelection, cancelDragSelection,
-    startResize, updateResize, finishResize, cancelResize,
-    startRotate, updateRotate, finishRotate, cancelRotate,
-    setMousePos, addItemToSelection, removeItemFromSelection,
+    updateBoxSelection, finishBoxSelection, cancelBoxSelection,
+    finishDragSelection, cancelDragSelection,
+    updateResize, finishResize, cancelResize,
+    updateRotate, finishRotate, cancelRotate,
+    setMousePos,
     hitTestShapes,
-    updateOutputs, renderSelection,
+    pressSelectAt, renderDragPreview,
+    updateOutputs,
     beginDrawStroke, drawCellAt, endDrawStroke, commitLine, commitRect,
   } = useGridStore();
 
@@ -78,94 +79,14 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         const { col, row } = getCellCoords(event, camRef.current, subdivision);
         beginTextEdit({ row, col });
       } else if (tool === 'select') {
+        // The whole press decision tree (rotate/resize handles, drag, shift
+        // toggle, box select) lives in the store; this just converts coords.
         const { col, row } = getCellCoords(event, camRef.current, subdivision);
         const { x, y } = getCanvasXY(event, camRef.current);
-
-        const shiftHeld = event.shiftKey;
-
-        // Rotate: grabbing the round handle above the selection starts a rotate
-        // (works for any selection). Checked first so it wins over drag/box.
-        if (selectedItems.length > 0 && !shiftHeld) {
-          const rb = getSelectionBoundsAll(selectedItems, grid);
-          if (rb) {
-            const h = rotateHandlePoint(rb);
-            const tol = 10 / camRef.current.zoom; // ~10 screen px regardless of zoom
-            if (Math.hypot(x - h.c * CELL_SIZE, y - h.r * CELL_SIZE) <= tol) {
-              startRotate(x, y);
-              return;
-            }
-          }
-        }
-
-        // Resize: if a single line/rect is selected and we grabbed one of its
-        // handles, start a resize instead of a move. Checked before everything
-        // else so handles take priority over the drag/hit-test branches.
-        if (selectedItems.length === 1 && !shiftHeld) {
-          const only = selectedItems[0];
-          if (only.type === 'line' || only.type === 'rect' || only.type === 'text' || only.type === 'image') {
-            const handles = only.type === 'line'
-              ? getLineHandles(grid.get_line(only.index))
-              : only.type === 'rect'
-                ? getRectHandles(grid.get_rect(only.index))
-                : only.type === 'image'
-                  ? getRectHandles(grid.get_image(only.index))
-                  : getRectHandles(textFrameCorners(grid.get_text(only.index)));
-            const hit = hitTestHandle(x, y, handles, CELL_SIZE, 9);
-            if (hit) {
-              startResize({ shape: only.type, index: only.index, handle: hit.handle });
-              return;
-            }
-          }
-        }
-
-        // Check if clicking on any selected item's bounding box (cells, lines, rects)
-        const bounds = getSelectionBoundsAll(selectedItems, grid);
-        const inBounds = bounds && row >= bounds.minRow && row <= bounds.maxRow &&
-                         col >= bounds.minCol && col <= bounds.maxCol;
-
-        // First, hit test to see if we clicked on a shape
-        const hitItem = hitTestShapes(x, y);
-
-        if (hitItem && !shiftHeld && isItemSelected(hitItem, selectedItems) && selectedItems.length > 1) {
-          // Clicked on an item that's already part of a multi-selection -
-          // drag the whole selection, don't collapse it to just this item.
-          startDragSelection({ row, col });
-          renderSelection();
-        } else if (inBounds && selectedItems.length > 0 && !shiftHeld && !hitItem) {
-          // Click inside selection bounding box (but not on a shape) - start
-          // drag. Flag it as an empty-space press so a zero-movement release
-          // deselects instead of keeping the selection.
-          startDragSelection({ row, col }, true);
-          renderSelection();
-        } else if (hitItem) {
-          // Clicked on a shape (cell, line, or rect)
-          if (shiftHeld && !isItemSelected(hitItem, selectedItems)) {
-            addItemToSelection(hitItem);
-          } else if (shiftHeld && isItemSelected(hitItem, selectedItems)) {
-            removeItemFromSelection(hitItem);
-          } else {
-            // Regular click - select single item and prepare for drag
-            setSelectedItems([hitItem]);
-            startDragSelection({ row, col });
-            grid.render();
-            // Highlight the selected item
-            if (hitItem.type === 'cell') {
-              grid.highlight_square(hitItem.index);
-            } else if (hitItem.type === 'line') {
-              grid.highlight_line(hitItem.index);
-            } else if (hitItem.type === 'rect') {
-              grid.highlight_rect(hitItem.index);
-            } else if (hitItem.type === 'image') {
-              grid.highlight_image(hitItem.index);
-            }
-          }
-        } else {
-          // Click on empty space - start box selection
-          startBoxSelection({ row, col }, shiftHeld);
-        }
+        pressSelectAt({ x, y, row, col, shift: event.shiftKey, zoom: camRef.current.zoom });
       }
     },
-    [grid, tool, colorIdx, outlineIdx, subdivision, selectedItems, hitTestShapes, startDrawing, startLine, startRect, startBoxSelection, startDragSelection, startResize, startRotate, addItemToSelection, removeItemFromSelection, setSelectedItems, updateOutputs, renderSelection, beginDrawStroke, drawCellAt, beginTextEdit, camRef, isSpaceDown, panRef]
+    [grid, tool, colorIdx, outlineIdx, subdivision, startDrawing, startLine, startRect, pressSelectAt, updateOutputs, beginDrawStroke, drawCellAt, beginTextEdit, camRef, isSpaceDown, panRef]
   );
 
   const handleMouseMove = useCallback(
@@ -265,42 +186,12 @@ export function useCanvasMouse({ grid, camRef, applyCamera, isSpaceDown, panRef 
         if (selectMode === 'box' && selectBoxStart) {
           updateBoxSelection({ row, col });
         } else if (selectMode === 'drag' && selectDragStart && selectedItems.length > 0) {
-          // Same snap as the commit in finishDragSelection, so the ghosts
-          // preview exactly where the selection will land.
-          const { deltaRow, deltaCol } = snapDragDelta(
-            grid, selectedItems, row - selectDragStart.row, col - selectDragStart.col, subdivision,
-          );
-          grid.render();
-          // Live preview: draw each selected element as a ghost at its new
-          // position so the actual squares/lines/rects appear to move with the
-          // cursor (not just an outline) until release.
-          for (const item of selectedItems) {
-            if (item.type === 'cell') {
-              const s = grid.get_square(item.index); // [r, c, color, size]
-              if (s.length >= 4) {
-                grid.preview_square(s[0] + deltaRow, s[1] + deltaCol, s[3], s[2]);
-              }
-            } else if (item.type === 'line') {
-              const l = grid.get_line(item.index);
-              if (l.length >= 6) {
-                grid.preview_line(l[0] + deltaRow, l[1] + deltaCol, l[2] + deltaRow, l[3] + deltaCol, l[4], l[5]);
-              }
-            } else if (item.type === 'rect') {
-              const rr = grid.get_rect(item.index);
-              if (rr.length >= 6) {
-                grid.preview_rect(rr[0] + deltaRow, rr[1] + deltaCol, rr[2] + deltaRow, rr[3] + deltaCol, rr[4], rr[5]);
-              }
-            } else if (item.type === 'text') {
-              const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
-              if (t.length >= 7) {
-                grid.preview_text(t[0] + deltaRow, t[1] + deltaCol, t[2], grid.get_text_size(item.index), t[3], t[4], t[5], t[6], grid.get_text_string(item.index));
-              }
-            }
-          }
+          // Ghosts of the selection at the drag's snapped destination.
+          renderDragPreview({ row, col });
         }
       }
     },
-    [grid, tool, subdivision, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, updateResize, updateRotate, updateOutputs, drawCellAt, camRef, panRef, applyCamera]
+    [grid, tool, subdivision, isDrawing, isSelecting, drawMode, lineStart, rectStart, selectMode, selectBoxStart, selectDragStart, selectedItems, hitTestShapes, setMousePos, updateBoxSelection, renderDragPreview, updateResize, updateRotate, updateOutputs, drawCellAt, camRef, panRef, applyCamera]
   );
 
   const handleMouseUp = useCallback(

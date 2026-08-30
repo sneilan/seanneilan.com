@@ -16,11 +16,9 @@ export const COLORS = [
   { hex: null, name: 'Transparent' },
 ];
 
-// A text frame [r, c, color, boxW, boxH, ...] as rect corners [r1,c1,r2,c2] so
-// it can reuse the rect resize-handle geometry.
-export function textFrameCorners(a: ArrayLike<number>): number[] {
-  return [a[0], a[1], a[0] + a[4], a[1] + a[3]];
-}
+// Text-frame → rect-corner conversion lives with the other pure shape helpers;
+// re-exported here for the canvas hooks that use it for handle geometry.
+export { textFrameCorners } from '../../store/gridHelpers';
 
 // A design with no drawable content — used to flag an empty prediction (the
 // untrained local model often returns this) so the status isn't misleading.

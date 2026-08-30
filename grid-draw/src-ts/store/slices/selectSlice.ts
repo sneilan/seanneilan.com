@@ -1,14 +1,20 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { getLineHandles, getRectHandles, rotateHandlePoint } from '../../utils/handles';
+import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../../utils/handles';
 import {
   addItemToSelectionArray,
   allItems,
   getSelectionBoundsAll,
+  highlightItem,
   isItemSelected,
   isSelectedType,
+  readLine,
+  readRect,
+  readSquare,
+  readText,
   removeItemFromSelectionArray,
   snapDragDelta,
+  textFrameCorners,
 } from '../gridHelpers';
 import type { GridStore, SelectActions, SelectedItem } from '../types';
 
@@ -72,19 +78,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (!grid || !selectBoxStart) return;
     grid.render_with_selection_box(selectBoxStart.row, selectBoxStart.col, currentCell.row, currentCell.col);
     // Highlight previously selected items.
-    for (const item of previousSelection) {
-      if (item.type === 'cell') {
-        grid.highlight_square(item.index);
-      } else if (item.type === 'line') {
-        grid.highlight_line(item.index);
-      } else if (item.type === 'rect') {
-        grid.highlight_rect(item.index);
-      } else if (item.type === 'text') {
-        grid.highlight_text(item.index);
-      } else if (item.type === 'image') {
-        grid.highlight_image(item.index);
-      }
-    }
+    for (const item of previousSelection) highlightItem(grid, item);
   },
 
   finishBoxSelection: (endCell) => {
@@ -270,6 +264,112 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     get().renderSelection();
   },
 
+  // The select tool's whole mousedown decision tree. (x, y) world pixels,
+  // (row, col) the snapped cell under the pointer.
+  pressSelectAt: ({ x, y, row, col, shift, zoom }) => {
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    const cellSize = grid.get_cell_size();
+
+    // Rotate: grabbing the round handle above the selection starts a rotate
+    // (works for any selection). Checked first so it wins over resize/drag/box.
+    if (selectedItems.length > 0 && !shift) {
+      const rb = getSelectionBoundsAll(selectedItems, grid);
+      if (rb) {
+        const h = rotateHandlePoint(rb);
+        const tol = 10 / zoom; // ~10 screen px regardless of zoom
+        if (Math.hypot(x - h.c * cellSize, y - h.r * cellSize) <= tol) {
+          get().startRotate(x, y);
+          return;
+        }
+      }
+    }
+
+    // Resize: if a single line/rect/text/image is selected and we grabbed one
+    // of its handles, start a resize instead of a move. Checked before the
+    // drag/hit-test branches so handles take priority.
+    if (selectedItems.length === 1 && !shift) {
+      const only = selectedItems[0];
+      if (only.type !== 'cell') {
+        const handles = only.type === 'line'
+          ? getLineHandles(grid.get_line(only.index))
+          : only.type === 'rect'
+            ? getRectHandles(grid.get_rect(only.index))
+            : only.type === 'image'
+              ? getRectHandles(grid.get_image(only.index))
+              : getRectHandles(textFrameCorners(grid.get_text(only.index)));
+        const hit = hitTestHandle(x, y, handles, cellSize, 9);
+        if (hit) {
+          get().startResize({ shape: only.type, index: only.index, handle: hit.handle });
+          return;
+        }
+      }
+    }
+
+    const bounds = getSelectionBoundsAll(selectedItems, grid);
+    const inBounds = bounds != null && row >= bounds.minRow && row <= bounds.maxRow &&
+                     col >= bounds.minCol && col <= bounds.maxCol;
+    const hitItem = get().hitTestShapes(x, y);
+
+    if (hitItem && !shift && isItemSelected(hitItem, selectedItems) && selectedItems.length > 1) {
+      // Pressed an item that's already part of a multi-selection — drag the
+      // whole selection, don't collapse it to just this item.
+      get().startDragSelection({ row, col });
+      get().renderSelection();
+    } else if (inBounds && selectedItems.length > 0 && !shift && !hitItem) {
+      // Pressed inside the selection's bounding box but on no shape — start a
+      // drag flagged so a zero-movement release deselects instead.
+      get().startDragSelection({ row, col }, true);
+      get().renderSelection();
+    } else if (hitItem) {
+      if (shift && !isItemSelected(hitItem, selectedItems)) {
+        get().addItemToSelection(hitItem);
+      } else if (shift) {
+        get().removeItemFromSelection(hitItem);
+      } else {
+        // Plain press on a shape: select it alone and arm a drag. Repaint with
+        // the highlight but no handles — the press may become a drag; a
+        // zero-movement release restores them (finishDragSelection →
+        // renderSelection).
+        get().setSelectedItems([hitItem]);
+        get().startDragSelection({ row, col });
+        grid.render();
+        highlightItem(grid, hitItem);
+      }
+    } else {
+      // Empty space: start a box selection (additive when shift is held).
+      get().startBoxSelection({ row, col }, shift);
+    }
+  },
+
+  // Ghost preview of the selection during a drag: repaint, then draw every
+  // selected shape at the SAME snapped delta finishDragSelection will commit,
+  // so the ghosts land exactly where the drop will. (Images get no ghost —
+  // there's no bitmap-free preview — but they still move on release.)
+  renderDragPreview: (cell) => {
+    const { grid, selectDragStart, selectedItems, subdivision } = get();
+    if (!grid || !selectDragStart || selectedItems.length === 0) return;
+    const { deltaRow, deltaCol } = snapDragDelta(
+      grid, selectedItems, cell.row - selectDragStart.row, cell.col - selectDragStart.col, subdivision,
+    );
+    grid.render();
+    for (const item of selectedItems) {
+      if (item.type === 'cell') {
+        const s = readSquare(grid, item.index);
+        grid.preview_square(s.r + deltaRow, s.c + deltaCol, s.size, s.color);
+      } else if (item.type === 'line') {
+        const l = readLine(grid, item.index);
+        grid.preview_line(l.r1 + deltaRow, l.c1 + deltaCol, l.r2 + deltaRow, l.c2 + deltaCol, l.color, l.width);
+      } else if (item.type === 'rect') {
+        const r = readRect(grid, item.index);
+        grid.preview_rect(r.r1 + deltaRow, r.c1 + deltaCol, r.r2 + deltaRow, r.c2 + deltaCol, r.fill, r.outline);
+      } else if (item.type === 'text') {
+        const t = readText(grid, item.index);
+        grid.preview_text(t.r + deltaRow, t.c + deltaCol, t.color, t.size, t.boxW, t.boxH, t.halign, t.valign, t.text);
+      }
+    }
+  },
+
   setMousePos: (cell) => set({ mousePos: cell }),
 
   // Hit test for shapes - returns the topmost shape at position
@@ -320,21 +420,8 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (!grid) return;
     grid.render();
 
-    // Highlight all selected items. A square is one atomic record, so it gets
-    // one outline — never a lattice of per-fine-cell borders.
-    for (const item of selectedItems) {
-      if (item.type === 'cell') {
-        grid.highlight_square(item.index);
-      } else if (item.type === 'line') {
-        grid.highlight_line(item.index);
-      } else if (item.type === 'rect') {
-        grid.highlight_rect(item.index);
-      } else if (item.type === 'text') {
-        grid.highlight_text(item.index);
-      } else if (item.type === 'image') {
-        grid.highlight_image(item.index);
-      }
-    }
+    // Highlight all selected items.
+    for (const item of selectedItems) highlightItem(grid, item);
 
     // Draw resize handles when exactly one line, rect, or text frame is selected.
     if (selectedItems.length === 1) {
@@ -346,8 +433,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         const handles = getRectHandles(grid.get_rect(only.index));
         for (const h of handles) grid.draw_handle(h.r, h.c);
       } else if (only.type === 'text') {
-        const t = grid.get_text(only.index); // [r, c, color, boxW, boxH, ...]
-        const handles = getRectHandles([t[0], t[1], t[0] + t[4], t[1] + t[3]]);
+        const handles = getRectHandles(textFrameCorners(grid.get_text(only.index)));
         for (const h of handles) grid.draw_handle(h.r, h.c);
       } else if (only.type === 'image') {
         const handles = getRectHandles(grid.get_image(only.index)); // [r1, c1, r2, c2]

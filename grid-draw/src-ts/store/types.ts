@@ -249,6 +249,17 @@ export type SelectActions = {
   cancelDragSelection: () => void;
   setMousePos: (cell: Cell) => void;
 
+  // One select-tool press: the entire mousedown decision tree (rotate handle >
+  // resize handle > drag selection > shift-toggle > single-select > box select).
+  // (x, y) are world pixels, (row, col) the snapped cell, zoom the camera zoom
+  // (for zoom-independent handle tolerance). The input layer just converts
+  // coordinates and calls this.
+  pressSelectAt: (press: { x: number; y: number; row: number; col: number; shift: boolean; zoom: number }) => void;
+  // Repaint with ghost previews of the selection at the drag's destination,
+  // using the same snap as finishDragSelection so ghosts land exactly where
+  // the commit will.
+  renderDragPreview: (cell: Cell) => void;
+
   // Hit testing for shapes
   hitTestShapes: (x: number, y: number) => SelectedItem | null;
 

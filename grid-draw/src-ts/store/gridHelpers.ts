@@ -86,6 +86,28 @@ export function removeItemFromSelectionArray(item: SelectedItem, selection: Sele
   return selection.filter(s => !itemsEqual(s, item));
 }
 
+/** Draw the selection highlight for one item (dispatch on its kind). A square
+ * is one atomic record, so it gets one outline — never a per-fine-cell lattice. */
+export function highlightItem(grid: GridCanvasWasm, item: SelectedItem): void {
+  if (item.type === 'cell') {
+    grid.highlight_square(item.index);
+  } else if (item.type === 'line') {
+    grid.highlight_line(item.index);
+  } else if (item.type === 'rect') {
+    grid.highlight_rect(item.index);
+  } else if (item.type === 'text') {
+    grid.highlight_text(item.index);
+  } else {
+    grid.highlight_image(item.index);
+  }
+}
+
+// A text frame [r, c, color, boxW, boxH, ...] as rect corners [r1,c1,r2,c2] so
+// it can reuse the rect resize-handle geometry.
+export function textFrameCorners(a: ArrayLike<number>): number[] {
+  return [a[0], a[1], a[0] + a[4], a[1] + a[3]];
+}
+
 /**
  * Type-guard factory for filtering a selection down to one variant. Because
  * `SelectedItem` is a discriminated union, a bare `items.filter(i => i.type ===
