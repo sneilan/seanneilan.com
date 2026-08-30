@@ -33,7 +33,7 @@ export function useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef }: Mou
     updateResize, finishResize, cancelResize,
     updateRotate, finishRotate, cancelRotate,
     setMousePos,
-    pressSelectAt, renderDragPreview, hoverAffordanceAt,
+    pressSelectAt, renderDragPreview, hoverAffordanceAt, doubleClickAt,
     pressDrawAt, dragDrawAt, endDrawStroke, stopDrawing,
     startLine, renderLinePreview, commitLine, finishLine, cancelLine,
     startRect, renderRectPreview, commitRect, finishRect, cancelRect,
@@ -71,6 +71,15 @@ export function useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef }: Mou
       }
     },
     [tool, subdivision, pressDrawAt, startLine, startRect, beginTextEdit, pressSelectAt, camRef, isSpaceDown, panRef]
+  );
+
+  const handleDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (tool !== 'select' || isSpaceDown.current) return;
+      const { x, y } = getCanvasXY(event, camRef.current);
+      doubleClickAt({ x, y });
+    },
+    [tool, doubleClickAt, camRef, isSpaceDown]
   );
 
   const handleMouseMove = useCallback(
@@ -211,5 +220,5 @@ export function useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef }: Mou
     }
   }, [tool, selectMode, stopDrawing, cancelLine, cancelRect, cancelBoxSelection, cancelDragSelection, cancelResize, cancelRotate, panRef]);
 
-  return { handleMouseDown, handleMouseMove, handleMouseUp, handleMouseLeave };
+  return { handleMouseDown, handleDoubleClick, handleMouseMove, handleMouseUp, handleMouseLeave };
 }

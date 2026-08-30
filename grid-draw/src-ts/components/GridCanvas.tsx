@@ -28,7 +28,7 @@ function GridCanvas() {
 
   const { cam, camRef, applyCamera, resetView, spaceHeld, isSpaceDown, panRef } =
     useCameraControls(grid, canvasRef);
-  const { handleMouseDown, handleMouseMove, handleMouseUp, handleMouseLeave } =
+  const { handleMouseDown, handleDoubleClick, handleMouseMove, handleMouseUp, handleMouseLeave } =
     useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef });
   useKeyboardShortcuts();
   const image = useImageObjects(camRef, viewport);
@@ -96,6 +96,7 @@ function GridCanvas() {
           cursor: loading ? 'wait' : spaceHeld ? 'grab' : 'crosshair',
         }}
         onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}

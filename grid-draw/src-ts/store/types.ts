@@ -1,6 +1,6 @@
 import type { GridCanvasWasm } from '../types/grid';
 import type { Cell } from '../utils/selection';
-import type { Edit, LineGeom, RectGeom, TextFrame, ImageGeom } from './edits/types';
+import type { Edit, LineGeom, RectGeom, TextData, TextFrame, ImageGeom } from './edits/types';
 
 /** Discrete text-size presets, in grid cells tall. */
 export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
@@ -43,8 +43,15 @@ export type SelectedItem =
   | { type: 'image'; index: number };
 
 // An in-progress text being typed (before it's committed as a shape). `row`/
-// `col` are the text frame's TOP-LEFT grid coords (fine units).
-export type TextEditState = { row: number; col: number; size: number; text: string; halign: number; valign: number };
+// `col` are the text frame's TOP-LEFT grid coords (fine units). When an
+// EXISTING text is being edited in place (double-click), `editing` carries its
+// index and full original record: the original is deleted while typing (so the
+// preview isn't drawn over it) and either replaced on commit or restored
+// verbatim on cancel — both at the original z-index.
+export type TextEditState = {
+  row: number; col: number; size: number; text: string; halign: number; valign: number;
+  editing?: { idx: number; original: TextData };
+};
 
 // Clipboard data types
 export type ClipboardCell = { relRow: number; relCol: number; color: number; size: number };
@@ -219,6 +226,8 @@ export type ToolActions = {
   setSubdivision: (level: number) => void;
   cycleSubdivision: () => void;
   beginTextEdit: (cell: Cell) => void;
+  // Reopen an existing text shape for in-place editing (see TextEditState).
+  beginTextEditAt: (index: number) => void;
   typeTextChar: (ch: string) => void;
   backspaceText: () => void;
   commitTextEdit: () => void;
@@ -280,6 +289,8 @@ export type SelectActions = {
   // priority as pressSelectAt: the rotate handle, a resize handle, something
   // draggable (a selected shape or the selection's bounds), or nothing.
   hoverAffordanceAt: (q: { x: number; y: number; row: number; col: number; zoom: number }) => HoverAffordance;
+  // A select-tool double-click: on a text shape, reopen it for in-place editing.
+  doubleClickAt: (pt: { x: number; y: number }) => void;
 
   // Hit testing for shapes
   hitTestShapes: (x: number, y: number) => SelectedItem | null;

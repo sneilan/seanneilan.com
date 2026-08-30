@@ -8,6 +8,8 @@ export type TestGridOpts = {
   /** Pre-existing square records as [r, c, color, size] tuples. */
   squares?: number[][];
   texts?: number[][];  // [r, c, color, boxW, boxH, halign, valign]
+  /** Strings for the configured texts, by index (default ''). */
+  textStrings?: string[];
   images?: number[][]; // [r1, c1, r2, c2]
   /** Configured hit-test results by shape kind (default: miss, -1). */
   hit?: { line?: number; text?: number; rect?: number; image?: number };
@@ -35,7 +37,7 @@ function bboxOverlaps(
  * so draw/place/clear round-trips behave like the real grid.
  */
 export function makeGrid(opts?: TestGridOpts) {
-  const calls: Array<[string, ...number[]]> = [];
+  const calls: Array<Array<string | number>> = [];
   const paints: Array<Array<string | number>> = [];
   const lines = opts?.lines ?? [];
   const rects = opts?.rects ?? [];
@@ -119,13 +121,16 @@ export function makeGrid(opts?: TestGridOpts) {
     insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rectCount++; calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]); },
     delete_line: (idx) => { lineCount--; calls.push(['delete_line', idx]); },
     delete_rect: (idx) => { rectCount--; calls.push(['delete_rect', idx]); },
-    insert_text: (idx, r, c, color) => { textCount++; calls.push(['insert_text', idx, r, c, color]); },
+    insert_text: (idx, r, c, color, size, _boxW, _boxH, _halign, _valign, text) => {
+      textCount++;
+      calls.push(['insert_text', idx, r, c, color, size, text]);
+    },
     delete_text: (idx) => { textCount--; calls.push(['delete_text', idx]); },
     move_text: (idx, dr, dc) => calls.push(['move_text', idx, dr, dc]),
     set_text_color: (idx, color) => calls.push(['set_text_color', idx, color]),
     get_text_count: () => textCount,
     get_text: (idx) => new Int32Array(texts[idx] ?? [1, 0, 0, 1, 1]),
-    get_text_string: () => '',
+    get_text_string: (idx) => opts?.textStrings?.[idx] ?? '',
     get_text_size: () => 1,
     insert_image: (idx, r1, c1, r2, c2) => { imageCount++; calls.push(['insert_image', idx, r1, c1, r2, c2]); },
     add_image: (r1, c1, r2, c2) => { imageCount++; calls.push(['add_image', r1, c1, r2, c2]); },
@@ -190,6 +195,7 @@ export function makeGrid(opts?: TestGridOpts) {
       paints.push(['preview_text', r, c, color, size, boxW, boxH, halign, valign, text]);
     },
     preview_image: () => { paints.push(['preview_image']); },
+    render_text_preview: (r, c, color, size, text) => { paints.push(['render_text_preview', r, c, color, size, text]); },
     draw_handle: () => {},
     draw_selection_box: () => {},
   };

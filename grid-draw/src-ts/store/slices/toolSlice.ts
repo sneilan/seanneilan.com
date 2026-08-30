@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { selectionSignature } from '../gridHelpers';
+import { readText, selectionSignature } from '../gridHelpers';
 import { CELL_UNITS, SUBDIVISIONS, widthToTenths, type GridStore, type ToolActions } from '../types';
 import { history } from './historySlice';
 
@@ -224,12 +224,36 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '');
   },
 
+  // Reopen an existing text for in-place editing. The original is deleted
+  // inside a history batch (so the live preview isn't drawn over it); the
+  // commit's re-add joins the same batch, making the whole edit ONE undo step
+  // that restores the original. Cancel re-adds the original and drops the
+  // batch's bookkeeping, leaving no undo step at all.
+  beginTextEditAt: (index) => {
+    const { grid } = get();
+    if (!grid) return;
+    if (get().textEdit) get().commitTextEdit();
+    const original = readText(grid, index);
+    history.beginBatch();
+    get().commitEdits([{ kind: 'deleteText', idx: index, text: original }]);
+    set({
+      textEdit: {
+        row: original.r, col: original.c, size: original.size, text: original.text,
+        halign: original.halign, valign: original.valign,
+        editing: { idx: index, original },
+      },
+      selectedItems: [],
+    });
+    grid.render_text_preview(original.r, original.c, original.color, original.size, original.text);
+  },
+
   typeTextChar: (ch) => {
     const { grid, textEdit, colorIdx } = get();
     if (!textEdit) return;
     const next = { ...textEdit, text: textEdit.text + ch };
     set({ textEdit: next });
-    if (grid) grid.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+    const color = textEdit.editing?.original.color ?? colorIdx;
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text);
   },
 
   backspaceText: () => {
@@ -237,29 +261,52 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     if (!textEdit) return;
     const next = { ...textEdit, text: textEdit.text.slice(0, -1) };
     set({ textEdit: next });
-    if (grid) grid.render_text_preview(next.row, next.col, colorIdx, next.size, next.text);
+    const color = textEdit.editing?.original.color ?? colorIdx;
+    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text);
   },
 
   commitTextEdit: () => {
     const { grid, textEdit, colorIdx } = get();
     set({ textEdit: null });
     if (!grid || !textEdit || textEdit.text.length === 0) {
+      // In-place edit emptied out: the already-applied delete stands, and the
+      // batch closes as a plain undoable delete-text step.
+      if (textEdit?.editing) history.endBatch();
       grid?.render();
       return;
     }
-    get().commitEdits([{
-      kind: 'addText',
-      idx: grid.get_text_count(),
-      // box 0/0 → WASM auto-fits the frame to the text; align picked while
-      // typing takes effect once the box is resized.
-      text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, boxW: 0, boxH: 0, halign: textEdit.halign, valign: textEdit.valign, text: textEdit.text },
-    }]);
+    if (textEdit.editing) {
+      // Re-add at the original z-index, keeping the original color; box 0/0
+      // re-fits the frame to the new text. Joins the delete in one batch.
+      const { idx, original } = textEdit.editing;
+      get().commitEdits([{
+        kind: 'addText',
+        idx,
+        text: { ...original, boxW: 0, boxH: 0, size: textEdit.size, halign: textEdit.halign, valign: textEdit.valign, text: textEdit.text },
+      }]);
+      history.endBatch();
+    } else {
+      get().commitEdits([{
+        kind: 'addText',
+        idx: grid.get_text_count(),
+        // box 0/0 → WASM auto-fits the frame to the text; align picked while
+        // typing takes effect once the box is resized.
+        text: { r: textEdit.row, c: textEdit.col, color: colorIdx, size: textEdit.size, boxW: 0, boxH: 0, halign: textEdit.halign, valign: textEdit.valign, text: textEdit.text },
+      }]);
+    }
     grid.render();
   },
 
   cancelTextEdit: () => {
-    const { grid } = get();
+    const { grid, textEdit } = get();
     set({ textEdit: null });
+    if (grid && textEdit?.editing) {
+      // Restore the original record verbatim at its original z-index, then
+      // discard the batch — the delete+restore cancel out, so escaping an
+      // in-place edit leaves history untouched.
+      get().commitEdits([{ kind: 'addText', idx: textEdit.editing.idx, text: textEdit.editing.original }]);
+      history.cancelBatch();
+    }
     grid?.render();
   },
 

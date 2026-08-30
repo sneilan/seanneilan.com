@@ -1,6 +1,6 @@
 import type { GridCanvasWasm } from '../types/grid';
 import type { LineData, RectData, LineGeom, RectGeom, SquareData, TextData, TextFrame, ImageData, ImageGeom } from './edits/types';
-import { getLineHandles, getRectHandles, type HandlePoint } from '../utils/handles';
+import { getLineHandles, getRectHandles, handleHitTolerance, hitTestHandle, type HandlePoint } from '../utils/handles';
 import { CELL_UNITS, type DesignJSON, type SelectedItem } from './types';
 
 // --- Shape readers ----------------------------------------------------------
@@ -119,6 +119,16 @@ export function shapeHandles(grid: GridCanvasWasm, only: SelectedItem): HandlePo
   if (only.type === 'image') return getRectHandles(grid.get_image(only.index));
   if (only.type === 'text') return getRectHandles(textFrameCorners(grid.get_text(only.index)));
   return [];
+}
+
+// Which resize handle of the single selected shape (if any) is under (x, y),
+// at the zoom- and size-aware tolerance (see handleHitTolerance). Shared by
+// pressSelectAt and hoverAffordanceAt so press and cursor agree.
+export function hitShapeHandle(
+  grid: GridCanvasWasm, only: SelectedItem, x: number, y: number, cellSize: number, zoom: number
+): HandlePoint | null {
+  const handles = shapeHandles(grid, only);
+  return hitTestHandle(x, y, handles, cellSize, handleHitTolerance(handles, cellSize, zoom));
 }
 
 /**

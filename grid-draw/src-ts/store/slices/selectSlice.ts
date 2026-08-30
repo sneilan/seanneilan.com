@@ -1,11 +1,12 @@
 import type { StateCreator } from 'zustand';
 import type { Edit } from '../edits/types';
-import { getLineHandles, getRectHandles, hitTestHandle, rotateHandlePoint } from '../../utils/handles';
+import { getLineHandles, getRectHandles, rotateHandlePoint } from '../../utils/handles';
 import {
   addItemToSelectionArray,
   allItems,
   getSelectionBoundsAll,
   highlightItem,
+  hitShapeHandle,
   isItemSelected,
   isSelectedType,
   readLine,
@@ -13,7 +14,6 @@ import {
   readSquare,
   readText,
   removeItemFromSelectionArray,
-  shapeHandles,
   snapDragDelta,
   textFrameCorners,
 } from '../gridHelpers';
@@ -270,6 +270,8 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
   pressSelectAt: ({ x, y, row, col, shift, zoom }) => {
     const { grid, selectedItems } = get();
     if (!grid) return;
+    // Clicking anywhere while a text is being typed commits it first.
+    if (get().textEdit) get().commitTextEdit();
     const cellSize = grid.get_cell_size();
 
     // Rotate: grabbing the round handle above the selection starts a rotate
@@ -292,7 +294,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     if (selectedItems.length === 1 && !shift) {
       const only = selectedItems[0];
       if (only.type !== 'cell') {
-        const hit = hitTestHandle(x, y, shapeHandles(grid, only), cellSize, 9);
+        const hit = hitShapeHandle(grid, only, x, y, cellSize, zoom);
         if (hit) {
           get().startResize({ shape: only.type, index: only.index, handle: hit.handle });
           return;
@@ -352,7 +354,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
 
     if (selectedItems.length === 1) {
       const only = selectedItems[0];
-      if (only.type !== 'cell' && hitTestHandle(x, y, shapeHandles(grid, only), cellSize, 9)) {
+      if (only.type !== 'cell' && hitShapeHandle(grid, only, x, y, cellSize, zoom)) {
         return 'resize';
       }
     }
@@ -392,6 +394,13 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.preview_text(t.r + deltaRow, t.c + deltaCol, t.color, t.size, t.boxW, t.boxH, t.halign, t.valign, t.text);
       }
     }
+  },
+
+  // Double-click on a text shape reopens it for in-place editing; anywhere
+  // else is a no-op (the two mousedowns already ran the press decision tree).
+  doubleClickAt: ({ x, y }) => {
+    const hit = get().hitTestShapes(x, y);
+    if (hit?.type === 'text') get().beginTextEditAt(hit.index);
   },
 
   setMousePos: (cell) => set({ mousePos: cell }),

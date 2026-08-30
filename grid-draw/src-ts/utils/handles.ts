@@ -68,6 +68,29 @@ export function getRectHandles(coords: ArrayLike<number>): HandlePoint[] {
 }
 
 /**
+ * Hit tolerance for resize handles, in world px. Two constraints:
+ * - ~9 SCREEN px regardless of zoom (divide by zoom), so handles don't grow
+ *   into huge targets when zoomed in;
+ * - capped at a quarter of the shape's bounding diagonal, so on a tiny shape
+ *   (a 1-cell text) the eight handles never swallow the interior — the center
+ *   must stay grabbable for dragging.
+ */
+export function handleHitTolerance(
+  handles: HandlePoint[],
+  cellSize: number,
+  zoom: number
+): number {
+  if (handles.length === 0) return 0;
+  let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+  for (const h of handles) {
+    minR = Math.min(minR, h.r); maxR = Math.max(maxR, h.r);
+    minC = Math.min(minC, h.c); maxC = Math.max(maxC, h.c);
+  }
+  const diag = Math.hypot((maxR - minR) * cellSize, (maxC - minC) * cellSize);
+  return Math.min(9 / zoom, diag / 4);
+}
+
+/**
  * Return the handle whose pixel center is within `tolerance` px of (x, y),
  * picking the nearest if several match. Returns null if none are close.
  */
