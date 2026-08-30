@@ -11,6 +11,7 @@ import { useCanvasMouse } from './canvas/useCanvasMouse';
 import { useKeyboardShortcuts } from './canvas/useKeyboardShortcuts';
 import { useImageObjects } from './canvas/useImageObjects';
 import { useDrawingSession } from './canvas/useDrawingSession';
+import { TextEditOverlay } from './canvas/TextEditOverlay';
 import { ToolsPanel } from './canvas/ToolsPanel';
 import { SelectionDataPanel } from './canvas/SelectionDataPanel';
 import { TrainingDataPanel, TrainingProgressPanel } from './canvas/TrainingPanels';
@@ -101,6 +102,8 @@ function GridCanvas() {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
       />
+
+      <TextEditOverlay cam={cam} />
 
       <ToolsPanel
         loading={loading}

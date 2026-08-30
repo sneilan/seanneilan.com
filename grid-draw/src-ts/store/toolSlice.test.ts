@@ -174,7 +174,7 @@ describe('toolSlice: per-tool style memory', () => {
     reset(grid);
     useGridStore.getState().setTool('text');
     useGridStore.getState().beginTextEdit({ row: 0, col: 0 });
-    useGridStore.getState().typeTextChar('h');
+    useGridStore.getState().setTextEditText('h');
 
     useGridStore.getState().setTool('select');
 
@@ -200,18 +200,16 @@ describe('toolSlice: text tool restyle picks', () => {
     expect(grid.get_text_size(0)).toBe(1); // restored to original
   });
 
-  it('pickTextSize during an active text edit reflows the preview, not the doc', () => {
-    const { grid, calls } = makeGrid();
+  it('pickTextSize during an active text edit resizes it live, committing nothing', () => {
+    const { grid } = makeGrid();
     reset(grid);
     useGridStore.getState().beginTextEdit({ row: 2, col: 3 });
-    useGridStore.getState().typeTextChar('a');
-    calls.length = 0;
+    useGridStore.getState().setTextEditText('a');
 
     useGridStore.getState().pickTextSize(2);
 
+    // The overlay input's font tracks textEdit.size; nothing is committed.
     expect(useGridStore.getState().textEdit?.size).toBe(2);
-    // The preview is re-rendered at the new size; nothing is committed.
-    expect(calls).toContainEqual(['render_text_preview', 2, 3, 0, 2, 'a', 1]);
     expect(grid.get_text_count()).toBe(0);
     expect(useGridStore.getState().canUndo()).toBe(false);
   });
@@ -235,7 +233,7 @@ describe('toolSlice: text tool restyle picks', () => {
     const { grid } = makeGrid();
     reset(grid);
     useGridStore.getState().beginTextEdit({ row: 1, col: 1 });
-    useGridStore.getState().typeTextChar('a');
+    useGridStore.getState().setTextEditText('a');
 
     // Align picked mid-typing: nothing commits yet, the edit remembers it.
     useGridStore.getState().pickTextAlign(1, null); // center horizontally
@@ -295,15 +293,13 @@ describe('toolSlice: line width picks', () => {
 describe('toolSlice: text edit lifecycle', () => {
   beforeEach(() => reset());
 
-  it('begin/type/backspace/commit appends one undoable text shape', () => {
+  it('begin/type/commit appends one undoable text shape', () => {
     const { grid } = makeGrid();
     reset(grid);
 
     useGridStore.getState().beginTextEdit({ row: 1, col: 2 });
-    useGridStore.getState().typeTextChar('h');
-    useGridStore.getState().typeTextChar('x');
-    useGridStore.getState().backspaceText();
-    useGridStore.getState().typeTextChar('i');
+    useGridStore.getState().setTextEditText('hx');
+    useGridStore.getState().setTextEditText('hi');
     useGridStore.getState().commitTextEdit();
 
     expect(useGridStore.getState().textEdit).toBeNull();
@@ -329,7 +325,7 @@ describe('toolSlice: text edit lifecycle', () => {
     reset(grid);
 
     useGridStore.getState().beginTextEdit({ row: 0, col: 0 });
-    useGridStore.getState().typeTextChar('a');
+    useGridStore.getState().setTextEditText('a');
     useGridStore.getState().cancelTextEdit();
 
     expect(useGridStore.getState().textEdit).toBeNull();
@@ -342,13 +338,13 @@ describe('toolSlice: text edit lifecycle', () => {
     reset(grid);
 
     useGridStore.getState().beginTextEdit({ row: 0, col: 0 });
-    useGridStore.getState().typeTextChar('a');
+    useGridStore.getState().setTextEditText('a');
     useGridStore.getState().beginTextEdit({ row: 5, col: 5 });
 
     // Previous non-empty text committed; a fresh empty edit is now open.
     expect(grid.get_text_count()).toBe(1);
     expect(grid.get_text_string(0)).toBe('a');
-    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '', halign: 0, valign: 0, cursor: 0 });
+    expect(useGridStore.getState().textEdit).toEqual({ row: 5, col: 5, size: 1, text: '', halign: 0, valign: 0 });
   });
 });
 

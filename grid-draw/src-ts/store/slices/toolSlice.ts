@@ -128,19 +128,18 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   },
 
   // --- Text tool ------------------------------------------------------------
-  // Live typing draws a preview via render_text_preview; nothing touches the
-  // document until commitTextEdit appends a single undoable text shape.
+  // While textEdit is set, the text lives in a DOM <input> overlaid on the
+  // canvas (TextEditOverlay) — nothing is drawn on the canvas for it, and
+  // nothing touches the document until commitTextEdit adds ONE undoable shape.
   setTextSize: (size) => set({ textSize: size }),
 
   pickTextSize: (size) => {
     set({ textSize: size });
-    const { grid, selectedItems, textEdit, colorIdx } = get();
-    // If text is actively being typed, resize it live so the in-progress text
-    // reflows to the new size (the preview is re-rendered, not committed).
+    const { grid, selectedItems, textEdit } = get();
+    // If text is actively being typed, resize it live (the overlay input's
+    // font tracks textEdit.size; nothing is committed).
     if (textEdit) {
-      const next = { ...textEdit, size };
-      set({ textEdit: next });
-      grid?.render_text_preview(next.row, next.col, colorIdx, next.size, next.text, next.cursor);
+      set({ textEdit: { ...textEdit, size } });
       return;
     }
     if (!grid || selectedItems.length === 0) return;
@@ -218,10 +217,9 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   beginTextEdit: (cell) => {
     // Starting a new text commits any text already being typed.
     if (get().textEdit) get().commitTextEdit();
-    const { grid, colorIdx, textSize } = get();
+    const { textSize } = get();
     // The text frame's top-left is the clicked cell, so a 1-cell text fills it.
-    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '', halign: 0, valign: 0, cursor: 0 }, selectedItems: [] });
-    if (grid) grid.render_text_preview(cell.row, cell.col, colorIdx, textSize, '', 0);
+    set({ textEdit: { row: cell.row, col: cell.col, size: textSize, text: '', halign: 0, valign: 0 }, selectedItems: [] });
   },
 
   // Reopen an existing text for in-place editing. The original is deleted
@@ -239,53 +237,17 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     set({
       textEdit: {
         row: original.r, col: original.c, size: original.size, text: original.text,
-        halign: original.halign, valign: original.valign, cursor: original.text.length,
+        halign: original.halign, valign: original.valign,
         editing: { idx: index, original },
       },
       selectedItems: [],
     });
-    grid.render_text_preview(original.r, original.c, original.color, original.size, original.text, original.text.length);
   },
 
-  typeTextChar: (ch) => {
-    const { grid, textEdit, colorIdx } = get();
+  setTextEditText: (text) => {
+    const { textEdit } = get();
     if (!textEdit) return;
-    const { text, cursor } = textEdit;
-    const next = { ...textEdit, text: text.slice(0, cursor) + ch + text.slice(cursor), cursor: cursor + ch.length };
-    set({ textEdit: next });
-    const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
-  },
-
-  backspaceText: () => {
-    const { grid, textEdit, colorIdx } = get();
-    if (!textEdit || textEdit.cursor === 0) return;
-    const { text, cursor } = textEdit;
-    const next = { ...textEdit, text: text.slice(0, cursor - 1) + text.slice(cursor), cursor: cursor - 1 };
-    set({ textEdit: next });
-    const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
-  },
-
-  deleteTextForward: () => {
-    const { grid, textEdit, colorIdx } = get();
-    if (!textEdit || textEdit.cursor >= textEdit.text.length) return;
-    const { text, cursor } = textEdit;
-    const next = { ...textEdit, text: text.slice(0, cursor) + text.slice(cursor + 1) };
-    set({ textEdit: next });
-    const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
-  },
-
-  moveTextCursor: (delta) => {
-    const { grid, textEdit, colorIdx } = get();
-    if (!textEdit) return;
-    const cursor = Math.max(0, Math.min(textEdit.text.length, textEdit.cursor + delta));
-    if (cursor === textEdit.cursor) return;
-    const next = { ...textEdit, cursor };
-    set({ textEdit: next });
-    const color = textEdit.editing?.original.color ?? colorIdx;
-    if (grid) grid.render_text_preview(next.row, next.col, color, next.size, next.text, next.cursor);
+    set({ textEdit: { ...textEdit, text } });
   },
 
   commitTextEdit: () => {

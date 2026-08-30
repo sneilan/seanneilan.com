@@ -152,57 +152,20 @@ describe('useKeyboardShortcuts: subdivision cycling', () => {
 });
 
 describe('useKeyboardShortcuts: text-edit suppression', () => {
-  it('routes printable keys into the text and commits on Enter, not tool switching', () => {
-    const { grid } = makePatchedGrid();
+  // Typing itself happens in the TextEditOverlay <input> (covered by its own
+  // test); here we only assert the GLOBAL shortcuts stand down while editing.
+  it('does not run tool/color/delete shortcuts while a text edit is active', () => {
+    const { grid } = makePatchedGrid({ rects: [[1, 2, 3, 4, 5, 6]] });
     reset(grid);
     store().beginTextEdit({ row: 0, col: 0 });
+    useGridStore.setState({ selectedItems: [{ type: 'rect', index: 0 }] });
     mount();
 
-    // 'm' would switch to the rect tool, but while editing it types instead.
-    press('m');
-    expect(store().textEdit?.text).toBe('m');
+    press('m'); // would switch to the rect tool
     expect(store().tool).toBe('draw'); // unchanged
-
-    press('i');
-    expect(store().textEdit?.text).toBe('mi');
-
-    press('Enter');
-    expect(store().textEdit).toBeNull();
-    expect(grid.get_text_count()).toBe(1);
-  });
-
-  it('arrow keys move the caret so Backspace/Delete edit mid-string', () => {
-    const { grid } = makePatchedGrid();
-    reset(grid);
-    store().beginTextEdit({ row: 0, col: 0 });
-    mount();
-
-    for (const ch of 'abcd') press(ch);
-    press('ArrowLeft');
-    press('ArrowLeft');
-    press('Backspace'); // ab|cd → a|cd
-    expect(store().textEdit?.text).toBe('acd');
-    press('Delete'); // a|cd → a|d
-    expect(store().textEdit?.text).toBe('ad');
-    press('Home');
-    press('x');
-    expect(store().textEdit?.text).toBe('xad');
-    press('End');
-    press('z');
-    expect(store().textEdit?.text).toBe('xadz');
-  });
-
-  it('Escape cancels the in-progress text without committing', () => {
-    const { grid } = makePatchedGrid();
-    reset(grid);
-    store().beginTextEdit({ row: 0, col: 0 });
-    mount();
-
-    press('x');
-    expect(store().textEdit?.text).toBe('x');
-
-    press('Escape');
-    expect(store().textEdit).toBeNull();
-    expect(grid.get_text_count()).toBe(0);
+    press('3'); // would pick color 2
+    expect(store().colorIdx).toBe(0); // unchanged
+    press('Backspace'); // would delete the selection
+    expect(grid.get_rect_count()).toBe(1); // still there
   });
 });

@@ -6,9 +6,11 @@
 // bundle itself is invisible to it. Flow exercised:
 //   text tool → click → type "567" → Enter    (creates a text shape)
 //   select tool → double-click the text → type "89",
-//   then ArrowLeft ×2 + Backspace (deletes the '7' mid-string) → Enter
+//   ArrowLeft ×2 + Backspace (deletes the '7' mid-string),
+//   Shift+End + "2" (replaces the selected "89") → Enter
 // and asserts, via the API stub's recorded autosaves, that the design ends with
-// ONE text shape reading "5689" at the original position.
+// ONE text shape reading "562" at the original position. Editing happens in the
+// TextEditOverlay <input>, so caret/selection behavior is the browser's own.
 //
 // Usage:
 //   VITE_API_URL=http://127.0.0.1:8791 npx vite build --outDir /tmp/gd-e2e --emptyOutDir
@@ -150,8 +152,21 @@ async function main() {
         return { x: r.x, y: r.y }; })()`
     );
 
-    const key = (k, text = k) => cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: k, text })
-      .then(() => cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: k }));
+    // Text editing now happens in a REAL DOM <input> (TextEditOverlay), so key
+    // events must carry virtual key codes — the browser's own editing commands
+    // (caret movement, shift-selection, backspace) are keyed off them, not
+    // `key`. modifiers bit 8 = Shift, so Shift+End selects to the end natively.
+    const VKEYS = { ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35, Backspace: 8, Delete: 46, Enter: 13 };
+    const key = (k, { modifiers = 0 } = {}) => {
+      const base = {
+        key: k,
+        modifiers,
+        text: k.length === 1 ? k : (k === 'Enter' ? '\r' : ''),
+        windowsVirtualKeyCode: VKEYS[k] ?? k.toUpperCase().charCodeAt(0),
+      };
+      return cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...base })
+        .then(() => cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...base, text: '' }));
+    };
     const mouse = (type, x, y, clickCount) => cdp('Input.dispatchMouseEvent', {
       type, x, y, button: 'left', clickCount, pointerType: 'mouse',
     });
@@ -169,8 +184,9 @@ async function main() {
     // --- Create a text: 't' tool, click, type 567, Enter -------------------
     await key('t');
     await click(P.x, P.y);
+    await sleep(150); // overlay input mounts + takes focus
     for (const ch of '567') await key(ch);
-    await key('Enter', '\r');
+    await key('Enter');
     await sleep(1200); // autosave debounce (600ms) + request
     if (saves.length === 0) {
       if (process.env.E2E_DEBUG) {
@@ -202,14 +218,18 @@ async function main() {
       const { writeFileSync } = await import('node:fs');
       writeFileSync('/tmp/gd-e2e-after-dblclick.png', Buffer.from(shot.data, 'base64'));
     }
-    // The in-place edit must now be active: typing appends to the EXISTING text
-    // ("567" → "56789"), then the caret moves left past "89" and Backspace
-    // deletes the '7' MID-string ("56789" → "5689").
+    await sleep(150); // overlay input mounts + takes focus
+    // The in-place edit must now be active in the overlay input: typing appends
+    // to the EXISTING text ("567" → "56789"); the caret moves left past "89"
+    // and Backspace deletes the '7' mid-string ("5689"); Shift+End SELECTS the
+    // trailing "89" and typing replaces the selection ("562").
     for (const ch of '89') await key(ch);
-    await key('ArrowLeft', '');
-    await key('ArrowLeft', '');
-    await key('Backspace', '');
-    await key('Enter', '\r');
+    await key('ArrowLeft');
+    await key('ArrowLeft');
+    await key('Backspace');
+    await key('End', { modifiers: 8 }); // Shift+End: select "89"
+    await key('2');                     // replaces the selection
+    await key('Enter');
     await sleep(1200);
 
     const final = saves[saves.length - 1].design;
@@ -218,14 +238,14 @@ async function main() {
         JSON.stringify(final.texts));
     }
     const [r, c, , , , , , , text] = final.texts[0];
-    if (text !== '5689') {
-      throw new Error(`in-place edit with cursor movement did not work: text is ${JSON.stringify(text)}, expected "5689"`);
+    if (text !== '562') {
+      throw new Error(`in-place edit with caret/selection did not work: text is ${JSON.stringify(text)}, expected "562"`);
     }
     if (r !== created.texts[0][0] || c !== created.texts[0][1]) {
       throw new Error('text moved during in-place edit');
     }
 
-    console.log('PASS: double-click in-place text edit with caret movement ("567" → +"89", ←←⌫ → "5689", same position, one shape)');
+    console.log('PASS: double-click in-place edit with caret movement + shift-selection ("567" → +"89", ←←⌫ → "5689", ⇧End+"2" → "562", same position, one shape)');
   } finally {
     chrome.kill();
     server.close();

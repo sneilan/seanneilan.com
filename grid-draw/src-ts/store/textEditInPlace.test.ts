@@ -33,7 +33,7 @@ function setup(opts: TestGridOpts = {}) {
 const TEXT = { texts: [[5, 10, 2, 16, 8, 0, 0]], textStrings: ['567'] };
 
 describe('beginTextEditAt', () => {
-  it('deletes the original, seeds the edit with its content, previews in its color', () => {
+  it('deletes the original and seeds the edit with its content, drawing nothing on canvas', () => {
     const { calls, paints } = setup(TEXT);
     useGridStore.setState({ selectedItems: [{ type: 'text', index: 0 }] });
 
@@ -44,16 +44,16 @@ describe('beginTextEditAt', () => {
     expect(edit).toMatchObject({ row: 5, col: 10, text: '567' });
     expect(edit?.editing).toMatchObject({ idx: 0 });
     expect(useGridStore.getState().selectedItems).toEqual([]);
-    // Preview shows the ORIGINAL string in the original color (2), not colorIdx.
-    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567', 3]);
+    // Nothing is drawn on the canvas for the text being edited — the overlay
+    // input displays it (the delete above removed the original from view).
+    expect(paints.filter((p) => p[0] === 'render_text_preview')).toEqual([]);
   });
 
-  it('typing previews with the original color; commit replaces at the original index as ONE undo step', () => {
-    const { calls, paints } = setup(TEXT);
+  it('commit replaces at the original index as ONE undo step', () => {
+    const { calls } = setup(TEXT);
     useGridStore.getState().beginTextEditAt(0);
 
-    useGridStore.getState().typeTextChar('x');
-    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567x', 4]);
+    useGridStore.getState().setTextEditText('567x');
 
     useGridStore.getState().commitTextEdit();
     expect(useGridStore.getState().textEdit).toBeNull();
@@ -73,8 +73,7 @@ describe('beginTextEditAt', () => {
   it('Escape restores the original and leaves no undo step', () => {
     const { calls } = setup(TEXT);
     useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().typeTextChar('x');
-    useGridStore.getState().typeTextChar('y');
+    useGridStore.getState().setTextEditText('567xy');
 
     useGridStore.getState().cancelTextEdit();
 
@@ -86,8 +85,7 @@ describe('beginTextEditAt', () => {
   it('committing an emptied text deletes it, as one undoable step', () => {
     const { calls } = setup({ texts: [[5, 10, 2, 16, 8, 0, 0]], textStrings: ['ab'] });
     useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().backspaceText();
-    useGridStore.getState().backspaceText();
+    useGridStore.getState().setTextEditText('');
 
     useGridStore.getState().commitTextEdit();
 
@@ -100,64 +98,24 @@ describe('beginTextEditAt', () => {
   });
 });
 
-describe('text cursor movement', () => {
-  it('opens with the caret at the end, and arrows move it (clamped)', () => {
+describe('setTextEditText', () => {
+  it('replaces the in-progress text (the overlay input owns caret/selection)', () => {
     setup(TEXT);
     useGridStore.getState().beginTextEditAt(0);
-    expect(useGridStore.getState().textEdit?.cursor).toBe(3);
-
-    useGridStore.getState().moveTextCursor(-1);
-    expect(useGridStore.getState().textEdit?.cursor).toBe(2);
-    useGridStore.getState().moveTextCursor(-Infinity); // Home
-    expect(useGridStore.getState().textEdit?.cursor).toBe(0);
-    useGridStore.getState().moveTextCursor(-1); // clamped at the start
-    expect(useGridStore.getState().textEdit?.cursor).toBe(0);
-    useGridStore.getState().moveTextCursor(Infinity); // End
-    expect(useGridStore.getState().textEdit?.cursor).toBe(3);
+    useGridStore.getState().setTextEditText('5X7');
+    expect(useGridStore.getState().textEdit).toMatchObject({ text: '5X7' });
   });
 
-  it('moving the caret re-renders the preview with the cursor position', () => {
-    const { paints } = setup(TEXT);
-    useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().moveTextCursor(-2);
-    expect(paints).toContainEqual(['render_text_preview', 5, 10, 2, 1, '567', 1]);
-  });
-
-  it('typing inserts at the caret, not the end', () => {
+  it('is a no-op when no edit is active', () => {
     setup(TEXT);
-    useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().moveTextCursor(-2); // 5|67
-    useGridStore.getState().typeTextChar('x');
-    expect(useGridStore.getState().textEdit).toMatchObject({ text: '5x67', cursor: 2 });
+    useGridStore.getState().setTextEditText('zzz');
+    expect(useGridStore.getState().textEdit).toBeNull();
   });
 
-  it('Backspace deletes BEFORE the caret; at the start it is a no-op', () => {
-    setup(TEXT);
-    useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().moveTextCursor(-1); // 56|7
-    useGridStore.getState().backspaceText();
-    expect(useGridStore.getState().textEdit).toMatchObject({ text: '57', cursor: 1 });
-    useGridStore.getState().moveTextCursor(-Infinity);
-    useGridStore.getState().backspaceText();
-    expect(useGridStore.getState().textEdit).toMatchObject({ text: '57', cursor: 0 });
-  });
-
-  it('Delete removes AT the caret; at the end it is a no-op', () => {
-    setup(TEXT);
-    useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().deleteTextForward(); // caret at end → nothing
-    expect(useGridStore.getState().textEdit).toMatchObject({ text: '567', cursor: 3 });
-    useGridStore.getState().moveTextCursor(-Infinity);
-    useGridStore.getState().deleteTextForward();
-    expect(useGridStore.getState().textEdit).toMatchObject({ text: '67', cursor: 0 });
-  });
-
-  it('a mid-string edit commits the edited text', () => {
+  it('a mid-string edit commits the edited text at the original index', () => {
     const { calls } = setup(TEXT);
     useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().moveTextCursor(-1);
-    useGridStore.getState().backspaceText(); // 567 → 5|7
-    useGridStore.getState().typeTextChar('X');
+    useGridStore.getState().setTextEditText('5X7');
     useGridStore.getState().commitTextEdit();
     expect(calls).toContainEqual(['insert_text', 0, 5, 10, 2, 1, '5X7']);
   });
@@ -181,7 +139,7 @@ describe('pressSelectAt while typing', () => {
   it('commits the in-progress in-place edit before running the press decision tree', () => {
     const { calls } = setup({ ...TEXT, hit: {} });
     useGridStore.getState().beginTextEditAt(0);
-    useGridStore.getState().typeTextChar('!');
+    useGridStore.getState().setTextEditText('567!');
 
     useGridStore.getState().pressSelectAt({ x: 500, y: 500, row: 250, col: 250, shift: false, zoom: 1 });
 

@@ -48,11 +48,11 @@ export type SelectedItem =
 // index and full original record: the original is deleted while typing (so the
 // preview isn't drawn over it) and either replaced on commit or restored
 // verbatim on cancel — both at the original z-index.
-// `cursor` is the caret position as a character index into `text` (0 = before
-// the first char); typing inserts there, arrows/Home/End move it.
+// The text itself is edited in a DOM <input> overlaid on the canvas
+// (TextEditOverlay), which owns the caret/selection natively; this state only
+// carries the frame geometry, style, and current string.
 export type TextEditState = {
   row: number; col: number; size: number; text: string; halign: number; valign: number;
-  cursor: number;
   editing?: { idx: number; original: TextData };
 };
 
@@ -231,13 +231,8 @@ export type ToolActions = {
   beginTextEdit: (cell: Cell) => void;
   // Reopen an existing text shape for in-place editing (see TextEditState).
   beginTextEditAt: (index: number) => void;
-  typeTextChar: (ch: string) => void;
-  backspaceText: () => void;
-  // Delete the character AT the cursor (the Delete key's forward delete).
-  deleteTextForward: () => void;
-  // Move the caret by `delta` characters, clamped to the text (±Infinity works
-  // as Home/End).
-  moveTextCursor: (delta: number) => void;
+  // Replace the in-progress text wholesale (the overlay input's onChange).
+  setTextEditText: (text: string) => void;
   commitTextEdit: () => void;
   cancelTextEdit: () => void;
 
