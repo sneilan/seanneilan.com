@@ -305,7 +305,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
     const bounds = getSelectionBoundsAll(selectedItems, grid);
     const inBounds = bounds != null && row >= bounds.minRow && row <= bounds.maxRow &&
                      col >= bounds.minCol && col <= bounds.maxCol;
-    const hitItem = get().hitTestShapes(x, y);
+    const hitItem = get().hitTestShapes(x, y, zoom);
 
     if (hitItem && !shift && isItemSelected(hitItem, selectedItems) && selectedItems.length > 1) {
       // Pressed an item that's already part of a multi-selection — drag the
@@ -361,7 +361,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
 
     // Over a selected shape, or inside the selection's bounding box → a press
     // would start a drag.
-    const hit = get().hitTestShapes(x, y);
+    const hit = get().hitTestShapes(x, y, zoom);
     const inBounds = rb != null && row >= rb.minRow && row <= rb.maxRow &&
                      col >= rb.minCol && col <= rb.maxCol;
     if ((hit != null && isItemSelected(hit, selectedItems)) || inBounds) return 'move';
@@ -398,20 +398,24 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
 
   // Double-click on a text shape reopens it for in-place editing; anywhere
   // else is a no-op (the two mousedowns already ran the press decision tree).
-  doubleClickAt: ({ x, y }) => {
-    const hit = get().hitTestShapes(x, y);
+  doubleClickAt: ({ x, y, zoom }) => {
+    const hit = get().hitTestShapes(x, y, zoom);
     if (hit?.type === 'text') get().beginTextEditAt(hit.index);
   },
 
   setMousePos: (cell) => set({ mousePos: cell }),
 
   // Hit test for shapes - returns the topmost shape at position
-  hitTestShapes: (x, y) => {
+  hitTestShapes: (x, y, zoom = 1) => {
     const { grid } = get();
     if (!grid) return null;
 
-    // Test lines first (they're thin, need priority)
-    const lineIdx = grid.hit_test_line(x, y, 8.0); // 8px tolerance
+    // Test lines first (they're thin, need priority). The tolerance is in WORLD
+    // px but we want a CONSTANT ~8 screen px grab zone — otherwise zooming in
+    // turns the fixed world tolerance into a huge screen area that swallows
+    // clicks on shapes near the line (e.g. text just below it). Divide by zoom,
+    // same trick the rotate-handle hit test uses.
+    const lineIdx = grid.hit_test_line(x, y, 8.0 / zoom);
     if (lineIdx >= 0) {
       return { type: 'line', index: lineIdx };
     }

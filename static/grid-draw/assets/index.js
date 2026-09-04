@@ -8226,7 +8226,7 @@ sparse = sparse.coalesce()`;
                         }
                     }
                 }
-                const c = Ue(u, a), f = c != null && o >= c.minRow && o <= c.maxRow && l >= c.minCol && l <= c.maxCol, g = t().hitTestShapes(n, r);
+                const c = Ue(u, a), f = c != null && o >= c.minRow && o <= c.maxRow && l >= c.minCol && l <= c.maxCol, g = t().hitTestShapes(n, r, s);
                 g && !i && zr(g, u) && u.length > 1 ? (t().startDragSelection({
                     row: o,
                     col: l
@@ -8255,7 +8255,7 @@ sparse = sparse.coalesce()`;
                     const g = a[0];
                     if (g.type !== "cell" && Du(s, g, n, r, u, i)) return "resize";
                 }
-                const c = t().hitTestShapes(n, r), f = d != null && o >= d.minRow && o <= d.maxRow && l >= d.minCol && l <= d.maxCol;
+                const c = t().hitTestShapes(n, r, i), f = d != null && o >= d.minRow && o <= d.maxRow && l >= d.minCol && l <= d.maxCol;
                 return c != null && zr(c, a) || f ? "move" : "none";
             },
             renderDragPreview: (n)=>{
@@ -8277,40 +8277,40 @@ sparse = sparse.coalesce()`;
                     r.preview_text(d.r + s, d.c + a, d.color, d.size, d.boxW, d.boxH, d.halign, d.valign, d.text);
                 }
             },
-            doubleClickAt: ({ x: n, y: r })=>{
-                const o = t().hitTestShapes(n, r);
-                o?.type === "text" && t().beginTextEditAt(o.index);
+            doubleClickAt: ({ x: n, y: r, zoom: o })=>{
+                const l = t().hitTestShapes(n, r, o);
+                l?.type === "text" && t().beginTextEditAt(l.index);
             },
             setMousePos: (n)=>e({
                     mousePos: n
                 }),
-            hitTestShapes: (n, r)=>{
-                const { grid: o } = t();
-                if (!o) return null;
-                const l = o.hit_test_line(n, r, 8);
-                if (l >= 0) return {
-                    type: "line",
-                    index: l
-                };
-                const i = o.hit_test_text(n, r);
+            hitTestShapes: (n, r, o = 1)=>{
+                const { grid: l } = t();
+                if (!l) return null;
+                const i = l.hit_test_line(n, r, 8 / o);
                 if (i >= 0) return {
-                    type: "text",
+                    type: "line",
                     index: i
                 };
-                const s = o.hit_test_rect(n, r);
+                const s = l.hit_test_text(n, r);
                 if (s >= 0) return {
-                    type: "rect",
+                    type: "text",
                     index: s
                 };
-                const a = o.hit_test_image(n, r);
+                const a = l.hit_test_rect(n, r);
                 if (a >= 0) return {
-                    type: "image",
+                    type: "rect",
                     index: a
                 };
-                const u = o.get_cell_size(), d = Math.floor(n / u), c = Math.floor(r / u), f = o.square_at(c, d);
-                return f >= 0 ? {
+                const u = l.hit_test_image(n, r);
+                if (u >= 0) return {
+                    type: "image",
+                    index: u
+                };
+                const d = l.get_cell_size(), c = Math.floor(n / d), f = Math.floor(r / d), g = l.square_at(f, c);
+                return g >= 0 ? {
                     type: "cell",
-                    index: f
+                    index: g
                 } : null;
             },
             renderSelection: ()=>{
@@ -14530,7 +14530,8 @@ sparse = sparse.coalesce()`;
             const { x: G, y: F } = fn($, e.current);
             Ce({
                 x: G,
-                y: F
+                y: F,
+                zoom: e.current.zoom
             });
         }, [
             o,

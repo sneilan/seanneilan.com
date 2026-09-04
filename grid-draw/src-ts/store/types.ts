@@ -310,10 +310,10 @@ export type SelectActions = {
   // draggable (a selected shape or the selection's bounds), or nothing.
   hoverAffordanceAt: (q: { x: number; y: number; row: number; col: number; zoom: number }) => HoverAffordance;
   // A select-tool double-click: on a text shape, reopen it for in-place editing.
-  doubleClickAt: (pt: { x: number; y: number }) => void;
+  doubleClickAt: (pt: { x: number; y: number; zoom?: number }) => void;
 
   // Hit testing for shapes
-  hitTestShapes: (x: number, y: number) => SelectedItem | null;
+  hitTestShapes: (x: number, y: number, zoom?: number) => SelectedItem | null;
 
   // Rendering helpers
   renderSelection: () => void;

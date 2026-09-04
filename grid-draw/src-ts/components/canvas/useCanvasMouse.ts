@@ -77,7 +77,7 @@ export function useCanvasMouse({ camRef, applyCamera, isSpaceDown, panRef }: Mou
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (tool !== 'select' || isSpaceDown.current) return;
       const { x, y } = getCanvasXY(event, camRef.current);
-      doubleClickAt({ x, y });
+      doubleClickAt({ x, y, zoom: camRef.current.zoom });
     },
     [tool, doubleClickAt, camRef, isSpaceDown]
   );
