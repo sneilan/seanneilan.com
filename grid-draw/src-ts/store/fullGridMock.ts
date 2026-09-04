@@ -66,9 +66,9 @@ export function makeFullGrid() {
     get_line_count: () => lines.length,
 
     // rects
-    insert_rect: (idx, r1, c1, r2, c2, fill, outline) => { rects.splice(idx, 0, [r1, c1, r2, c2, fill, outline]); calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]); },
+    insert_rect: (idx, r1, c1, r2, c2, fill, outline, width, strokeAlign) => { rects.splice(idx, 0, [r1, c1, r2, c2, fill, outline, width, strokeAlign]); calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline, width, strokeAlign]); },
     delete_rect: (idx) => { rects.splice(idx, 1); calls.push(['delete_rect', idx]); },
-    get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6]),
+    get_rect: (idx) => new Int32Array(rects[idx] ?? [0, 0, 2, 2, 0, 6, 10, 0]),
     get_rect_count: () => rects.length,
 
     // texts (insert signature mirrors apply.ts: idx,r,c,color,size,boxW,boxH,halign,valign,text)

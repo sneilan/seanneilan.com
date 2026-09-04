@@ -9,10 +9,14 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   // (render_with_line/render_with_rect) read them there, so this runs whenever
   // the colors change (or a grid arrives) — the input layer never syncs them.
   const syncStyleToGrid = () => {
-    const { grid, colorIdx, outlineIdx } = get();
+    const { grid, colorIdx, outlineIdx, rectLineWidth, rectStrokeAlign } = get();
     if (!grid) return;
     grid.set_draw_color(colorIdx);
     grid.set_outline_color(outlineIdx);
+    // The rect rubber-band preview (render_with_rect) reads these, so keep the
+    // WASM "new rect" outline width/alignment in sync with the pick.
+    grid.set_draw_rect_line_width(widthToTenths(rectLineWidth));
+    grid.set_draw_rect_stroke_align(rectStrokeAlign);
   };
 
   return {
@@ -173,6 +177,42 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
     }
     if (edits.length === 0) return;
     get().commitEdits(edits, { coalesceKey: `lineWidth:${selectionSignature(selectedItems)}` });
+    get().renderSelection();
+  },
+
+  pickRectLineWidth: (width) => {
+    set({ rectLineWidth: width });
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    // Keep the WASM "new rect" outline width in sync so the drag preview shows it.
+    grid.set_draw_rect_line_width(widthToTenths(width));
+    if (selectedItems.length === 0) return;
+    const to = widthToTenths(width);
+    const edits: Edit[] = [];
+    for (const item of selectedItems) {
+      if (item.type === 'rect') {
+        edits.push({ kind: 'resizeRectStroke', idx: item.index, from: grid.get_rect(item.index)[6], to });
+      }
+    }
+    if (edits.length === 0) return;
+    get().commitEdits(edits, { coalesceKey: `rectLineWidth:${selectionSignature(selectedItems)}` });
+    get().renderSelection();
+  },
+
+  pickRectStrokeAlign: (align) => {
+    set({ rectStrokeAlign: align });
+    const { grid, selectedItems } = get();
+    if (!grid) return;
+    grid.set_draw_rect_stroke_align(align);
+    if (selectedItems.length === 0) return;
+    const edits: Edit[] = [];
+    for (const item of selectedItems) {
+      if (item.type === 'rect') {
+        edits.push({ kind: 'alignRectStroke', idx: item.index, from: grid.get_rect(item.index)[7], to: align });
+      }
+    }
+    if (edits.length === 0) return;
+    get().commitEdits(edits, { coalesceKey: `rectStrokeAlign:${selectionSignature(selectedItems)}` });
     get().renderSelection();
   },
 
@@ -375,9 +415,9 @@ export const createToolSlice: StateCreator<GridStore, [], [], ToolActions> = (se
   },
 
   commitRect: (r1, c1, r2, c2) => {
-    const { grid, colorIdx, outlineIdx } = get();
+    const { grid, colorIdx, outlineIdx, rectLineWidth, rectStrokeAlign } = get();
     if (!grid) return;
-    get().commitEdits([{ kind: 'addRect', idx: grid.get_rect_count(), rect: { r1, c1, r2, c2, fill: colorIdx, outline: outlineIdx } }]);
+    get().commitEdits([{ kind: 'addRect', idx: grid.get_rect_count(), rect: { r1, c1, r2, c2, fill: colorIdx, outline: outlineIdx, width: widthToTenths(rectLineWidth), strokeAlign: rectStrokeAlign } }]);
     get().updateOutputs();
   },
 

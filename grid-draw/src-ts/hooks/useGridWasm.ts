@@ -10,7 +10,7 @@ export type { GridCanvasWasm, GridWasmState };
  * version (e.g. a stale module survived a hot reload that changed the schema),
  * we reset it instead of rendering garbage from a half-migrated buffer.
  */
-const EXPECTED_SCHEMA_VERSION = 9;
+const EXPECTED_SCHEMA_VERSION = 10;
 
 // Read Vite's `import.meta.env.DEV` without asserting import.meta's shape (the TS
 // lib types it as only `{ url }`); `'env' in meta` narrows it to read the flag.

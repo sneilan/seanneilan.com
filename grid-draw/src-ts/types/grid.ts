@@ -70,7 +70,7 @@ export type GridCanvasWasm = {
   draw_rotate_handle(handle_r: number, handle_c: number, stalk_r: number, stalk_c: number): void;
   preview_square(row: number, col: number, size: number, color: number): void;
   preview_line(r1: number, c1: number, r2: number, c2: number, color: number, width_x10: number): void;
-  preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  preview_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number, width_x10: number, stroke_align: number): void;
   set_line_color(idx: number, color: number): void;
   // Per-line stroke width, in tenths of the base 2px stroke (10 = 1×).
   set_line_width(idx: number, width_x10: number): void;
@@ -81,13 +81,19 @@ export type GridCanvasWasm = {
   get_subdivision(): number;
   set_rect_fill(idx: number, color: number): void;
   set_rect_outline(idx: number, color: number): void;
+  // Per-rect outline stroke width (tenths of 2px) and alignment (0 center, 1 inside, 2 outside).
+  set_rect_line_width(idx: number, width_x10: number): void;
+  set_rect_stroke_align(idx: number, align: number): void;
+  // Outline stroke width / alignment applied to newly drawn rects.
+  set_draw_rect_line_width(width_x10: number): void;
+  set_draw_rect_stroke_align(align: number): void;
   line_intersects_box(line_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   rect_intersects_box(rect_idx: number, box_r1: number, box_c1: number, box_r2: number, box_c2: number): boolean;
   add_line(r1: number, c1: number, r2: number, c2: number, color: number, width_x10: number): void;
-  add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number, width_x10: number, stroke_align: number): void;
   // Index-stable primitives backing the undo/redo edit layer.
   insert_line(idx: number, r1: number, c1: number, r2: number, c2: number, color: number, width_x10: number): void;
-  insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number): void;
+  insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number, width_x10: number, stroke_align: number): void;
   set_line(idx: number, r1: number, c1: number, r2: number, c2: number): void;
   set_rect(idx: number, r1: number, c1: number, r2: number, c2: number): void;
 

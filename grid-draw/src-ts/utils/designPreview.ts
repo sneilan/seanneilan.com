@@ -124,8 +124,10 @@ export function renderDesignToCanvas(
     ctx.strokeRect(x + 0.5, y + 0.5, rw - 1, rh - 1);
   }
 
-  // Rects: fill then outline (intersection coords).
-  for (const [r1, c1, r2, c2, fillIdx, outlineIdx] of design.rects ?? []) {
+  // Rects: fill then outline (intersection coords). widthX10/strokeAlign are
+  // optional (schema v10); the thumbnail scales the base stroke by the width
+  // multiplier and insets for inside/outside alignment.
+  for (const [r1, c1, r2, c2, fillIdx, outlineIdx, widthX10, strokeAlign] of design.rects ?? []) {
     const x = Math.min(c1, c2) * cs;
     const y = Math.min(r1, r2) * cs;
     const rw = Math.abs(c2 - c1) * cs;
@@ -133,7 +135,15 @@ export function renderDesignToCanvas(
     const fill = hex(fillIdx);
     if (fill) { ctx.fillStyle = fill; ctx.fillRect(x, y, rw, rh); }
     const outline = hex(outlineIdx);
-    if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = Math.max(1, cs / 8); ctx.strokeRect(x, y, rw, rh); }
+    if (outline) {
+      const lw = Math.max(1, (cs / 8) * ((widthX10 ?? 10) / 10));
+      const d = lw / 2;
+      const align = strokeAlign ?? 0;
+      const [sx, sy, sw, sh] = align === 1 ? [x + d, y + d, rw - lw, rh - lw]
+        : align === 2 ? [x - d, y - d, rw + lw, rh + lw]
+        : [x, y, rw, rh];
+      ctx.strokeStyle = outline; ctx.lineWidth = lw; ctx.strokeRect(sx, sy, sw, sh);
+    }
   }
 
   // Lines (intersection coords).

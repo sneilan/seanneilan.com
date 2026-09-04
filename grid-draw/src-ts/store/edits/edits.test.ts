@@ -39,9 +39,9 @@ describe('applyEdit — forward application', () => {
     applyEdit(grid, {
       kind: 'addRect',
       idx: 2,
-      rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2 },
+      rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2, width: 10, strokeAlign: 0 },
     });
-    expect(calls).toEqual([['insert_rect', 2, 0, 0, 3, 4, 6, 2]]);
+    expect(calls).toEqual([['insert_rect', 2, 0, 0, 3, 4, 6, 2, 10, 0]]);
   });
 
   it('deleteRect removes at the given index', () => {
@@ -49,7 +49,7 @@ describe('applyEdit — forward application', () => {
     applyEdit(grid, {
       kind: 'deleteRect',
       idx: 2,
-      rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2 },
+      rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2, width: 10, strokeAlign: 0 },
     });
     expect(calls).toEqual([['delete_rect', 2]]);
   });
@@ -178,10 +178,10 @@ describe('invertEdit — exact round-trips', () => {
       roundTrip({
         kind: 'addRect',
         idx: 2,
-        rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2 },
+        rect: { r1: 0, c1: 0, r2: 3, c2: 4, fill: 6, outline: 2, width: 10, strokeAlign: 0 },
       })
     ).toEqual([
-      ['insert_rect', 2, 0, 0, 3, 4, 6, 2],
+      ['insert_rect', 2, 0, 0, 3, 4, 6, 2, 10, 0],
       ['delete_rect', 2],
     ]);
   });
@@ -200,11 +200,11 @@ describe('invertEdit — exact round-trips', () => {
       roundTrip({
         kind: 'deleteRect',
         idx: 0,
-        rect: { r1: 1, c1: 2, r2: 3, c2: 4, fill: 5, outline: 6 },
+        rect: { r1: 1, c1: 2, r2: 3, c2: 4, fill: 5, outline: 6, width: 10, strokeAlign: 0 },
       })
     ).toEqual([
       ['delete_rect', 0],
-      ['insert_rect', 0, 1, 2, 3, 4, 5, 6],
+      ['insert_rect', 0, 1, 2, 3, 4, 5, 6, 10, 0],
     ]);
   });
 });
@@ -253,15 +253,15 @@ describe('batch edits', () => {
     const batch: Edit = {
       kind: 'batch',
       edits: [
-        { kind: 'deleteRect', idx: 1, rect: { r1: 0, c1: 0, r2: 1, c2: 1, fill: 0, outline: 6 } },
-        { kind: 'deleteRect', idx: 3, rect: { r1: 2, c1: 2, r2: 3, c2: 3, fill: 0, outline: 6 } },
+        { kind: 'deleteRect', idx: 1, rect: { r1: 0, c1: 0, r2: 1, c2: 1, fill: 0, outline: 6, width: 10, strokeAlign: 0 } },
+        { kind: 'deleteRect', idx: 3, rect: { r1: 2, c1: 2, r2: 3, c2: 3, fill: 0, outline: 6, width: 10, strokeAlign: 0 } },
       ],
     };
     const { grid, calls } = makeRecordingGrid();
     applyEdit(grid, invertEdit(batch));
     expect(calls).toEqual([
-      ['insert_rect', 3, 2, 2, 3, 3, 0, 6],
-      ['insert_rect', 1, 0, 0, 1, 1, 0, 6],
+      ['insert_rect', 3, 2, 2, 3, 3, 0, 6, 10, 0],
+      ['insert_rect', 1, 0, 0, 1, 1, 0, 6, 10, 0],
     ]);
   });
 

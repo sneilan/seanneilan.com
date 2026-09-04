@@ -388,7 +388,7 @@ export const createSelectSlice: StateCreator<GridStore, [], [], SelectActions> =
         grid.preview_line(l.r1 + deltaRow, l.c1 + deltaCol, l.r2 + deltaRow, l.c2 + deltaCol, l.color, l.width);
       } else if (item.type === 'rect') {
         const r = readRect(grid, item.index);
-        grid.preview_rect(r.r1 + deltaRow, r.c1 + deltaCol, r.r2 + deltaRow, r.c2 + deltaCol, r.fill, r.outline);
+        grid.preview_rect(r.r1 + deltaRow, r.c1 + deltaCol, r.r2 + deltaRow, r.c2 + deltaCol, r.fill, r.outline, r.width, r.strokeAlign);
       } else if (item.type === 'text') {
         const t = readText(grid, item.index);
         grid.preview_text(t.r + deltaRow, t.c + deltaCol, t.color, t.size, t.boxW, t.boxH, t.halign, t.valign, t.text);

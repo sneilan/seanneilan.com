@@ -5,8 +5,17 @@ import type { Edit, LineGeom, RectGeom, TextData, TextFrame, ImageGeom } from '.
 /** Discrete text-size presets, in grid cells tall. */
 export const TEXT_SIZES = [1, 1.5, 2, 3, 5];
 
-/** Discrete line-width presets, as multiples of the base 2px stroke. */
+/** Discrete line-width presets, as multiples of the base 2px stroke. Shared by
+ * the line tool and the rect-outline width. */
 export const LINE_WIDTHS = [1, 1.5, 2, 3, 5];
+
+/** Rect outline stroke alignment: how the outline sits relative to the box edge.
+ * 0 center (straddles the edge; pre-v10 behavior), 1 inside, 2 outside. */
+export const STROKE_ALIGNS = [
+  { value: 0, label: 'Center' },
+  { value: 1, label: 'Inside' },
+  { value: 2, label: 'Outside' },
+] as const;
 
 /** Fine units per whole cell (must match CELL_UNITS in src/lib.rs). Coordinates
  * are integers in fine units, so a whole cell spans this many. */
@@ -59,7 +68,7 @@ export type TextEditState = {
 // Clipboard data types
 export type ClipboardCell = { relRow: number; relCol: number; color: number; size: number };
 export type ClipboardLine = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; width: number };
-export type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number };
+export type ClipboardRect = { relR1: number; relC1: number; relR2: number; relC2: number; color: number; outline: number; width: number; strokeAlign: number };
 export type ClipboardText = { relR: number; relC: number; color: number; size: number; boxW: number; boxH: number; halign: number; valign: number; text: string };
 export type ClipboardImage = { relR1: number; relC1: number; relR2: number; relC2: number; url: string };
 
@@ -89,7 +98,8 @@ export type DesignJSON = {
   // [relRow, relCol, colorIdx] 3-tuples; loaders migrate them (see placeDesign).
   cells: number[][];
   lines: number[][];        // [r1, c1, r2, c2, colorIdx, widthX10]
-  rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx]
+  rects: number[][];        // [r1, c1, r2, c2, fillIdx, outlineIdx, widthX10?, strokeAlign?]
+                            // (widthX10/strokeAlign added in schema v10; absent → 10/0)
   // [r, c, colorIdx, size, boxW, boxH, halign, valign, text] (frame top-left, fine units)
   texts: Array<[number, number, number, number, number, number, number, number, string]>;
   // [r1, c1, r2, c2, url] — image objects (grid-snapped box + S3/remote source).
@@ -125,6 +135,10 @@ export type GridState = {
   textSize: number;
   // Active stroke width (multiple of the base 2px) for new lines.
   lineWidth: number;
+  // Active outline stroke width (multiple of the base 2px) for new rects.
+  rectLineWidth: number;
+  // Active outline stroke alignment for new rects: 0 center, 1 inside, 2 outside.
+  rectStrokeAlign: number;
   // Grid subdivision for snapping + display: 1 (whole cells), 2, 4, or 8.
   subdivision: number;
 
@@ -224,6 +238,9 @@ export type ToolActions = {
   pickTextSize: (size: number) => void;
   setLineWidth: (width: number) => void;
   pickLineWidth: (width: number) => void;
+  // Set the active rect outline width / alignment AND restyle selected rects.
+  pickRectLineWidth: (width: number) => void;
+  pickRectStrokeAlign: (align: number) => void;
   // Set horizontal and/or vertical alignment on selected texts (null = keep).
   pickTextAlign: (halign: number | null, valign: number | null) => void;
   setSubdivision: (level: number) => void;

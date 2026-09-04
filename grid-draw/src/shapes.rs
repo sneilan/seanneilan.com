@@ -22,10 +22,28 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn draw_rect(&mut self, r1: i32, c1: i32, r2: i32, c2: i32) {
-        // Rects carry an independent fill and outline color: [r1,c1,r2,c2,fill,outline].
-        // Index 6 ("transparent") means "no fill" / "no outline".
-        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, self.draw_color as i32, self.outline_color as i32]);
+        // Rects carry an independent fill and outline color plus an outline
+        // stroke width and alignment: [r1,c1,r2,c2,fill,outline,width_x10,align].
+        // Color index 6 ("transparent") means "no fill" / "no outline".
+        self.drawn_rects.extend_from_slice(&[
+            r1, c1, r2, c2, self.draw_color as i32, self.outline_color as i32,
+            self.rect_line_width, self.rect_stroke_align,
+        ]);
         self.maybe_render();
+    }
+
+    /// Set the outline stroke width applied to NEW rects, in tenths of the base
+    /// 2px stroke (10 = 1×), mirroring `set_draw_line_width`.
+    #[wasm_bindgen]
+    pub fn set_draw_rect_line_width(&mut self, width_x10: i32) {
+        self.rect_line_width = width_x10.max(1);
+    }
+
+    /// Set the outline stroke alignment applied to NEW rects: 0 center, 1
+    /// inside, 2 outside.
+    #[wasm_bindgen]
+    pub fn set_draw_rect_stroke_align(&mut self, align: i32) {
+        self.rect_stroke_align = align.clamp(0, 2);
     }
 
     #[wasm_bindgen]
@@ -355,8 +373,8 @@ impl GridCanvas {
 
     /// Add a rect directly (for paste operations)
     #[wasm_bindgen]
-    pub fn add_rect(&mut self, r1: i32, c1: i32, r2: i32, c2: i32, fill: i32, outline: i32) {
-        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, fill, outline]);
+    pub fn add_rect(&mut self, r1: i32, c1: i32, r2: i32, c2: i32, fill: i32, outline: i32, width_x10: i32, stroke_align: i32) {
+        self.drawn_rects.extend_from_slice(&[r1, c1, r2, c2, fill, outline, width_x10.max(1), stroke_align.clamp(0, 2)]);
     }
 
     /// Insert a line at a specific index, shifting later lines up. This is the
@@ -371,8 +389,8 @@ impl GridCanvas {
     /// Insert a rect at a specific index, shifting later rects up. The
     /// index-stable inverse of `delete_rect`. `idx` is clamped to the end.
     #[wasm_bindgen]
-    pub fn insert_rect(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, fill: i32, outline: i32) {
-        insert_record(&mut self.drawn_rects, RECT_STRIDE, idx, &[r1, c1, r2, c2, fill, outline]);
+    pub fn insert_rect(&mut self, idx: usize, r1: i32, c1: i32, r2: i32, c2: i32, fill: i32, outline: i32, width_x10: i32, stroke_align: i32) {
+        insert_record(&mut self.drawn_rects, RECT_STRIDE, idx, &[r1, c1, r2, c2, fill, outline, width_x10.max(1), stroke_align.clamp(0, 2)]);
         self.maybe_render();
     }
 
@@ -428,6 +446,26 @@ impl GridCanvas {
         let start = idx * RECT_STRIDE;
         if start + RECT_STRIDE <= self.drawn_rects.len() {
             self.drawn_rects[start + 5] = color;
+            self.maybe_render();
+        }
+    }
+
+    /// Change one rect's outline stroke width in place (`width_x10` = tenths of 2px).
+    #[wasm_bindgen]
+    pub fn set_rect_line_width(&mut self, idx: usize, width_x10: i32) {
+        let start = idx * RECT_STRIDE;
+        if start + RECT_STRIDE <= self.drawn_rects.len() {
+            self.drawn_rects[start + 6] = width_x10.max(1);
+            self.maybe_render();
+        }
+    }
+
+    /// Change one rect's outline stroke alignment in place (0 center, 1 inside, 2 outside).
+    #[wasm_bindgen]
+    pub fn set_rect_stroke_align(&mut self, idx: usize, align: i32) {
+        let start = idx * RECT_STRIDE;
+        if start + RECT_STRIDE <= self.drawn_rects.len() {
+            self.drawn_rects[start + 7] = align.clamp(0, 2);
             self.maybe_render();
         }
     }

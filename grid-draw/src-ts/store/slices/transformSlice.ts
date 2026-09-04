@@ -153,7 +153,7 @@ export const createTransformSlice: StateCreator<GridStore, [], [], TransformActi
         if (r.length >= 6) {
           const a = rotateQuarter(r[0], r[1], k, icr, icc);
           const b = rotateQuarter(r[2], r[3], k, icr, icc);
-          grid.preview_rect(a.r, a.c, b.r, b.c, r[4], r[5]);
+          grid.preview_rect(a.r, a.c, b.r, b.c, r[4], r[5], r[6], r[7]);
         }
       } else if (item.type === 'text') {
         const t = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]

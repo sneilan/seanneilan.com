@@ -57,6 +57,8 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
             relC2: rectData[3] - origin.minCol,
             color: rectData[4],
             outline: rectData[5],
+            width: rectData[6] ?? 10,
+            strokeAlign: rectData[7] ?? 0,
           });
         }
       } else if (item.type === 'text') {
@@ -143,7 +145,7 @@ export const createClipboardSlice: StateCreator<GridStore, [], [], ClipboardActi
       const c1 = anchor.col + rect.relC1;
       const r2 = anchor.row + rect.relR2;
       const c2 = anchor.col + rect.relC2;
-      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1, c1, r2, c2, fill: rect.color, outline: rect.outline } });
+      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1, c1, r2, c2, fill: rect.color, outline: rect.outline, width: rect.width, strokeAlign: rect.strokeAlign } });
       newSelected.push({ type: 'rect', index: rectIdx });
       rectIdx++;
     }

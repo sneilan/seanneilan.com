@@ -12,7 +12,7 @@ import type { GridCanvasWasm } from '../../types/grid';
  * from these documented semantics.
  */
 const LINE_STRIDE = 6;
-const RECT_STRIDE = 6;
+const RECT_STRIDE = 8;
 const SQUARE_STRIDE = 4;
 const TRANSPARENT = 6;
 
@@ -120,6 +120,16 @@ export class FakeGrid implements GridCanvasWasm {
     const s = idx * RECT_STRIDE;
     if (s + RECT_STRIDE <= this.rects.length) this.rects[s + 5] = color;
   }
+  set_rect_line_width(idx: number, width: number) {
+    const s = idx * RECT_STRIDE;
+    if (s + RECT_STRIDE <= this.rects.length) this.rects[s + 6] = Math.max(1, width);
+  }
+  set_rect_stroke_align(idx: number, align: number) {
+    const s = idx * RECT_STRIDE;
+    if (s + RECT_STRIDE <= this.rects.length) this.rects[s + 7] = align;
+  }
+  set_draw_rect_line_width() {}
+  set_draw_rect_stroke_align() {}
   move_line(idx: number, dr: number, dc: number) {
     const s = idx * LINE_STRIDE;
     if (s + LINE_STRIDE > this.lines.length) return;
@@ -146,9 +156,9 @@ export class FakeGrid implements GridCanvasWasm {
     const at = Math.min(idx, this.get_line_count()) * LINE_STRIDE;
     this.lines.splice(at, 0, r1, c1, r2, c2, color, width);
   }
-  insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number) {
+  insert_rect(idx: number, r1: number, c1: number, r2: number, c2: number, fill: number, outline: number, width = 10, strokeAlign = 0) {
     const at = Math.min(idx, this.get_rect_count()) * RECT_STRIDE;
-    this.rects.splice(at, 0, r1, c1, r2, c2, fill, outline);
+    this.rects.splice(at, 0, r1, c1, r2, c2, fill, outline, width, strokeAlign);
   }
   delete_line(idx: number) {
     const s = idx * LINE_STRIDE;
@@ -182,7 +192,7 @@ export class FakeGrid implements GridCanvasWasm {
     this.rects[s + 3] = Math.max(minC, maxC);
   }
   add_line(r1: number, c1: number, r2: number, c2: number, color: number, width = 10) { this.lines.push(r1, c1, r2, c2, color, width); }
-  add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number) { this.rects.push(r1, c1, r2, c2, fill, outline); }
+  add_rect(r1: number, c1: number, r2: number, c2: number, fill: number, outline: number, width = 10, strokeAlign = 0) { this.rects.push(r1, c1, r2, c2, fill, outline, width, strokeAlign); }
 
   // --- image mutators (mirror images.rs) -----------------------------------
   get_image_count() { return this.images.length; }

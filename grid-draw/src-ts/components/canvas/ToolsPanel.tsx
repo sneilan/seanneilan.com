@@ -2,7 +2,7 @@ import { Undo2, Redo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DraggablePanel } from '@/components/DraggablePanel';
-import { useGridStore, TEXT_SIZES, LINE_WIDTHS, tenthsToWidth, type DesignJSON, type DrawTool } from '../../store/gridStore';
+import { useGridStore, TEXT_SIZES, LINE_WIDTHS, STROKE_ALIGNS, tenthsToWidth, type DesignJSON, type DrawTool } from '../../store/gridStore';
 import { HEADER_HEIGHT } from './constants';
 import { ColorRow } from './ColorRow';
 
@@ -44,6 +44,8 @@ export function ToolsPanel({
     outlineIdx, pickOutline,
     textSize, pickTextSize,
     lineWidth, pickLineWidth,
+    rectLineWidth, pickRectLineWidth,
+    rectStrokeAlign, pickRectStrokeAlign,
     pickTextAlign,
     subdivision, setSubdivision,
     selectedItems,
@@ -86,6 +88,13 @@ export function ToolsPanel({
   const outlineValue = grid && selRects.length > 0
     ? (uniform(selRects.map((i) => grid.get_rect(i.index)[5])) === '' ? -1 : grid.get_rect(selRects[0].index)[5])
     : outlineIdx;
+  // Rect outline width/alignment reflect the selection (mixed → '' / -1, nothing highlighted).
+  const rectWidthValue = grid && selRects.length > 0
+    ? uniform(selRects.map((i) => tenthsToWidth(grid.get_rect(i.index)[6])))
+    : String(rectLineWidth);
+  const rectAlignValue = grid && selRects.length > 0
+    ? uniform(selRects.map((i) => grid.get_rect(i.index)[7]))
+    : String(rectStrokeAlign);
 
   return (
     <DraggablePanel title="Tools" defaultPosition={{ x: 20, y: HEADER_HEIGHT + 20 }}>
@@ -235,6 +244,40 @@ export function ToolsPanel({
           <div>
             <label className="text-xs font-medium text-gray-500 mb-1 block">Outline (rects)</label>
             <ColorRow activeIdx={outlineValue} onPick={pickOutline} titleFor={(i, name) => (i === 6 ? 'No outline' : name)} />
+          </div>
+        )}
+
+        {(tool === 'rect' || selRects.length > 0) && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Outline width</label>
+            <ToggleGroup
+              type="single"
+              value={rectWidthValue}
+              onValueChange={(val) => val && pickRectLineWidth(Number(val))}
+              variant="outline"
+              className="flex-wrap"
+            >
+              {LINE_WIDTHS.map((w) => (
+                <ToggleGroupItem key={w} value={String(w)} className="text-xs">{w}&times;</ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+        )}
+
+        {(tool === 'rect' || selRects.length > 0) && (
+          <div>
+            <label className="text-xs font-medium text-gray-500 mb-1 block">Stroke align</label>
+            <ToggleGroup
+              type="single"
+              value={rectAlignValue}
+              onValueChange={(val) => val && pickRectStrokeAlign(Number(val))}
+              variant="outline"
+              className="flex-wrap"
+            >
+              {STROKE_ALIGNS.map((a) => (
+                <ToggleGroupItem key={a.value} value={String(a.value)} className="text-xs">{a.label}</ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         )}
 

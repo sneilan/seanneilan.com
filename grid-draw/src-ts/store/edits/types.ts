@@ -7,9 +7,12 @@
  * tenths of the base 2px stroke (10 = 1×, 15 = 1.5×, …). */
 export type LineData = { r1: number; c1: number; r2: number; c2: number; color: number; width: number };
 
-/** A rect as stored in WASM: [r1, c1, r2, c2, fill, outline]. */
+/** A rect as stored in WASM: [r1, c1, r2, c2, fill, outline, width_x10, strokeAlign].
+ * `width` is the outline stroke width in tenths of the base 2px stroke (10 = 1×);
+ * `strokeAlign` is 0 center, 1 inside, 2 outside. */
 export type RectData = {
   r1: number; c1: number; r2: number; c2: number; fill: number; outline: number;
+  width: number; strokeAlign: number;
 };
 
 /** Just the geometry of a line (no color), for move/resize edits. */
@@ -51,6 +54,8 @@ export type Edit =
   | { kind: 'resizeLine'; idx: number; from: number; to: number }
   | { kind: 'recolorRectFill'; idx: number; from: number; to: number }
   | { kind: 'recolorRectOutline'; idx: number; from: number; to: number }
+  | { kind: 'resizeRectStroke'; idx: number; from: number; to: number }
+  | { kind: 'alignRectStroke'; idx: number; from: number; to: number }
   | { kind: 'moveLine'; idx: number; dRow: number; dCol: number }
   | { kind: 'moveRect'; idx: number; dRow: number; dCol: number }
   | { kind: 'setLineGeom'; idx: number; from: LineGeom; to: LineGeom }

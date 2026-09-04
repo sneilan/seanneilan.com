@@ -41,7 +41,7 @@ describe('clipboard slice', () => {
     // The square keeps its native size (a copied 1x/half/... square round-trips).
     expect(clip.cells).toEqual([{ relRow: 1, relCol: 1, color: 2, size: 1 }]);
     expect(clip.lines).toEqual([{ relR1: 0, relC1: 0, relR2: 4, relC2: 4, color: 3, width: 15 }]);
-    expect(clip.rects).toEqual([{ relR1: 2, relC1: 2, relR2: 5, relC2: 5, color: 1, outline: 0 }]);
+    expect(clip.rects).toEqual([{ relR1: 2, relC1: 2, relR2: 5, relC2: 5, color: 1, outline: 0, width: 10, strokeAlign: 0 }]);
     expect(clip.texts).toEqual([{ relR: 2, relC: 2, color: 0, size: 1, boxW: 4, boxH: 2, halign: 0, valign: 0, text: 'Hi' }]);
     expect(clip.images).toEqual([{ relR1: 6, relC1: 6, relR2: 14, relC2: 14, url: 'https://s3/img.png' }]);
   });

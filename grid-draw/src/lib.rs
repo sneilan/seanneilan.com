@@ -32,7 +32,7 @@ pub(crate) fn text_font(size: f64) -> String {
 /// must derive offsets from them so a future field addition can't desync one
 /// call site (which is exactly what caused the rect corruption bug).
 pub(crate) const LINE_STRIDE: usize = 6; // [r1, c1, r2, c2, color, width_x10]
-pub(crate) const RECT_STRIDE: usize = 6; // [r1, c1, r2, c2, fill, outline]
+pub(crate) const RECT_STRIDE: usize = 8; // [r1, c1, r2, c2, fill, outline, width_x10, stroke_align]
 pub(crate) const SQUARE_STRIDE: usize = 4; // [r, c, color, size]
 
 /// Bump whenever the shape packing or coordinate model changes. Exposed to JS so
@@ -51,7 +51,10 @@ pub(crate) const SQUARE_STRIDE: usize = 4; // [r, c, color, size]
 /// [r, c, color, size] at the resolution it was drawn (size in fine units:
 /// 1x=8, ½=4, ¼=2, ⅛=1), never an expansion into fine cells. Insertion order
 /// is z-order; overlap resolves topmost-wins.
-pub const SCHEMA_VERSION: u32 = 9;
+/// v10 = rects carry a per-rect outline stroke width (`width_x10`, tenths of the
+/// base 2px stroke, like lines) and a `stroke_align` (0 center, 1 inside,
+/// 2 outside); RECT_STRIDE grew from 6 to 8.
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// An image object: a bitmap placed in a grid-snapped box. `(r1,c1)` is the box
 /// top-left and `(r2,c2)` the bottom-right, in fine units (normalized so r1≤r2,
@@ -137,6 +140,23 @@ pub(crate) fn line_px(width_x10: i32) -> f64 {
     (width_x10.max(1) as f64 / 10.0) * 2.0
 }
 
+/// Inset a rect's outline stroke so it aligns to the box edge. `stroke_rect`
+/// centers the stroke on the path, so:
+///   0 = center  → stroke straddles the edge (no inset; matches pre-v10 rects)
+///   1 = inside  → whole stroke inside the box (shift the path in by lw/2)
+///   2 = outside → whole stroke outside the box (shift the path out by lw/2)
+/// Returns the (x, y, w, h) to hand `stroke_rect`.
+pub(crate) fn stroke_align_rect(
+    x: f64, y: f64, w: f64, h: f64, lw: f64, align: i32,
+) -> (f64, f64, f64, f64) {
+    let d = lw / 2.0;
+    match align {
+        1 => (x + d, y + d, w - lw, h - lw),
+        2 => (x - d, y - d, w + lw, h + lw),
+        _ => (x, y, w, h),
+    }
+}
+
 pub(crate) fn color_for_idx(idx: u8) -> &'static str {
     match idx {
         0 => "#000000",
@@ -178,6 +198,15 @@ pub struct GridCanvas {
     /// 15 = 1.5×, …). Per-line width lives in `drawn_lines[..+5]`; this is just
     /// the current pick applied when `draw_line` appends.
     pub(crate) line_width: i32,
+    /// Outline stroke width for NEW rects, in tenths of the base 2px stroke
+    /// (10 = 1×), mirroring `line_width`. Per-rect width lives in
+    /// `drawn_rects[..+6]`; this is the current pick applied when `draw_rect`
+    /// appends. Default 10 (2px) preserves pre-v10 rect appearance.
+    pub(crate) rect_line_width: i32,
+    /// Outline stroke alignment for NEW rects: 0 center (default, pre-v10
+    /// behavior), 1 inside, 2 outside. Per-rect value lives in
+    /// `drawn_rects[..+7]`.
+    pub(crate) rect_stroke_align: i32,
     /// Grid subdivision level for display + snapping: 1 = whole cells only,
     /// 2 = halves, 4 = quarters, 8 = eighths. Only affects which sub-grid lines
     /// are drawn (the host owns snapping); coordinates are always fine units.
@@ -185,7 +214,7 @@ pub struct GridCanvas {
     pub(crate) empty_color: String,
     pub(crate) line_color: String,
     pub(crate) drawn_lines: Vec<i32>, // flat: [r1, c1, r2, c2, color_idx, width_x10, ...]
-    pub(crate) drawn_rects: Vec<i32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, ...]
+    pub(crate) drawn_rects: Vec<i32>, // flat: [r1, c1, r2, c2, fill_idx, outline_idx, width_x10, stroke_align, ...]
     pub(crate) drawn_texts: Vec<TextItem>,
     pub(crate) drawn_images: Vec<ImageItem>,
 }
@@ -232,6 +261,8 @@ impl GridCanvas {
             draw_color: 0,
             outline_color: 6, // default: no outline
             line_width: 10,   // default: 1× (2px)
+            rect_line_width: 10, // default: 1× (2px), matches pre-v10 rects
+            rect_stroke_align: 0, // default: center, matches pre-v10 rects
             subdivision: 1,   // default: whole cells, no sub-grid
             empty_color: String::from("#ffffff"),
             line_color: String::from("#cccccc"),

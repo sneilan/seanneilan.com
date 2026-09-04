@@ -14,6 +14,7 @@ import { createTransformSlice } from './slices/transformSlice';
 export {
   TEXT_SIZES,
   LINE_WIDTHS,
+  STROKE_ALIGNS,
   CELL_UNITS,
   SUBDIVISIONS,
   widthToTenths,
@@ -53,6 +54,8 @@ const initialState: GridState = {
   textEdit: null,
   textSize: 1,
   lineWidth: 1,
+  rectLineWidth: 1,
+  rectStrokeAlign: 0,
   subdivision: 1,
 
   selectedItems: [],

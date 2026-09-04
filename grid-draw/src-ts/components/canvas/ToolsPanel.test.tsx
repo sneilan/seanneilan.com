@@ -99,6 +99,6 @@ describe('ToolsPanel: sections show for the styling that applies', () => {
     const { grid } = makeGrid({ rects: [[0, 0, 2, 2, 3, 5]] });
     useGridStore.setState({ grid, tool: 'select', selectedItems: [{ type: 'rect', index: 0 }] });
     renderPanel();
-    expect(screen.getByText(/Outline/)).toBeTruthy();
+    expect(screen.getByText('Outline (rects)')).toBeTruthy();
   });
 });

@@ -49,6 +49,8 @@ function assertInRange(grid: GridCanvasWasm, e: Edit): void {
     case 'deleteRect':
     case 'recolorRectFill':
     case 'recolorRectOutline':
+    case 'resizeRectStroke':
+    case 'alignRectStroke':
     case 'moveRect':
     case 'setRectGeom':
       bad('rects', e.idx, rectCount - 1);
@@ -107,6 +109,12 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
     case 'recolorRectOutline':
       grid.set_rect_outline(e.idx, e.to);
       break;
+    case 'resizeRectStroke':
+      grid.set_rect_line_width(e.idx, e.to);
+      break;
+    case 'alignRectStroke':
+      grid.set_rect_stroke_align(e.idx, e.to);
+      break;
     case 'moveLine':
       grid.move_line(e.idx, e.dRow, e.dCol);
       break;
@@ -123,7 +131,7 @@ export function applyEdit(grid: GridCanvasWasm, e: Edit): void {
       grid.insert_line(e.idx, e.line.r1, e.line.c1, e.line.r2, e.line.c2, e.line.color, e.line.width);
       break;
     case 'addRect':
-      grid.insert_rect(e.idx, e.rect.r1, e.rect.c1, e.rect.r2, e.rect.c2, e.rect.fill, e.rect.outline);
+      grid.insert_rect(e.idx, e.rect.r1, e.rect.c1, e.rect.r2, e.rect.c2, e.rect.fill, e.rect.outline, e.rect.width, e.rect.strokeAlign);
       break;
     case 'deleteLine':
       grid.delete_line(e.idx);
@@ -199,6 +207,8 @@ export function invertEdit(e: Edit): Edit {
     case 'resizeLine':
     case 'recolorRectFill':
     case 'recolorRectOutline':
+    case 'resizeRectStroke':
+    case 'alignRectStroke':
       return { ...e, from: e.to, to: e.from };
     case 'moveLine':
     case 'moveRect':
@@ -258,6 +268,8 @@ export function mergeEdits(prev: Edit, next: Edit): Edit | null {
     case 'resizeLine':
     case 'recolorRectFill':
     case 'recolorRectOutline':
+    case 'resizeRectStroke':
+    case 'alignRectStroke':
     case 'recolorText':
     case 'resizeText':
     case 'recolorSquare':

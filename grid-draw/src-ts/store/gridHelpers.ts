@@ -17,7 +17,7 @@ export function readLine(grid: GridCanvasWasm, idx: number): LineData {
 
 export function readRect(grid: GridCanvasWasm, idx: number): RectData {
   const a = grid.get_rect(idx);
-  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5] };
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5], width: a[6], strokeAlign: a[7] };
 }
 
 export function lineGeom(grid: GridCanvasWasm, idx: number): LineGeom {
@@ -263,7 +263,7 @@ export function serializeSelection(
       lines.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
     } else if (item.type === 'rect') {
       const a = grid.get_rect(item.index);
-      rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5]]);
+      rects.push([a[0] - oR, a[1] - oC, a[2] - oR, a[3] - oC, a[4], a[5], a[6], a[7]]);
     } else if (item.type === 'text') {
       const a = grid.get_text(item.index); // [r, c, color, boxW, boxH, halign, valign]
       texts.push([a[0] - oR, a[1] - oC, a[2], grid.get_text_size(item.index), a[3], a[4], a[5], a[6], grid.get_text_string(item.index)]);

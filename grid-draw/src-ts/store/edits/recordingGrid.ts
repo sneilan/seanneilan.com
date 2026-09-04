@@ -19,14 +19,16 @@ export function makeRecordingGrid() {
     set_line_color: (idx, color) => calls.push(['set_line_color', idx, color]),
     set_rect_fill: (idx, color) => calls.push(['set_rect_fill', idx, color]),
     set_rect_outline: (idx, color) => calls.push(['set_rect_outline', idx, color]),
+    set_rect_line_width: (idx, width) => calls.push(['set_rect_line_width', idx, width]),
+    set_rect_stroke_align: (idx, align) => calls.push(['set_rect_stroke_align', idx, align]),
     move_line: (idx, dr, dc) => calls.push(['move_line', idx, dr, dc]),
     move_rect: (idx, dr, dc) => calls.push(['move_rect', idx, dr, dc]),
     set_line: (idx, r1, c1, r2, c2) => calls.push(['set_line', idx, r1, c1, r2, c2]),
     set_rect: (idx, r1, c1, r2, c2) => calls.push(['set_rect', idx, r1, c1, r2, c2]),
     insert_line: (idx, r1, c1, r2, c2, color, width) =>
       calls.push(['insert_line', idx, r1, c1, r2, c2, color, width]),
-    insert_rect: (idx, r1, c1, r2, c2, fill, outline) =>
-      calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline]),
+    insert_rect: (idx, r1, c1, r2, c2, fill, outline, width, strokeAlign) =>
+      calls.push(['insert_rect', idx, r1, c1, r2, c2, fill, outline, width, strokeAlign]),
     delete_line: (idx) => calls.push(['delete_line', idx]),
     delete_rect: (idx) => calls.push(['delete_rect', idx]),
     render: () => {},

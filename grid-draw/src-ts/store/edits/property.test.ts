@@ -43,7 +43,7 @@ function randomEdit(g: FakeGrid, rand: () => number): Edit | null {
     // add line
     () => ({ kind: 'addLine', idx: lc, line: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), color: color(), width: 10 } }),
     // add rect
-    () => ({ kind: 'addRect', idx: rc, rect: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), fill: rand() < 0.5 ? 6 : color(), outline: rand() < 0.5 ? 6 : color() } }),
+    () => ({ kind: 'addRect', idx: rc, rect: { r1: coord(), c1: coord(), r2: coord(), c2: coord(), fill: rand() < 0.5 ? 6 : color(), outline: rand() < 0.5 ? 6 : color(), width: 10, strokeAlign: 0 } }),
     // add square — one atomic record at snapped coords + a random resolution,
     // appended at the top of the z-order (like the draw tool does).
     () => {
@@ -78,7 +78,7 @@ function toLine(g: FakeGrid, idx: number) {
 }
 function toRect(g: FakeGrid, idx: number) {
   const a = g.get_rect(idx);
-  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5] };
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5], width: a[6], strokeAlign: a[7] };
 }
 function toSquare(g: FakeGrid, idx: number) {
   const a = g.get_square(idx);
@@ -192,5 +192,5 @@ describe('undo/redo property test', () => {
 
 function r(g: FakeGrid, idx: number) {
   const a = g.get_rect(idx);
-  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5] };
+  return { r1: a[0], c1: a[1], r2: a[2], c2: a[3], fill: a[4], outline: a[5], width: a[6], strokeAlign: a[7] };
 }

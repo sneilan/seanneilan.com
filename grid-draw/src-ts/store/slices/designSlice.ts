@@ -98,8 +98,9 @@ export const createDesignSlice: StateCreator<GridStore, [], [], DesignActions> =
       newSelected.push({ type: 'line', index: lineIdx });
       lineIdx++;
     }
-    for (const [r1, c1, r2, c2, fill, outline] of design.rects ?? []) {
-      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, fill, outline } });
+    for (const [r1, c1, r2, c2, fill, outline, width, strokeAlign] of design.rects ?? []) {
+      // Pre-v10 designs have 6-tuples (no width/align) → default 1× (10) center (0).
+      edits.push({ kind: 'addRect', idx: rectIdx, rect: { r1: anchorRow + r1 * f, c1: anchorCol + c1 * f, r2: anchorRow + r2 * f, c2: anchorCol + c2 * f, fill, outline, width: width ?? 10, strokeAlign: strokeAlign ?? 0 } });
       newSelected.push({ type: 'rect', index: rectIdx });
       rectIdx++;
     }

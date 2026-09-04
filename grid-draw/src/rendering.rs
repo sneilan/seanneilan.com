@@ -1,5 +1,5 @@
 use wasm_bindgen::prelude::*;
-use crate::{GridCanvas, CELL_SIZE, CELL_UNITS, LINE_STRIDE, SQUARE_STRIDE, color_for_idx};
+use crate::{GridCanvas, CELL_SIZE, CELL_UNITS, LINE_STRIDE, RECT_STRIDE, SQUARE_STRIDE, color_for_idx};
 
 /// Sub-grid lines (½/¼/⅛ boundaries) are drawn fainter than the whole-cell grid.
 const SUBLINE_COLOR: &str = "#e8e8e8";
@@ -98,15 +98,18 @@ impl GridCanvas {
         // transparent PNG regions keep the grid visible behind them.
         self.render_images();
 
-        // Committed rects (independent fill + outline; index 6 = none).
+        // Committed rects (independent fill + outline; index 6 = none). Each
+        // carries its own outline width (width_x10) and stroke alignment.
         let mut i = 0;
-        while i + 5 < self.drawn_rects.len() {
+        while i + RECT_STRIDE <= self.drawn_rects.len() {
             let r1c = self.drawn_rects[i] as f64;
             let c1c = self.drawn_rects[i + 1] as f64;
             let r2c = self.drawn_rects[i + 2] as f64;
             let c2c = self.drawn_rects[i + 3] as f64;
             let fill = self.drawn_rects[i + 4];
             let outline = self.drawn_rects[i + 5];
+            let width_x10 = self.drawn_rects[i + 6];
+            let align = self.drawn_rects[i + 7];
             let x = self.sx(c1c.min(c2c) * CELL_SIZE);
             let y = self.sy(r1c.min(r2c) * CELL_SIZE);
             let w = (c1c - c2c).abs() * cp;
@@ -119,12 +122,14 @@ impl GridCanvas {
                 self.ctx.fill_rect(x + 1.0, y + 1.0, w - 1.0, h - 1.0);
             }
             if outline != 6 {
+                let lw = crate::line_px(width_x10);
+                let (sx, sy, sw, sh) = crate::stroke_align_rect(x, y, w, h, lw, align);
                 self.ctx.set_stroke_style_str(color_for_idx(outline as u8));
-                self.ctx.set_line_width(2.0);
-                self.ctx.stroke_rect(x, y, w, h);
+                self.ctx.set_line_width(lw);
+                self.ctx.stroke_rect(sx, sy, sw, sh);
                 self.ctx.set_line_width(1.0);
             }
-            i += 6;
+            i += RECT_STRIDE;
         }
 
         // Committed lines. The +0.5 lands the stroke centered on the grid line
@@ -178,9 +183,12 @@ impl GridCanvas {
         let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
         let w = (c1 - c2).abs() as f64 * self.cell_px();
         let h = (r1 - r2).abs() as f64 * self.cell_px();
+        // Preview at the width/alignment the new rect will be committed with.
+        let lw = crate::line_px(self.rect_line_width);
+        let (sx, sy, sw, sh) = crate::stroke_align_rect(x, y, w, h, lw, self.rect_stroke_align);
         self.ctx.set_stroke_style_str("#4488ff");
-        self.ctx.set_line_width(2.0);
-        self.ctx.stroke_rect(x, y, w, h);
+        self.ctx.set_line_width(lw);
+        self.ctx.stroke_rect(sx, sy, sw, sh);
         self.ctx.set_line_width(1.0);
     }
 
@@ -217,9 +225,10 @@ impl GridCanvas {
         self.ctx.set_line_width(1.0);
     }
 
-    /// Moving "ghost" of a rect. Does NOT clear.
+    /// Moving "ghost" of a rect. Does NOT clear. Mirrors render(): outline drawn
+    /// at the rect's own width_x10 and stroke alignment.
     #[wasm_bindgen]
-    pub fn preview_rect(&self, r1: i32, c1: i32, r2: i32, c2: i32, fill: u8, outline: u8) {
+    pub fn preview_rect(&self, r1: i32, c1: i32, r2: i32, c2: i32, fill: u8, outline: u8, width_x10: i32, stroke_align: i32) {
         let x = self.sx((c1.min(c2)) as f64 * CELL_SIZE);
         let y = self.sy((r1.min(r2)) as f64 * CELL_SIZE);
         let w = (c1 - c2).abs() as f64 * self.cell_px();
@@ -230,14 +239,16 @@ impl GridCanvas {
             // Match render(): inset the fill so the grid lines stay visible.
             self.ctx.fill_rect(x + 1.0, y + 1.0, w - 1.0, h - 1.0);
         }
+        let lw = crate::line_px(width_x10);
+        let (sx, sy, sw, sh) = crate::stroke_align_rect(x, y, w, h, lw, stroke_align);
         if outline != 6 {
             self.ctx.set_stroke_style_str(color_for_idx(outline));
-            self.ctx.set_line_width(2.0);
-            self.ctx.stroke_rect(x, y, w, h);
+            self.ctx.set_line_width(lw);
+            self.ctx.stroke_rect(sx, sy, sw, sh);
         } else if fill == 6 {
             self.ctx.set_stroke_style_str("#888888");
-            self.ctx.set_line_width(2.0);
-            self.ctx.stroke_rect(x, y, w, h);
+            self.ctx.set_line_width(lw);
+            self.ctx.stroke_rect(sx, sy, sw, sh);
         }
         self.ctx.set_global_alpha(1.0);
         self.ctx.set_line_width(1.0);
@@ -292,8 +303,8 @@ impl GridCanvas {
 
     #[wasm_bindgen]
     pub fn highlight_rect(&self, idx: usize) {
-        let start = idx * 6;
-        if start + 6 <= self.drawn_rects.len() {
+        let start = idx * RECT_STRIDE;
+        if start + RECT_STRIDE <= self.drawn_rects.len() {
             let r1 = self.drawn_rects[start] as f64;
             let c1 = self.drawn_rects[start + 1] as f64;
             let r2 = self.drawn_rects[start + 2] as f64;
